@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,18 @@ from .contracts import load_recipe
 
 
 def main(argv=None) -> int:
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    root = Path(__file__).resolve().parents[2]
+    if arguments and arguments[0] == "service":
+        try:
+            skills.validate(root)
+        except (OSError, ValueError) as error:
+            print(f"afd-rsi: {error}", file=sys.stderr)
+            return 2
+        # The service runner owns signal handling and bounded child cleanup.
+        os.execv(sys.executable, [sys.executable, str(root / "benchmarks/service/run.py"), *arguments[1:]])
     parser = argparse.ArgumentParser(prog="afd-rsi")
+    parser.epilog = "Real local service tests: afd-rsi service --help (plan/run/status/pack)."
     commands = parser.add_subparsers(dest="action", required=True)
     check = commands.add_parser("check")
     check.add_argument("recipe", nargs="?", type=Path)
@@ -28,8 +40,7 @@ def main(argv=None) -> int:
     export = commands.add_parser("export")
     export.add_argument("run", type=Path)
     export.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args(argv)
-    root = Path(__file__).resolve().parents[2]
+    args = parser.parse_args(arguments)
     try:
         if args.action == "check":
             manifest = skills.validate(root)

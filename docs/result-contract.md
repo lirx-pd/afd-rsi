@@ -48,6 +48,10 @@ bool。最终取冻结 primary_rank 的值，其余 rank 用于完整性与正�
 回显环境变量就宣称真实运行身份已经验证。当前仓库尚未提供该 NPU 探针，
 因此没有可直接运行的 A3 性能 recipe。
 
+真实模型/服务测试现通过独立的 `afd-rsi service` 入口执行固定版本 AFD E2E
+流程，具体命令和证据要求见本仓库 `docs/npu-service-testing.md`。它不返回本页
+算子级 rank 指标，不向 compare 伪造 HTTP 到 kernel 的结果映射。
+
 一次 rank 结果是一次分布式 trial 的组成部分，不是额外独立样本。一次 benchmark
 调用应提供其预热后测量的明确定义值。当前汇总为多轮 trial 的中位数；初筛和
 独立复测可使用不同 attempt，尚无自动胜者晋升。

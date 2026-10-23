@@ -37,3 +37,20 @@
 
 已有命令型 Ascend 结果合同不代表目标环境已经适配或验证。当前不发布 NPU
 正确性、性能、完整 M0–M4 完成或自主 RSI 能力提升的结论。
+
+## 本机服务测试接入
+
+按 AFD-Plugin-e2e-tools 的实际方法，将版本
+`1cec506d7acb0c0bffd311987ba4f2405e118272` 的服务测试代码和许可证固化到
+`benchmarks/service/`。新增 `afd-rsi service plan/run/status/pack` 入口，保留其
+标准 vllm serve、预检、模型就绪、HTTP 工作负载与进程清理。详情和运行命令见
+`docs/npu-service-testing.md`。
+
+当前完整测试结果：35 项通过，1 项因沙箱禁止本地 socket 绑定而跳过；随后
+加强 V4 配置断言的专项测试为 3 项通过、1 项相同原因跳过。静态检查、底座
+校验和 diff 检查通过。底座现有 8 个技能、44 个文件。
+
+V4 计划验证覆盖 8A/8F、Attention TP4、FFN TP1，以及 async MRV2、Layered 和
+MegaMoe 开关。离线计划不启动服务，不证明目标栈支持对应参数。
+本机缺少 NPU/推理和 HTTP 依赖，未执行真实 NPU 服务 run。算子级 benchmark
+和实际加载身份核验仍待实施；服务结果不伪装成算子级 compare 结果。

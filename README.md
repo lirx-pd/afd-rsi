@@ -11,7 +11,11 @@
 内部依赖均在本仓库；不是完整上游技能库的逐文件迁移。来源范围与参考代码身份
 记录在 `knowledge/provenance.json`。未知的 CANN API 能力仍需目标 SDK 验证。
 
-自动 Agent 搜索、经验晋升、真实 MegaMoe NPU benchmark/加载身份探针以及完整
+真实模型/服务测试已接入仓库内固定版本的 AFD E2E 实现，使用标准 `vllm serve`
+启动 A/F、预检、就绪、真实 HTTP 请求和进程清理。详见
+[NPU 服务测试](docs/npu-service-testing.md)，入口为 `python3 -m afd_rsi service --help`。
+
+自动 Agent 搜索、经验晋升、真实 MegaMoe 算子 benchmark/加载身份探针以及完整
 崩溃后恢复尚未实现。当前 `compare` 使用维护者明确提供的本地程序；程序负责
 启动它的所有 rank，并遵守 [结果合同](docs/result-contract.md)。没有远程接口。
 
@@ -76,7 +80,7 @@ python3 -m pytest -q
 测试覆盖完整演练、错误输出/退化拒绝、缺失或错误 rank、非有限指标、越界补丁、
 证据变更、预算停止和真实子进程组清理。CPU fixture 不是 NPU 或模型验证。
 
-下一步按 `docs/design.md` 接入真实 A3 的构建与加载身份核验、独立正确性参考、
+模型/服务验证采用上述 E2E 流程。下一步按 `docs/design.md` 接入真实 A3 的构建与加载身份核验、独立正确性参考、
 完整 FFN/事务计时，然后实现预算受控的候选生成和经验闭环。
 
 本次交付与后续边界记录在 [实施记录](docs/implementation-status.md)。

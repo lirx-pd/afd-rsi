@@ -12,7 +12,7 @@
     "npu-arch"
   ],
   "files": {
-    "skills/afd-megamoe/SKILL.md": "472775bf43a0796caa949612ab54c00204d637692c97c3fabad58d3dff56afc7",
+    "skills/afd-megamoe/SKILL.md": "fc65a3c6e9cf113ca15d745953a16a029b62e0aaa15cfc27feef561da2d3a504",
     "skills/ascendc-code-review/SKILL.md": "866f50307f57c534933f07509ca0eefd94c329d6e2fb6e5555fd0cf281faae59",
     "skills/ascendc-crash-debug/SKILL.md": "1e1a5e72a6c3d5e70563c3c7ae3291d927fb7aed7e1d9d3d96b8330f72b5c53e",
     "skills/ascendc-mc2-best-practice/SKILL.md": "c59c65780a5469991c9d74fb170b6d5e8124146d3175775aea519cd3a581d5ec",
@@ -22,6 +22,7 @@
     "skills/npu-arch/SKILL.md": "14f97ca8b73ff751214e1ec8546055f797bb732c65676b8653f5e260152fa822",
     "knowledge/afd/compact-v2.md": "5caa0fd6a8af2bd73c629e2eee9492a32fbe33945f20beffd04239a3eb6163ee",
     "knowledge/afd/runtime-build.md": "509060632450f60648019eecf35c525ad80796ce349ccd0cc7adebf7aba8f4e0",
+    "knowledge/afd/service-testing.md": "6d78d6719b3790c1a4cf8b7a270abbf70209c863a6689a5ae437def65a7a20de",
     "knowledge/api/memory-synchronization.md": "ae6e9b15b793f38ef429cb88eb747e163e58c8d0b284ba41afa6e5ef081db698",
     "knowledge/api/mte-address-access.md": "04a09460510b9dc72115873de8a4622a956be5e7cccef40b5fabe996f08c033f",
     "knowledge/api/sync-and-visibility.md": "abbb54743b5a2bab7f6e0ad2c9bd0fd0f8d4646e78a6c46d77241da155cd87f0",
@@ -37,6 +38,23 @@
     "knowledge/reference-code/README.md": "920160dcf2eb36111a47afb79da8439f48e5ae6acf8ced8c7cd91e0cef16b2eb",
     "knowledge/reference-code/mega_moe_workspace.h": "97c236690f67ce5c3b84793beee15b182ca93a129eb0cfc0e404b8e88d52f836",
     "knowledge/troubleshooting/review-debug.md": "d8218ac5097b0073888bce41ea4ce68f814b0634be2b101a3df3f8799ae8ef01",
-    "benchmarks/fixtures/cpu_driver.py": "98fa702fcd03ab175b862713168fdf782bb2b58a8f0d9e8fecaaacd8173bdbac"
+    "benchmarks/fixtures/cpu_driver.py": "98fa702fcd03ab175b862713168fdf782bb2b58a8f0d9e8fecaaacd8173bdbac",
+    "benchmarks/service/LICENSE": "0e8566ea362276878e1f38f97da49964dbea301c15d4aa9d727f97a4c39fd943",
+    "benchmarks/service/afd_e2e/__init__.py": "56556490f57be2f31a20453217a00763c95baf86bebc3e9dd7b6d1176c1216ce",
+    "benchmarks/service/afd_e2e/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
+    "benchmarks/service/afd_e2e/cli.py": "5fc5667de21185f1b444bcf5521a63fb6145afd5b1ed063ebfe7bf39d1f743ab",
+    "benchmarks/service/afd_e2e/config.py": "0e6e1a6359b352bd336d9a7775773f20ff6b0cfd5105aba50e703d4af2b6b966",
+    "benchmarks/service/afd_e2e/evaluation.py": "c89d16bce0b087810d0f0b862599a5840b79211a8b1c3c1a782de8172f5dfe86",
+    "benchmarks/service/afd_e2e/metrics.py": "f7228ed2fd09ea59f3451afa6dabad8d9666f8342ee0c976b36828bcf0823e5a",
+    "benchmarks/service/afd_e2e/performance.py": "adde68b2ecf82331921eb7d39da129cddd8844635e7e300dfdb99ff334f17650",
+    "benchmarks/service/afd_e2e/planner.py": "6fae550e45509794607d3095d95d7746661b97f234d4beb3767b6cae87e9c39e",
+    "benchmarks/service/afd_e2e/probe.py": "e0d1590f05776d83debbb01fb69354f2dd653a7bb69a930d87823ccca186a37a",
+    "benchmarks/service/afd_e2e/process_utils.py": "8fcd83afca520fe0b45308f6e8a47d9a32357ba134a3e2d299ff1717c9cddce8",
+    "benchmarks/service/afd_e2e/reporting.py": "fd82cbdfee412d72eb24c1da672f94371eb92aaa692bb98ec90aab2b18837dcd",
+    "benchmarks/service/afd_e2e/routing.py": "dbef13062e82cc7700381e497ee681f4d5bec0e3bef8a13b17dbb897ca05d4b4",
+    "benchmarks/service/afd_e2e/runner.py": "3d7a2681d16ba5fb0b28afe4690a4d8d2fd88e5e982bd08f9590a040a1df1287",
+    "benchmarks/service/afd_e2e/workloads.py": "0ac6d7ecdb90d0f6c9ab1e390daa748e3cef61fcc36f091d7dffbd4dfeee210b",
+    "benchmarks/service/provenance.json": "78ff5f8d1c06fb17badcabaee60224a8b10370c3cf2a10c5a4add0384149d9c5",
+    "benchmarks/service/run.py": "410baa56ce86593ed4e74831fb948291dcea8c15b596b15d81fcafc6be287dac"
   }
 }

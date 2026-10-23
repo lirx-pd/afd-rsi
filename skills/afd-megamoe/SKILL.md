@@ -5,6 +5,10 @@ description: Optimize the bounded A3 compact_v2 MegaMoe FFN path within AFD.
 
 # afd-megamoe
 
+For NPU model/service validation, follow [local service testing](../../knowledge/afd/service-testing.md).
+Use the pinned repository service runner and its real serve/HTTP/cleanup path.
+Do not invent a launcher or fabricate compare rank evidence from HTTP summaries.
+
 Scope: local A3 MegaMoe development. Read these repository-owned resources for
 this task; no global skill or online lookup is needed.
 
