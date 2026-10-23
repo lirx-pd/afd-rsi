@@ -41,7 +41,8 @@ def launch(name, argv, *, mega, repeats, reference_run=False):
     if process["status"] != "completed" or not process["cleanup_complete"]:
         raise RuntimeError(f"native {name} failed: {process['status']}")
     result = fixture_result(output / name / "stdout.log", plan["ranks"], expected, mega,
-                            settings["attn_ranks"], repeats, reference_run)
+                            settings["attn_ranks"], repeats, reference_run,
+                            full_graph=settings.get("execution", "eager") == "graph" and not reference_run)
     assert artifact_identity(repo) == expected
     verify_source(repo, lock)
     return result
@@ -58,6 +59,8 @@ measured = sys.argv[1] == "benchmark"
 argv = args + ["--mega-moe", "--reference-outputs", str(reference)]
 if measured:
     argv += ["--measure", "--warmups", str(settings["warmups"]), "--repeats", str(settings["repeats"])]
+if settings.get("execution", "eager") == "graph":
+    argv.append("--full-graph")
 native = launch("transaction", argv, mega=True, repeats=settings["repeats"] if measured else 0)
 assert all(digest(Path(name)) == value for name, value in reference_files.items())
 artifacts = {name: digest(build_dir / name) for name in plan["artifacts"]}

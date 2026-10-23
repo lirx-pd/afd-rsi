@@ -67,7 +67,11 @@ run 将实际预检、启动、监控就绪、发送 smoke 请求并清理。检
 status、inference_status、shutdown_status、cleanup_status 和 test_results；
 保留 manifest、preflight、attention/ffn 以及请求日志。强制结束与正常退出不混淆。
 
-当前先验证 eager。性能和 GSM8K 使用新目录、
+切换 `--execution graph` 时，Async CAM 服务保持 Attention eager，FFN 显式
+`cudagraph_mode=FULL`；不可给两侧直接套用 `FULL_DECODE_ONLY`。新建独立结果目录，
+核对真实启动参数、目标校验和原生 capture/replay 证据后再解释请求结果；
+部分环境不输出 FFN INFO 日志，不能把 plan 当成 capture 计数。
+性能和 GSM8K 使用新目录、
 明确的样本数/并发/长度/种子和冻结判据。工具支持 --test all,perf，一次启动后
 执行多个工作负载；它不把质量不达标当成服务崩溃，结果须逐项审核。
 

@@ -4,9 +4,10 @@
   "original_sha256": "8ff61a56db44c4233e8113e1c31b583efb2f3fd210b2402daa7b6ce61852c63c",
   "license": "Apache-2.0",
   "modifications": [
-    "Remove FULL graph execution; keep native eager runner and connector protocol.",
+    "Keep eager references; support FFN FULL graph capture/replay with disabled Python transaction and stable-address checks.",
     "Add H/I/expert shape arguments; preserve fixed synthetic W4A8 seed and layered references.",
     "Add actual loaded library identities, separated device-event transaction timing and optional profiler.",
     "Disable per-work FFN host observations only during timing; retain them for correctness."
-  ]
+  ],
+  "graph_reference_sha256": "1e58607d9652be89e105e3d18feb631cb776c8cc38e5c057cf8b6721aa46de97"
 }

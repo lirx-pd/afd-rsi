@@ -1,0 +1,780 @@
+{
+  "archive": {
+    "archive": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-graph-20261023-03/graph-evidence.tar.gz",
+    "sha256": "7d6a5918ae223bd91f02453d1294c50654983677a5a81925ec999c901863b9cc",
+    "size": 359957
+  },
+  "purpose": "FULL graph framework validation; no performance improvement claim",
+  "tested_source": "original MegaMoe baseline, separate prior successful builds",
+  "latest_target_build": "blocked: const TBuf.Get at afd_mega_moe_pipeline.h:226",
+  "latest_target_hash": "415c71b386394fa3d3cbcfcd14196683481ccb94b9f351e6866e99c8f8128e5f",
+  "foundation_hash": "64b146db99886cfe4fb5ff2ae6d8e4d069b22dcbaaec7c10cf4853135b181bcf",
+  "controller_hash": "538e71058c115e928cf3fee838b860a3497c49dedc5874858931a18ed1433f43",
+  "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+  "campaign_adapter": {
+    "correctness": {
+      "graph": [
+        {
+          "rank": 1,
+          "capture_count": 1,
+          "replay_count": 8,
+          "python_transaction_disabled": true,
+          "stable_exposed_addresses": 4
+        },
+        {
+          "rank": 2,
+          "capture_count": 1,
+          "replay_count": 7,
+          "python_transaction_disabled": true,
+          "stable_exposed_addresses": 4
+        }
+      ],
+      "result": {
+        "backend": "ascend",
+        "workload_id": "a3-w4a8-full-serialized-7case-v1",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "metric": "transaction_us",
+        "ranks": [
+          {
+            "rank": 0,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": null,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 279865,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": false
+          },
+          {
+            "rank": 1,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": null,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 279866,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": false
+          },
+          {
+            "rank": 2,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": null,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 279867,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": false
+          }
+        ]
+      }
+    },
+    "benchmark": {
+      "graph": [
+        {
+          "rank": 1,
+          "capture_count": 1,
+          "replay_count": 24,
+          "python_transaction_disabled": true,
+          "stable_exposed_addresses": 4
+        },
+        {
+          "rank": 2,
+          "capture_count": 1,
+          "replay_count": 21,
+          "python_transaction_disabled": true,
+          "stable_exposed_addresses": 4
+        }
+      ],
+      "result": {
+        "backend": "ascend",
+        "workload_id": "a3-w4a8-full-serialized-7case-v1",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "metric": "transaction_us",
+        "ranks": [
+          {
+            "rank": 0,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": 341.38571470975876,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 280852,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": true
+          },
+          {
+            "rank": 1,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": null,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 280853,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": false
+          },
+          {
+            "rank": 2,
+            "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+            "artifacts": {
+              "native/artifacts.json": "111252dad1681187405ccd31e6695cb831c4ad73279799dd1d1716a9e4ecb4a4"
+            },
+            "checks": {
+              "native_reference": true,
+              "actual_loaded_identity": true,
+              "finite_completion": true
+            },
+            "value": null,
+            "native_identity": {
+              "files": {
+                "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+                "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "98353617a5549f885ec88126c6a43674a42878c0f3e6181d00121f6b5ce509b9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "d50b05b7f9de0d4716df57b43e22d70d162bba4f2fa9d0c47957778ba5bd74ce"
+              },
+              "kernel_artifacts": {
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+                "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+              },
+              "pid": 280854,
+              "other_vendor_api_paths": [
+                "/usr/local/python3.12.13/lib/python3.12/site-packages/fla_npu/opp/vendors/fla_npu_transformer/op_api/lib/libcust_opapi.so"
+              ],
+              "note": "mapped binding/API and built device objects; kernel execution requires profiler evidence"
+            },
+            "metric_observed": false
+          }
+        ]
+      }
+    }
+  },
+  "service": {
+    "checks_passed": true,
+    "actual_identity_passed": true,
+    "gate_policy": {
+      "require_clean_shutdown": false
+    },
+    "shutdown_errors_ignored": true,
+    "summary": {
+      "run_id": "20261023T105404Z-99247493",
+      "case_id": "v4-flash-dp2tp4-ep8-async-mrv2-ffn-mrv2-graph-dbo-0-moe-0-layered-1",
+      "run_dir": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-graph-20261023-03/campaign-adapter/adapter-attempt/service/service",
+      "status": "failed",
+      "started_at": "2026-10-23T10:54:04.605668+00:00",
+      "stage": "finished",
+      "errors": [
+        "shutdown: attention.log:618: (ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+        "shutdown: ffn.log:762: (Worker_DP1_EP1 pid=287088) (Worker_DP0_EP0 pid=287110) ERROR 10-23 10:58:02 [multiproc_executor.py:1055] RuntimeError: Async graph receive is pending; retain resources"
+      ],
+      "process_exit_codes": {
+        "preflight": 0,
+        "attention": 0,
+        "ffn": 0,
+        "smoke": 0
+      },
+      "inference_status": "passed",
+      "shutdown_status": "failed",
+      "cleanup_status": "passed",
+      "stage_durations": {
+        "devices": 0.061,
+        "preflight": 0.239,
+        "startup": 227.383,
+        "smoke": 1.86,
+        "cleanup": 13.63
+      },
+      "test_results": {
+        "smoke": "passed"
+      },
+      "stage_started_at": "2026-10-23T10:58:07.778932+00:00",
+      "updated_at": "2026-10-23T10:58:07.778938+00:00",
+      "elapsed_seconds": 243.184,
+      "stage_elapsed_seconds": 0.0,
+      "metrics": {
+        "before": {
+          "http://127.0.0.1:19280": {
+            "status": "captured",
+            "path": "metrics/before-0.prom"
+          }
+        },
+        "after": {
+          "http://127.0.0.1:19280": {
+            "status": "captured",
+            "path": "metrics/after-0.prom"
+          }
+        }
+      },
+      "workload_started": 1792753072.288727,
+      "log_diagnostics": {
+        "attention": {
+          "inference": [],
+          "shutdown": [
+            {
+              "log": "attention.log",
+              "line": 611,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843] AsyncLLM output_handler failed."
+            },
+            {
+              "log": "attention.log",
+              "line": 612,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843] Traceback (most recent call last):"
+            },
+            {
+              "log": "attention.log",
+              "line": 613,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/async_llm.py\", line 789, in output_handler"
+            },
+            {
+              "log": "attention.log",
+              "line": 614,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843]     outputs = await engine_core.get_output_async()"
+            },
+            {
+              "log": "attention.log",
+              "line": 615,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+            },
+            {
+              "log": "attention.log",
+              "line": 616,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/core_client.py\", line 1175, in get_output_async"
+            },
+            {
+              "log": "attention.log",
+              "line": 617,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843]     raise self._format_exception(outputs) from None"
+            },
+            {
+              "log": "attention.log",
+              "line": 618,
+              "message": "(ApiServer_1 pid=282625) ERROR 10-23 10:57:54 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+            },
+            {
+              "log": "attention.log",
+              "line": 619,
+              "message": "(ApiServer_0 pid=282624) ERROR 10-23 10:57:54 [async_llm.py:843] AsyncLLM output_handler failed."
+            },
+            {
+              "log": "attention.log",
+              "line": 620,
+              "message": "(ApiServer_0 pid=282624) ERROR 10-23 10:57:54 [async_llm.py:843] Traceback (most recent call last):"
+            },
+            {
+              "log": "attention.log",
+              "line": 624,
+              "message": "(ApiServer_0 pid=282624) ERROR 10-23 10:57:54 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/core_client.py\", line 1175, in get_output_async"
+            },
+            {
+              "log": "attention.log",
+              "line": 625,
+              "message": "(ApiServer_0 pid=282624) ERROR 10-23 10:57:54 [async_llm.py:843]     raise self._format_exception(outputs) from None"
+            },
+            {
+              "log": "attention.log",
+              "line": 626,
+              "message": "(ApiServer_0 pid=282624) ERROR 10-23 10:57:54 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+            },
+            {
+              "log": "attention.log",
+              "line": 665,
+              "message": "(EngineCore_DP0 pid=282345) WARNING 10-23 10:58:03 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+            },
+            {
+              "log": "attention.log",
+              "line": 666,
+              "message": "(EngineCore_DP1 pid=282495) WARNING 10-23 10:58:03 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+            },
+            {
+              "log": "attention.log",
+              "line": 667,
+              "message": "WARNING 10-23 10:58:04 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=2"
+            },
+            {
+              "log": "attention.log",
+              "line": 668,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 282345"
+            },
+            {
+              "log": "attention.log",
+              "line": 669,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 282495"
+            },
+            {
+              "log": "attention.log",
+              "line": 671,
+              "message": "WARNING 10-23 10:58:04 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+            },
+            {
+              "log": "attention.log",
+              "line": 672,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 282099"
+            }
+          ]
+        },
+        "ffn": {
+          "inference": [],
+          "shutdown": [
+            {
+              "log": "ffn.log",
+              "line": 752,
+              "message": "(Worker_DP1_EP1 pid=287088) ERROR 10-23 10:58:02 [multiproc_executor.py:1055] WorkerProc hit an exception."
+            },
+            {
+              "log": "ffn.log",
+              "line": 753,
+              "message": "(Worker_DP1_EP1 pid=287088) ERROR 10-23 10:58:02 [multiproc_executor.py:1055] Traceback (most recent call last):"
+            },
+            {
+              "log": "ffn.log",
+              "line": 754,
+              "message": "(Worker_DP1_EP1 pid=287088) (Worker_DP0_EP0 pid=287110) ERROR 10-23 10:58:02 [multiproc_executor.py:1055]   File \"/vllm-workspace/vllm/vllm/v1/executor/multiproc_executor.py\", line 1047, in _execute_worker_rpc"
+            },
+            {
+              "log": "ffn.log",
+              "line": 755,
+              "message": "(Worker_DP1_EP1 pid=287088) ERROR 10-23 10:58:02 [multiproc_executor.py:1055]     output = func(*args, **kwargs)"
+            },
+            {
+              "log": "ffn.log",
+              "line": 756,
+              "message": "ERROR 10-23 10:58:02 [multiproc_executor.py:1055] WorkerProc hit an exception."
+            },
+            {
+              "log": "ffn.log",
+              "line": 757,
+              "message": "(Worker_DP1_EP1 pid=287088) (Worker_DP0_EP0 pid=287110) ERROR 10-23 10:58:02 [multiproc_executor.py:1055]              ^^^^^^^^^^^^^^^^^^^^^"
+            },
+            {
+              "log": "ffn.log",
+              "line": 758,
+              "message": "(Worker_DP1_EP1 pid=287088) ERROR 10-23 10:58:02 [multiproc_executor.py:1055] Traceback (most recent call last):"
+            },
+            {
+              "log": "ffn.log",
+              "line": 759,
+              "message": "ERROR 10-23 10:58:02 [multiproc_executor.py:1055]   File \"/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-search-20261023-04/ascend-campaign/attempts/094191c1cee34b2ea9bc5514c8c3eb65/build/baseline/native/source/afd_plugin/v1/worker/npu/ffn_worker.py\", line 246, in stop_ffn_server_loop"
+            },
+            {
+              "log": "ffn.log",
+              "line": 760,
+              "message": "(Worker_DP0_EP0 pid=287110) (Worker_DP1_EP1 pid=287088) ERROR 10-23 10:58:02 [multiproc_executor.py:1055]     raise RuntimeError("
+            },
+            {
+              "log": "ffn.log",
+              "line": 761,
+              "message": "ERROR 10-23 10:58:02 [multiproc_executor.py:1055]   File \"/vllm-workspace/vllm/vllm/v1/executor/multiproc_executor.py\", line 1047, in _execute_worker_rpc"
+            },
+            {
+              "log": "ffn.log",
+              "line": 762,
+              "message": "(Worker_DP1_EP1 pid=287088) (Worker_DP0_EP0 pid=287110) ERROR 10-23 10:58:02 [multiproc_executor.py:1055] RuntimeError: Async graph receive is pending; retain resources"
+            },
+            {
+              "log": "ffn.log",
+              "line": 889,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 282323"
+            },
+            {
+              "log": "ffn.log",
+              "line": 890,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 282439"
+            },
+            {
+              "log": "ffn.log",
+              "line": 891,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP2 pid 282554"
+            },
+            {
+              "log": "ffn.log",
+              "line": 892,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP3 pid 282686"
+            },
+            {
+              "log": "ffn.log",
+              "line": 893,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP4 pid 283492"
+            },
+            {
+              "log": "ffn.log",
+              "line": 894,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP5 pid 284833"
+            },
+            {
+              "log": "ffn.log",
+              "line": 895,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP6 pid 285813"
+            },
+            {
+              "log": "ffn.log",
+              "line": 896,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP7 pid 286380"
+            },
+            {
+              "log": "ffn.log",
+              "line": 898,
+              "message": "WARNING 10-23 10:58:04 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+            },
+            {
+              "log": "ffn.log",
+              "line": 899,
+              "message": "WARNING 10-23 10:58:04 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 281954"
+            }
+          ]
+        }
+      },
+      "log_advisories": {
+        "attention": [],
+        "ffn": []
+      },
+      "failed_stage": "shutdown",
+      "finished_at": "2026-10-23T10:58:07.778902+00:00"
+    },
+    "ffn_full_log_count": 0,
+    "loaded_processes": 16
+  },
+  "comparison": {
+    "correctness": "PASS",
+    "claim": "native synthetic weights, graph, serialized Attention sources; not model/service performance",
+    "timing": [
+      {
+        "attention_rank": 0,
+        "case": 0,
+        "baseline_us_by_trial": [
+          312.1500015258789,
+          330.2199989557266
+        ],
+        "candidate_us_by_trial": [
+          324.5700001716614,
+          333.95999670028687
+        ],
+        "gain_pct_by_trial": [
+          -3.9788558657920707,
+          -1.1325776017162643
+        ],
+        "median_gain_pct": -2.5557167337541675
+      },
+      {
+        "attention_rank": 0,
+        "case": 1,
+        "baseline_us_by_trial": [
+          258.6600035429001,
+          257.13999569416046
+        ],
+        "candidate_us_by_trial": [
+          263.2700055837631,
+          265.3999924659729
+        ],
+        "gain_pct_by_trial": [
+          -1.7822631940459417,
+          -3.2122567123462153
+        ],
+        "median_gain_pct": -2.4972599531960786
+      },
+      {
+        "attention_rank": 0,
+        "case": 2,
+        "baseline_us_by_trial": [
+          294.65000331401825,
+          311.7699921131134
+        ],
+        "candidate_us_by_trial": [
+          306.8699985742569,
+          309.56999957561493
+        ],
+        "gain_pct_by_trial": [
+          -4.147291743694771,
+          0.7056460189088032
+        ],
+        "median_gain_pct": -1.7208228623929838
+      },
+      {
+        "attention_rank": 0,
+        "case": 3,
+        "baseline_us_by_trial": [
+          308.06998908519745,
+          312.3199939727783
+        ],
+        "candidate_us_by_trial": [
+          306.2400072813034,
+          315.0999993085861
+        ],
+        "gain_pct_by_trial": [
+          0.5940149539811089,
+          -0.8901144305382205
+        ],
+        "median_gain_pct": -0.14804973827855578
+      },
+      {
+        "attention_rank": 0,
+        "case": 4,
+        "baseline_us_by_trial": [
+          264.6600008010864,
+          268.3500051498413
+        ],
+        "candidate_us_by_trial": [
+          264.1800045967102,
+          268.53999495506287
+        ],
+        "gain_pct_by_trial": [
+          0.1813633351935856,
+          -0.07079925529178621
+        ],
+        "median_gain_pct": 0.0552820399508997
+      },
+      {
+        "attention_rank": 0,
+        "case": 5,
+        "baseline_us_by_trial": [
+          560.2000057697296,
+          566.0699903964996
+        ],
+        "candidate_us_by_trial": [
+          550.8300065994263,
+          552.3699820041656
+        ],
+        "gain_pct_by_trial": [
+          1.672616757193481,
+          2.420196905816878
+        ],
+        "median_gain_pct": 2.0464068315051795
+      },
+      {
+        "attention_rank": 0,
+        "case": 6,
+        "baseline_us_by_trial": [
+          333.71999859809875,
+          340.67000448703766
+        ],
+        "candidate_us_by_trial": [
+          344.2399948835373,
+          348.2699990272522
+        ],
+        "gain_pct_by_trial": [
+          -3.152342181958307,
+          -2.2308963043747267
+        ],
+        "median_gain_pct": -2.691619243166517
+      }
+    ],
+    "baseline_mode": "MegaMoe",
+    "phases": [
+      {
+        "phase": "reference",
+        "graph": []
+      },
+      {
+        "phase": "baseline-correctness",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 8,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 7,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      },
+      {
+        "phase": "correctness",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 8,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 7,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      },
+      {
+        "phase": "pair-0-baseline",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 24,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 21,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      },
+      {
+        "phase": "pair-0-candidate",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 24,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 21,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      },
+      {
+        "phase": "pair-1-candidate",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 24,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 21,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      },
+      {
+        "phase": "pair-1-baseline",
+        "graph": [
+          {
+            "rank": 1,
+            "capture_count": 1,
+            "replay_count": 24,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          },
+          {
+            "rank": 2,
+            "capture_count": 1,
+            "replay_count": 21,
+            "python_transaction_disabled": true,
+            "stable_exposed_addresses": 4
+          }
+        ]
+      }
+    ]
+  },
+  "pytest": "........................................................................ [ 98%]\n.                                                                        [100%]\n73 passed in 46.11s\n"
+}

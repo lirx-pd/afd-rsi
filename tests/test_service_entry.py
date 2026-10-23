@@ -19,11 +19,12 @@ def invoke(*args):
                           text=True, capture_output=True, timeout=30)
 
 
-def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path):
+@pytest.mark.parametrize('execution', ['eager', 'graph'])
+def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     result = invoke("plan", "--repo", str(tmp_path / "target"), "--model", "v4-flash",
                     "--model-path", str(tmp_path / "weights"), "--device", ",".join(map(str, range(16))),
                     "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on",
-                    "--moe-ubatching", "off", "--execution", "eager", "--dbo", "off",
+                    "--moe-ubatching", "off", "--execution", execution, "--dbo", "off",
                     "--serve-env", "AFD_ASYNC_CAM_MEGA_MOE=1", "--test", "smoke",
                     "--nic", "lo", "--afd-host", "127.0.0.1")
     assert result.returncode == 0, result.stderr
@@ -41,6 +42,11 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path):
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_MEGA_MOE"] == "1"
     for service in services.values():
         command = service["command"]
+        assert ('--enforce-eager' in command) == (execution == 'eager' or service['role'] == 'attention')
+        if execution == 'graph' and service['role'] == 'ffn':
+            compilation = json.loads(command[command.index('--compilation-config') + 1])
+            assert compilation['cudagraph_mode'] == 'FULL'
+            assert compilation['cudagraph_capture_sizes']
         additional = json.loads(command[command.index("--additional-config") + 1])
         extra = additional["afd"]["connector_extra_config"]
         assert set(extra) == {"hccl_buffer_size", "dynamicQuant", "attn_ranks_per_dp"}

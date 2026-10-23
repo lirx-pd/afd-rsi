@@ -20,11 +20,12 @@ python3 -m afd_rsi export /tmp/rsi-search-demo --best --output /tmp/rsi-best
 ```
 
 该 recipe 的耗时是合成字段，只验证 Agent/控制器的合同。实际 NPU 使用
-`recipes/ascend_eager.toml`：先按现场修改 source、已分配设备、模型路径、网络和
-预算，再 prepare。其原生驱动确实运行目标的 build_ext 和 torchrun eager A/F
+`recipes/ascend_eager.toml` 或 `recipes/ascend_graph.toml`：先按现场修改 source、已分配设备、模型路径、网络和
+预算，再 prepare。其原生驱动确实运行目标的 build_ext 和 torchrun A/F
 fixture，比较两个 MegaMoe 版本，使用共同 layered 数值参考，校验实际加载库和
 设备对象身份；主指标是主 Attention rank 的七个 case 事务样本均值（us）。
-FFN rank 没有伪造计时，仍必须给出完整数值/身份/清理检查。
+FFN rank 没有伪造计时，仍必须给出完整数值/身份/清理检查。graph 配方额外检查
+实际 FULL 捕获/replay 和禁止 eager 回退；参考输出仍来自 layered eager。
 
 ## 服务是 campaign 的固定阶段
 
@@ -39,7 +40,7 @@ side/service/trial 中。启用服务时，两侧每次初筛和确认都必须�
 全部冻结测试、实际映射库身份和 cleanup 必须通过；报告/启动/推理错误不能
 借此忽略。该策略只能在 prepare 前设置，Agent 无权修改。没有把服务结果伪装为
 native 全 rank 指标。样例配置为真实 V4 W4A8、
-16 设备 DP2TP4/EP8 的 eager smoke；正式精度/性能应在 prepare 前固定对应的
+16 设备 DP2TP4/EP8 的 eager 或 graph smoke（按 recipe 分开冻结）；正式精度/性能应在 prepare 前固定对应的
 GSM8K/perf 参数和数据，不能在搜索中放宽门槛。
 
 ## Agent 和 NPU 不在同一台机器
@@ -103,5 +104,5 @@ PYTHONPATH="/path/campaign/foundation/src${PYTHONPATH:+:$PYTHONPATH}" \
 
 限制：目前是单 workload、单主指标、串行候选搜索；上下文有固定大小，省略的
 源码文件会列在请求中。类别评分用于探索排序，不是独立策略质量评测。可信
-benchmark/同权限模型进程不构成安全沙箱；哈希用于检测漂移。FULL graph、设备
+benchmark/同权限模型进程不构成安全沙箱；哈希用于检测漂移。设备
 重置、分布式调度和自动修改底座均不在范围内。

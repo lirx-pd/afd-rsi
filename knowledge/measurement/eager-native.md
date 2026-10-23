@@ -32,3 +32,16 @@ Missing ranks, actual-library mismatches, changed source/artifacts, malformed
 or nonfinite samples and incomplete cleanup invalidate the attempt. Failed
 attempts remain inspectable. Current native compare is a manual diagnostic
 entry, separate from automatic campaign promotion and crash recovery.
+
+FULL graph uses the same fixture with --full-graph, and eager layered references.
+Require explicit graph execution on all ranks, capture/replay counts on every
+FFN rank, stable exposed addresses, and disabled Python transactions. Timing
+replays the graph without diagnostic D2H copies or buffer poisoning. A graph
+request must never fall back to eager. Freeze native.execution and matching
+service --execution in separate recipes; eager and graph evidence are distinct.
+
+Async CAM service graph also means FFN explicit FULL with Attention eager.
+FULL_DECODE_ONLY on FFN and graph on Attention violate the target validator.
+MegaMoe metadata starts at offset zero for the tiled executor with completion;
+the original executor layout places metadata after aligned X/scales. Freeze
+the target source/artifact identities; do not mix layouts or comparison modes.

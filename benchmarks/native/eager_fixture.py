@@ -10,6 +10,7 @@ claim checkpoint-loader or model E2E coverage.
 
 from __future__ import annotations
 
+import gc
 import argparse
 import faulthandler
 import json
@@ -134,6 +135,7 @@ def main():
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--profile-dir")
+    parser.add_argument("--full-graph", action="store_true")
     parser.add_argument("--attn-ranks", type=int, choices=(1, 2), default=1)
     parser.add_argument("--boundary", action="store_true")
     parser.add_argument("--tile-boundary", action="store_true")
@@ -145,7 +147,7 @@ def main():
         parser.error("H/I must be aligned and in [256,8192]")
     if not 4 <= EXPERTS <= 256 or args.repeats < 1 or args.warmups < 0:
         parser.error("invalid expert/repeat bounds")
-    if args.mega_moe and not args.reference_outputs:
+    if (args.full_graph or args.mega_moe) and not args.reference_outputs:
         parser.error("MegaMoE requires saved matching layered eager outputs")
     os.environ["AFD_ASYNC_CAM_MEGA_MOE"] = "1" if args.mega_moe else "0"
     faulthandler.dump_traceback_later(60)
@@ -191,7 +193,7 @@ def main():
         },
         model_config=SimpleNamespace(
             dtype=torch.bfloat16,
-            enforce_eager=True,
+            enforce_eager=not (args.full_graph and is_ffn),
             hf_config=SimpleNamespace(
                 hidden_size=HIDDEN,
                 num_experts_per_tok=2,
@@ -256,7 +258,8 @@ def main():
             def align(n):
                 return (n + 511) // 512 * 512
 
-            batch_offset = align(capacity * HIDDEN) + align(capacity * 4)
+            # Tiled MegaMoe places metadata first; the original layout follows X/scales.
+            batch_offset = 0 if hasattr(mega, "completion") else align(capacity * HIDDEN) + align(capacity * 4)
             batch_bytes = (5 + 1 + EXPERTS) * 8
             count_offset = batch_offset + align(batch_bytes)
             mega_state = SimpleNamespace(
@@ -267,28 +270,101 @@ def main():
                     torch.int64
                 ),
             )
+        if args.full_graph:
+            assert runner.effective_mode == "full"
+            assert runner._graph_capture_count == (2 if getattr(runner, "_batch_graph", None) is not None else 1)
+
+            def capture_addresses():
+                session = runner
+                if args.mega_moe:
+                    return tuple(
+                        t.data_ptr()
+                        for t in (
+                            mega.anchor,
+                            mega.layer_map,
+                            mega.scratch,
+                            session._graph_output,
+                        )
+                    )
+                state = session._graph_payload.context.states
+                return tuple(
+                    tensor.data_ptr()
+                    for tensor in (
+                        session._graph_payload.hidden_states,
+                        state.dynamic_scales,
+                        state.group_list,
+                        state.token_nums_rankid_layeridx,
+                        state.send_completion,
+                        session._graph_output,
+                        *session._graph_tensors,
+                    )
+                )
+
+            captured_addresses = capture_addresses()
+            gc.collect()
+            torch.npu.empty_cache()
+
+            def forbid_python_transaction(*args, **kwargs):
+                raise AssertionError(
+                    "FULL service must replay the captured transaction"
+                )
+
+            connector.recv_attn_output = forbid_python_transaction
+            connector.send_ffn_output = forbid_python_transaction
+            # Test-only per-replay observations, fenced once at the batch end.
+            # Production batching performs no host metadata copy.
+            session = runner
+            state = (
+                mega_state if args.mega_moe else session._graph_payload.context.states
+            )
+            headers = torch.empty(
+                (len(LAYERS), state.token_nums_rankid_layeridx.numel()),
+                dtype=torch.int64,
+                pin_memory=True,
+            )
+            counts = torch.empty(
+                (len(LAYERS), state.group_list.numel()),
+                dtype=state.group_list.dtype,
+                pin_memory=True,
+            )
+            graph = session._graph
+            batch_index = 0
+
+            def observed_replay():
+                nonlocal batch_index
+                graph.replay()
+                headers[batch_index].copy_(
+                    state.token_nums_rankid_layeridx, non_blocking=True
+                )
+                counts[batch_index].copy_(state.group_list, non_blocking=True)
+                batch_index += 1
+
+            if not args.measure:
+                session._graph = SimpleNamespace(replay=observed_replay, reset=graph.reset)
     else:
         connector.init_afd_connector()
-    # Cold MC2 needs all A/F peers to participate. This finite eager fixture
-    # warms the original operators concurrently before ordered DP cases.
-    with torch.inference_mode():
-        if is_ffn:
-            for _ in range(args.attn_ranks):
-                runner._ffn_forward_connector_driven(single=True)
-        else:
-            hidden = torch.ones((1, HIDDEN), dtype=torch.bfloat16, device=device)
-            context = AFDTransferContext(AFDTransferMetadata(LAYERS[0], 0, [1]))
-            connector.send_attn_output(
-                hidden,
-                context,
-                topk_ids=torch.tensor([[0, 1]], dtype=torch.int32, device=device),
-                topk_weights=torch.full((1, 2), 0.5, device=device),
-            )
-            connector.recv_ffn_output(hidden, context=context)
-        torch.npu.synchronize()
-    dist.barrier()
-    print(json.dumps({"rank": rank, "stage": "transport_ready"}), flush=True)
+    if not args.full_graph:
+        # Cold MC2 needs all A/F peers to participate. This finite eager fixture
+        # warms the original operators concurrently before ordered DP cases.
+        with torch.inference_mode():
+            if is_ffn:
+                for _ in range(args.attn_ranks):
+                    runner._ffn_forward_connector_driven(single=True)
+            else:
+                hidden = torch.ones((1, HIDDEN), dtype=torch.bfloat16, device=device)
+                context = AFDTransferContext(AFDTransferMetadata(LAYERS[0], 0, [1]))
+                connector.send_attn_output(
+                    hidden,
+                    context,
+                    topk_ids=torch.tensor([[0, 1]], dtype=torch.int32, device=device),
+                    topk_weights=torch.full((1, 2), 0.5, device=device),
+                )
+                connector.recv_ffn_output(hidden, context=context)
+            torch.npu.synchronize()
+        dist.barrier()
+        print(json.dumps({"rank": rank, "stage": "transport_ready"}), flush=True)
     report["identity"] = loaded_identity()
+    report["execution"] = "graph" if args.full_graph else "eager"
     report["timing"] = []
     prof = None
     if args.profile_dir:
@@ -333,7 +409,7 @@ def main():
             }
         )
 
-    if is_ffn and args.mega_moe and not args.measure:
+    if is_ffn and args.mega_moe and not args.measure and not args.full_graph:
         original_step = runner._ffn_forward_connector_driven
 
         def observe_mega_step(**kwargs):
@@ -344,7 +420,7 @@ def main():
             return result
 
         runner._ffn_forward_connector_driven = observe_mega_step
-    if is_ffn and not args.mega_moe and not args.measure:
+    if is_ffn and not args.mega_moe and not args.measure and not args.full_graph:
         original_send = connector.send_ffn_output
 
         def observe_eager(output, context, **kwargs):
@@ -356,11 +432,54 @@ def main():
         connector.send_ffn_output = observe_eager
 
     def serve():
+        nonlocal batch_index
         try:
             torch.npu.set_device(local_rank)
-            with torch.inference_mode():
-                for _ in expected:
-                    runner._ffn_forward_connector_driven(single=True)
+            if not args.full_graph:
+                with torch.inference_mode():
+                    for _ in expected:
+                        runner._ffn_forward_connector_driven(single=True)
+                return
+            connector.graph_startup.service_ready()
+            for start in range(0, len(expected), len(LAYERS)):
+                batch_index = 0
+                # Test-only finite work count, including the final short batch.
+                # The production loop has no EOS or cross-role stop protocol.
+                count = min(len(LAYERS), len(expected) - start)
+                runner._submit_graph(count)
+                runner._complete_graph()
+                session = runner
+                if args.mega_moe:
+                    assert session._graph_output.item() == 0
+                assert capture_addresses() == captured_addresses
+                if not args.measure:
+                    for header, group in zip(
+                        headers[:count].tolist(), counts[:count], strict=True
+                    ):
+                        if header[2] >= 0:
+                            report["work"].append(
+                                {
+                                    "source": header[1],
+                                    "layer": header[2],
+                                    "rows": int(group.sum()),
+                                }
+                            )
+                if args.boundary and not args.measure and start + count < len(expected):
+                    # Poison between completed replays on the graph stream.
+                    # DR must overwrite valid rows and ignore unused capacity.
+                    with (
+                        torch.inference_mode(),
+                        torch.npu.stream(session._graph_stream),
+                    ):
+                        if args.mega_moe:
+                            mega.scratch.fill_(113)
+                        else:
+                            session._graph_payload.hidden_states.fill_(113)
+                            session._graph_payload.context.states.dynamic_scales.fill_(
+                                3
+                            )
+                            session._graph_output.fill_(123)
+            runner._graph_receiver_exited = True
         except Exception as exc:
             errors.append(exc)
             print(json.dumps({"rank": rank, "service_error": repr(exc)}), flush=True)
@@ -458,6 +577,14 @@ def main():
             assert (observed["source"], observed["layer"]) == (source, layer)
             if rows is not None:
                 assert observed["rows"] == rows, "zero work or chunk mismatch"
+        if args.full_graph:
+            report["graph"] = {
+                "capture_count": runner._graph_capture_count,
+                "replay_count": runner._graph_replay_count,
+                "python_transaction_disabled": True,
+                "stable_exposed_addresses": len(captured_addresses),
+            }
+            assert runner._graph_replay_count == len(expected)
     if prof is not None:
         torch.npu.synchronize()
         prof.stop()

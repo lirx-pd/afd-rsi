@@ -215,7 +215,8 @@ def _service_command(
         command.extend(
             ("--additional-config", json.dumps(config, separators=(",", ":")))
         )
-    if case.execution == "eager":
+    async_graph = case.execution == "graph" and case.comm == "async" and not case.baseline
+    if case.execution == "eager" or (async_graph and role == "attention"):
         command.append("--enforce-eager")
     else:
         command.extend(
@@ -223,7 +224,7 @@ def _service_command(
                 "--compilation-config",
                 json.dumps(
                     {
-                        "cudagraph_mode": "FULL_DECODE_ONLY",
+                        "cudagraph_mode": "FULL" if async_graph else "FULL_DECODE_ONLY",
                         "cudagraph_capture_sizes": case.capture_sizes,
                     },
                     separators=(",", ":"),

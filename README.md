@@ -15,13 +15,13 @@ AB/BA、报告和补丁导出，以及 Codex 提案、受预算约束的自动�
 启动 A/F、预检、就绪、真实 HTTP 请求和进程清理。详见
 [NPU 服务测试](docs/npu-service-testing.md)，入口为 `python3 -m afd_rsi service --help`。
 
-真实 eager 原生实验提供 `native build/compare`，调用目标自己的构建入口、真实
+真实 eager/FULL graph 原生实验提供 `native build/compare`，调用目标自己的构建入口、真实
 runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务计时和独立 profiler。
-支持独立 MegaMoe 基线/候选和自动 JSON/Markdown 报告，见 [eager 原生实验](docs/eager-native.md)。不包含 FULL graph。
+支持独立 MegaMoe 基线/候选和自动 JSON/Markdown 报告，见 [原生实验](docs/eager-native.md)。FULL 使用 eager layered 参考，并检查实际捕获和 replay。
 本轮样例服务门槛按约定暂不考察正常关闭错误；原始失败仍归档，推理、身份和清理必须通过。
 
 自动搜索使用已有登录的 Codex CLI，也支持提案机和执行机通过文件交换，详见
-[自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 将真实
+[自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
 原生构建和 AFD E2E 服务接入同一个 campaign。框架不耦合调度平台或 SSH。
 通用 benchmark 遵守 [结果合同](docs/result-contract.md)。
 
@@ -90,12 +90,12 @@ python3 -m pytest -q
 独立复测，`resume` 先协调进程和设备健康再复用已完成阶段，`export --best` 导出
 确认过的最佳版本。原生入口的合成权重和串行事务边界见其文档。
 
-本次交付与后续边界记录在 [实施记录](docs/implementation-status.md)，实际功能验证见 [RSI 验证](docs/validation/rsi-20261023.md)，此前原生记录见 [eager 验证](docs/validation/eager-20261023.md)。
+本次交付与后续边界记录在 [实施记录](docs/implementation-status.md)，实际功能验证见 [RSI 验证](docs/validation/rsi-20261023.md)，FULL graph 实测见 [graph 验证](docs/validation/graph-20261023.md)，此前原生记录见 [eager 验证](docs/validation/eager-20261023.md)。
 
 当前限制：本地命令仍属于可信 benchmark；执行器用继承的试验标记与 pidfd 跟踪
 退出进程组的子进程。跨主机/重启后的回执无法自动证明资源归属，会停止续跑。
 Ascend 中断后基础计算健康检查通过才继续，不自动重置设备，也不保证所有通信
-故障都能恢复。历史经验不会自动改写底座；FULL graph 和正式性能调优未开展。
+故障都能恢复。历史经验不会自动改写底座；正式性能调优未开展。
 
 项目尚未选定整体发布许可证。复制的 AFD 参考头文件保留原版权声明和其
 `knowledge/reference-code/LICENSE`；不把该许可证自动扩展到其他内容。

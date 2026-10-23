@@ -58,8 +58,10 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("validation driver escapes foundation")
     if "native" in config:
         native = config["native"]
-        if set(native) != {"devices", "hidden", "intermediate", "experts", "attn_ranks", "warmups", "repeats", "per_group"}:
+        if set(native) - {"execution"} != {"devices", "hidden", "intermediate", "experts", "attn_ranks", "warmups", "repeats", "per_group"}:
             raise ValueError("invalid native settings")
+        if native.get("execution", "eager") not in ("eager", "graph"):
+            raise ValueError("native execution must be eager or graph")
         for key in ("hidden", "intermediate"):
             positive(native[key], key, integer=True)
             if native[key] % 256 or not 256 <= native[key] <= 8192:
@@ -88,8 +90,16 @@ def load_recipe(path: Path) -> dict:
         reserved = {"--repo", "--output", "--baseline", "--python", "--cleanup-timeout"}
         if any(arg.split("=", 1)[0] in reserved or "AFD_RSI_PROCESS_TAG" in arg or "AFD_RSI_ANCESTOR_TAGS" in arg for arg in service["args"]):
             raise ValueError("service repo/output/python/cleanup and process ownership are framework owned")
-        if "graph" in service["args"] or any(arg.startswith("--execution=") and arg != "--execution=eager" for arg in service["args"]):
-            raise ValueError("campaign service currently supports eager only")
+        execution = "eager"
+        for index, argument in enumerate(service["args"]):
+            if argument == "--execution":
+                execution = service["args"][index + 1] if index + 1 < len(service["args"]) else ""
+            elif argument.startswith("--execution="):
+                execution = argument.split("=", 1)[1]
+        if execution not in ("eager", "graph"):
+            raise ValueError("invalid service execution")
+        if "native" in config and execution != config["native"].get("execution", "eager"):
+            raise ValueError("native and service execution must match")
         for key in ("timeout_seconds", "cleanup_seconds"):
             positive(service[key], f"service {key}")
     if "search" in config:

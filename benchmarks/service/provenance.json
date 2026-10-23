@@ -4,7 +4,8 @@
   "license": "Apache-2.0",
   "modifications": [
     "Adapt to current AFDAsyncExtraInfo: omit removed async_moe_ubatching field and reject unsupported on before launch.",
-    "Default V4 async context to the verified 32768 tokens instead of 65536."
+    "Default V4 async context to the verified 32768 tokens instead of 65536.",
+    "For Async CAM graph: keep Attention eager and request explicit FULL on FFN, as required by the target validator."
   ],
   "files": {
     "afd_e2e/__init__.py": "56556490f57be2f31a20453217a00763c95baf86bebc3e9dd7b6d1176c1216ce",
@@ -14,7 +15,7 @@
     "afd_e2e/evaluation.py": "c89d16bce0b087810d0f0b862599a5840b79211a8b1c3c1a782de8172f5dfe86",
     "afd_e2e/metrics.py": "f7228ed2fd09ea59f3451afa6dabad8d9666f8342ee0c976b36828bcf0823e5a",
     "afd_e2e/performance.py": "adde68b2ecf82331921eb7d39da129cddd8844635e7e300dfdb99ff334f17650",
-    "afd_e2e/planner.py": "f255f872c6a2b7b6f05de509de71600266dc36e542366afa0032fd7e267e1303",
+    "afd_e2e/planner.py": "b8788b81c3c0591f5fa8b57c13aa598e4cf13d08aed6a07673eb9a3f547892b4",
     "afd_e2e/probe.py": "e0d1590f05776d83debbb01fb69354f2dd653a7bb69a930d87823ccca186a37a",
     "afd_e2e/process_utils.py": "8fcd83afca520fe0b45308f6e8a47d9a32357ba134a3e2d299ff1717c9cddce8",
     "afd_e2e/reporting.py": "fd82cbdfee412d72eb24c1da672f94371eb92aaa692bb98ec90aab2b18837dcd",

@@ -134,7 +134,8 @@ def test_native_mapping_distinguishes_afd_from_other_vendors(monkeypatch, tmp_pa
         mapped_api_paths(root, maps(fla))
 
 
-def test_native_compare_routes_distinct_baseline_and_candidate(monkeypatch, tmp_path):
+@pytest.mark.parametrize('execution', ['eager', 'graph'])
+def test_native_compare_routes_distinct_baseline_and_candidate(monkeypatch, tmp_path, execution):
     from types import SimpleNamespace
     from afd_rsi import native
     root = tmp_path / 'framework'
@@ -152,11 +153,15 @@ def test_native_compare_routes_distinct_baseline_and_candidate(monkeypatch, tmp_
         return {'files':{'binding.so':repo.name},'kernel_artifacts':{'kernel.o':repo.name}}
 
     def execute(argv, cwd, output, timeout, env):
-        calls.append((cwd, '--mega-moe' in argv, env['AFD_RSI_TARGET']))
+        calls.append((cwd, '--mega-moe' in argv, env['AFD_RSI_TARGET'], '--full-graph' in argv))
         output.mkdir(parents=True)
         data = result('--mega-moe' in argv, 100 if cwd == baseline else 120)
         for report in data['reports']:
             report['identity'] = identity(cwd)
+            report['execution'] = 'graph' if '--full-graph' in argv else 'eager'
+            if report['rank']:
+                report['graph'] = {'capture_count': 2, 'replay_count': 8,
+                                   'python_transaction_disabled': True, 'stable_exposed_addresses': 4}
             if '--measure' not in argv:
                 report['timing'] = []
         (output/'stdout.log').write_text(json.dumps(data))
@@ -168,14 +173,52 @@ def test_native_compare_routes_distinct_baseline_and_candidate(monkeypatch, tmp_
     output = tmp_path/'comparison'
     args = SimpleNamespace(baseline_repo=baseline, attn_ranks=1, pairs=1, profile=False,
                            per_group=False, hidden=256, experts=4, intermediate=512,
-                           timeout=30, repeats=1, warmups=0)
+                           timeout=30, repeats=1, warmups=0, execution=execution)
     native.compare(candidate, output, '0,1,2', root, args)
-    assert [(repo, mega) for repo, mega, _ in calls] == [
+    assert [(repo, mega) for repo, mega, _, _ in calls] == [
         (baseline,False),(baseline,True),(candidate,True),(baseline,True),(candidate,True)]
-    assert all(str(repo) == target for repo, _, target in calls)
+    assert all(str(repo) == target for repo, _, target, _ in calls)
+    assert [graph for _, _, _, graph in calls] == [False] + [execution == 'graph'] * 4
     summary = json.loads((output/'summary.json').read_text())
     assert summary['baseline_mode'] == 'MegaMoe'
     assert summary['timing'][0]['median_gain_pct'] == -20
     plan = json.loads((output/'plan.lock.json').read_text())
     assert plan['sides']['baseline']['source']['hash'] != plan['sides']['candidate']['source']['hash']
     assert 'Baseline: MegaMoe' in (output/'report.md').read_text()
+
+
+def test_full_graph_requires_capture_replay_and_no_eager_fallback(tmp_path):
+    log = tmp_path / 'stdout.log'
+    data = result(True)
+    for report in data['reports']:
+        report['execution'] = 'graph'
+        if report['rank']:
+            report['graph'] = {'capture_count': 2, 'replay_count': 8,
+                               'python_transaction_disabled': True, 'stable_exposed_addresses': 4}
+    log.write_text(json.dumps(data))
+    fixture_result(log, 3, IDENTITY, True, 1, 1, full_graph=True)
+    for field, value in [('capture_count', 0), ('replay_count', 0), ('python_transaction_disabled', False), ('stable_exposed_addresses', 0)]:
+        broken = copy.deepcopy(data)
+        broken['reports'][1]['graph'][field] = value
+        log.write_text(json.dumps(broken))
+        with pytest.raises(ValueError, match='FULL'):
+            fixture_result(log, 3, IDENTITY, True, 1, 1, full_graph=True)
+    data['reports'][0]['execution'] = 'eager'
+    log.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='FULL'):
+        fixture_result(log, 3, IDENTITY, True, 1, 1, full_graph=True)
+
+
+def test_graph_recipe_freezes_matching_native_and_service_modes(tmp_path):
+    from afd_rsi.contracts import load_recipe
+    root = Path(__file__).resolve().parents[1]
+    source = tmp_path / 'target'
+    source.mkdir()
+    recipe = tmp_path / 'graph.toml'
+    text = (root / 'recipes/ascend_graph.toml').read_text().replace('../../afd-plugin', str(source))
+    recipe.write_text(text)
+    plan = load_recipe(recipe)
+    assert plan['native']['execution'] == 'graph'
+    recipe.write_text(text.replace('"--execution", "graph"', '"--execution", "eager"'))
+    with pytest.raises(ValueError, match='must match'):
+        load_recipe(recipe)

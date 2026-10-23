@@ -1,4 +1,4 @@
-"""Eager-only native experiments on a prepared local Ascend host."""
+"""Native eager/FULL graph experiments on a prepared local Ascend host."""
 
 import argparse
 import csv
@@ -69,7 +69,7 @@ def build(source: Path, output: Path, timeout: float):
 
 
 def fixture_result(path: Path, ranks: int, expected: dict, mega: bool, attn_ranks: int,
-                   repeats: int, reference: bool = False) -> dict:
+                   repeats: int, reference: bool = False, *, full_graph=False) -> dict:
     records = []
     for line in path.read_text().splitlines():
         try:
@@ -92,6 +92,16 @@ def fixture_result(path: Path, ranks: int, expected: dict, mega: bool, attn_rank
             raise ValueError("native mode/cleanup evidence incomplete")
         if {k: report.get("identity", {}).get(k) for k in expected} != expected:
             raise ValueError("actual loaded native identity mismatch")
+        if full_graph:
+            graph = report.get("graph", {})
+            if report.get("execution") != "graph":
+                raise ValueError("FULL graph execution evidence missing")
+            if report["rank"] >= attn_ranks and (
+                    type(graph.get("capture_count")) is not int or graph["capture_count"] not in ((1, 2) if mega else (1,))
+                    or type(graph.get("replay_count")) is not int or graph["replay_count"] <= 0
+                    or graph.get("python_transaction_disabled") is not True
+                    or type(graph.get("stable_exposed_addresses")) is not int or graph["stable_exposed_addresses"] <= 0):
+                raise ValueError("FULL capture/replay evidence incomplete")
         attention = report["rank"] < attn_ranks
         if attention and not reference and report.get("layered_reference_close" if mega else "eager_exact_match") is not True:
             raise ValueError("native numerical checks missing")
@@ -141,7 +151,7 @@ def profile_evidence(directory: Path, ffn_ranks: int) -> list:
 
 
 def write_report(output: Path, summary: dict):
-    lines = ["# Eager native comparison", "", summary["claim"], "",
+    lines = ["# Native comparison", "", summary["claim"], "",
              f"Numerical consistency: **{summary['correctness']}**", "",
              "Timing is diagnostic; correctness does not establish a performance improvement.", "",
              f"Baseline: {summary.get('baseline_mode', 'layered')}; candidate: MegaMoe.", "",
@@ -160,6 +170,7 @@ def write_report(output: Path, summary: dict):
 
 
 def compare(repo: Path, output: Path, devices: str, root: Path, args):
+    execution = getattr(args, "execution", "eager")
     selected = devices.split(",")
     if not all(s.isascii() and s.isdecimal() for s in selected):
         raise ValueError("device IDs must be decimal integers")
@@ -186,7 +197,7 @@ def compare(repo: Path, output: Path, devices: str, root: Path, args):
         identities[path] = {"source": snapshot, "artifacts": artifact_identity(path)}
     sides = ("baseline", "candidate") if args.baseline_repo else ("layered", "mega")
     repositories = {sides[0]: baseline, sides[1]: repo}
-    write_json(output / "plan.lock.json", {"mode": "eager", "scope": "synthetic-weight native A/F transaction",
+    write_json(output / "plan.lock.json", {"mode": execution, "scope": "synthetic-weight native A/F transaction",
                "devices": selected, "args": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
                "sides": {side: {"repo": str(path), **identities[path]} for side, path in repositories.items()},
                "foundation_hash": digest(frozen / "skills/manifest.json"),
@@ -208,6 +219,8 @@ def compare(repo: Path, output: Path, devices: str, root: Path, args):
                 "--attn-ranks", str(args.attn_ranks)]
         if args.per_group:
             argv.append("--per-group")
+        if execution == "graph" and phase != "reference":
+            argv.append("--full-graph")
         if mega:
             argv.append("--mega-moe")
         if phase == "reference":
@@ -230,7 +243,8 @@ def compare(repo: Path, output: Path, devices: str, root: Path, args):
             if process["status"] != "completed" or not process["cleanup_complete"]:
                 raise RuntimeError(f"native {phase} failed; preserve logs and inspect device health")
             entry["result"] = fixture_result(output / phase / "stdout.log", len(selected), artifacts, mega,
-                                             args.attn_ranks, args.repeats if measured else 0, phase == "reference")
+                                             args.attn_ranks, args.repeats if measured else 0, phase == "reference",
+                                             full_graph=execution == "graph" and phase != "reference")
             verify_source(target, snapshot)
             if artifact_identity(target) != artifacts:
                 raise ValueError("native artifacts changed during phase")
@@ -253,7 +267,7 @@ def compare(repo: Path, output: Path, devices: str, root: Path, args):
     summary = {"correctness": "PASS", "timing": comparisons, "profiler": profiler,
                "baseline_mode": "MegaMoe" if args.baseline_repo else "layered",
                "promotion": "not evaluated; paired diagnostic comparison only",
-               "claim": "native synthetic weights, eager, serialized Attention sources; not model/service performance",
+               "claim": f"native synthetic weights, {execution}, serialized Attention sources; not model/service performance",
                "observations": observations}
     write_json(output / "summary.json", summary)
     write_report(output, summary)
@@ -275,6 +289,7 @@ def main(argv, root):
     for name, default in (("hidden", 256), ("intermediate", 512), ("experts", 4),
                           ("attn-ranks", 1), ("pairs", 2), ("warmups", 3), ("repeats", 10)):
         run.add_argument(f"--{name}", type=int, default=default)
+    run.add_argument("--execution", choices=("eager", "graph"), default="eager")
     run.add_argument("--per-group", action="store_true")
     run.add_argument("--profile", action="store_true")
     run.add_argument("--timeout", type=float, default=360)

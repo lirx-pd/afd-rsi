@@ -1,4 +1,4 @@
-# Eager 原生实验
+# Eager / FULL graph 原生实验
 
 `native build/compare` 用于已准备好的 A3 Linux 主机。框架自身不分配设备，也不依赖
 SSH 或调度平台。先加载本机 CANN 环境，使用已有 torch-npu、vLLM、vLLM-Ascend、
@@ -45,7 +45,7 @@ compare 使用仓库内固定的真实 `AsyncNPUFFNModelRunner` + CAM connector 
 不能代替真实 checkpoint、EP8 或 top-k6 的服务验证。`--per-group` 切换两组 scale。
 
 每次实验依次执行：layered reference 保存实际输出、MegaMoe 正确性、AB/BA 原生
-计时、可选 profiler。所有阶段均为 eager，新建 torchrun 进程组。数值门槛沿用目标
+计时、可选 profiler。默认 eager，每个阶段新建 torchrun 进程组。数值门槛沿用目标
 fixture：MegaMoe 对保存的 layered 输出 rtol=0.04、atol=2e-5；layered 重跑要求精确
 相等。它验证对 layered 的一致性，不是独立数学实现的正确性证明。
 
@@ -69,3 +69,21 @@ stdout/stderr、全 rank 身份与结果、原始 profiler 和 `summary.json`。
 
 服务验证继续使用 [固化的 E2E 流程](npu-service-testing.md)。不要将此原生实验结果
 转换成 HTTP 指标或通用 campaign 的虚构 rank 结果；本入口当前不做候选自动晋升。
+
+FULL graph 使用同一入口，增加 `--execution graph`。例如：
+
+```bash
+python3 -m afd_rsi native compare --baseline-repo /work/build-01/source \
+  --repo /work/build-02/source --output /work/graph-01 --device 0,1,2 \
+  --execution graph
+```
+
+参考阶段固定为基线 layered eager；两侧正确性、计时和可选 profiler 均使用 FFN
+FULL graph。原生 fixture 中 Attention 仍为 eager。每个 FFN 必须报告捕获次数、
+实际 replay、稳定地址及禁用 Python 事务入口；缺失证据或 eager 回退直接失败。
+正确性阶段保留逐事务观察和边界 poisoning，计时阶段关闭这些诊断。
+
+自动 campaign 使用 `recipes/ascend_graph.toml`，其 `native.execution = "graph"`
+与服务 `--execution graph` 必须一致。服务入口为 FFN 生成显式 `FULL` 编译参数，
+并保持 Attention eager，与目标 Async CAM 校验一致。
+所有模式和证据在 prepare 时冻结；切换模式创建新 campaign，不能混合历史判定。
