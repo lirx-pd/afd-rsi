@@ -1,0 +1,740 @@
+{
+  "scope": "eager service functionality only; no new GSM8K or performance qualification",
+  "runs": {
+    "layered": {
+      "summary": {
+        "run_id": "20261023T081724Z-33e362f2",
+        "case_id": "v4-flash-dp2tp4-ep8-async-mrv2-ffn-mrv2-eager-dbo-0-moe-0-layered-1",
+        "run_dir": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/service-layered-02",
+        "status": "failed",
+        "started_at": "2026-10-23T08:17:24.708556+00:00",
+        "stage": "finished",
+        "errors": [
+          "shutdown: attention.log:618: (ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+          "shutdown: ffn.log:814: WARNING 10-23 08:21:26 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+        ],
+        "process_exit_codes": {
+          "preflight": 0,
+          "attention": 0,
+          "ffn": 0,
+          "smoke": 0
+        },
+        "inference_status": "passed",
+        "shutdown_status": "failed",
+        "cleanup_status": "passed",
+        "stage_durations": {
+          "devices": 0.035,
+          "preflight": 0.235,
+          "startup": 229.369,
+          "smoke": 2.06,
+          "cleanup": 12.609
+        },
+        "test_results": {
+          "smoke": "passed"
+        },
+        "stage_started_at": "2026-10-23T08:21:29.016659+00:00",
+        "updated_at": "2026-10-23T08:21:29.016664+00:00",
+        "elapsed_seconds": 244.319,
+        "stage_elapsed_seconds": 0.0,
+        "metrics": {
+          "before": {
+            "http://127.0.0.1:19280": {
+              "status": "captured",
+              "path": "metrics/before-0.prom"
+            }
+          },
+          "after": {
+            "http://127.0.0.1:19280": {
+              "status": "captured",
+              "path": "metrics/after-0.prom"
+            }
+          }
+        },
+        "workload_started": 1792743674.34717,
+        "log_diagnostics": {
+          "attention": {
+            "inference": [],
+            "shutdown": [
+              {
+                "log": "attention.log",
+                "line": 611,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843] AsyncLLM output_handler failed."
+              },
+              {
+                "log": "attention.log",
+                "line": 612,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843] Traceback (most recent call last):"
+              },
+              {
+                "log": "attention.log",
+                "line": 613,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/async_llm.py\", line 789, in output_handler"
+              },
+              {
+                "log": "attention.log",
+                "line": 614,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843]     outputs = await engine_core.get_output_async()"
+              },
+              {
+                "log": "attention.log",
+                "line": 615,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+              },
+              {
+                "log": "attention.log",
+                "line": 616,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/core_client.py\", line 1175, in get_output_async"
+              },
+              {
+                "log": "attention.log",
+                "line": 617,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843]     raise self._format_exception(outputs) from None"
+              },
+              {
+                "log": "attention.log",
+                "line": 618,
+                "message": "(ApiServer_0 pid=109649) ERROR 10-23 08:21:16 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+              },
+              {
+                "log": "attention.log",
+                "line": 619,
+                "message": "(ApiServer_1 pid=109650) ERROR 10-23 08:21:16 [async_llm.py:843] AsyncLLM output_handler failed."
+              },
+              {
+                "log": "attention.log",
+                "line": 620,
+                "message": "(ApiServer_1 pid=109650) ERROR 10-23 08:21:16 [async_llm.py:843] Traceback (most recent call last):"
+              },
+              {
+                "log": "attention.log",
+                "line": 624,
+                "message": "(ApiServer_1 pid=109650) ERROR 10-23 08:21:16 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/core_client.py\", line 1175, in get_output_async"
+              },
+              {
+                "log": "attention.log",
+                "line": 625,
+                "message": "(ApiServer_1 pid=109650) ERROR 10-23 08:21:16 [async_llm.py:843]     raise self._format_exception(outputs) from None"
+              },
+              {
+                "log": "attention.log",
+                "line": 626,
+                "message": "(ApiServer_1 pid=109650) ERROR 10-23 08:21:16 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+              },
+              {
+                "log": "attention.log",
+                "line": 665,
+                "message": "(EngineCore_DP0 pid=109360) WARNING 10-23 08:21:26 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+              },
+              {
+                "log": "attention.log",
+                "line": 666,
+                "message": "(EngineCore_DP1 pid=109501) WARNING 10-23 08:21:26 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+              },
+              {
+                "log": "attention.log",
+                "line": 667,
+                "message": "WARNING 10-23 08:21:26 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=2"
+              },
+              {
+                "log": "attention.log",
+                "line": 668,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 109360"
+              },
+              {
+                "log": "attention.log",
+                "line": 669,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 109501"
+              },
+              {
+                "log": "attention.log",
+                "line": 671,
+                "message": "WARNING 10-23 08:21:26 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+              },
+              {
+                "log": "attention.log",
+                "line": 672,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 109250"
+              }
+            ]
+          },
+          "ffn": {
+            "inference": [],
+            "shutdown": [
+              {
+                "log": "ffn.log",
+                "line": 814,
+                "message": "WARNING 10-23 08:21:26 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+              },
+              {
+                "log": "ffn.log",
+                "line": 815,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 109347"
+              },
+              {
+                "log": "ffn.log",
+                "line": 816,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 109451"
+              },
+              {
+                "log": "ffn.log",
+                "line": 817,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP2 pid 109586"
+              },
+              {
+                "log": "ffn.log",
+                "line": 818,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP3 pid 109711"
+              },
+              {
+                "log": "ffn.log",
+                "line": 819,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP4 pid 110235"
+              },
+              {
+                "log": "ffn.log",
+                "line": 820,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP5 pid 111017"
+              },
+              {
+                "log": "ffn.log",
+                "line": 821,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP6 pid 111198"
+              },
+              {
+                "log": "ffn.log",
+                "line": 822,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP7 pid 111352"
+              },
+              {
+                "log": "ffn.log",
+                "line": 824,
+                "message": "WARNING 10-23 08:21:26 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+              },
+              {
+                "log": "ffn.log",
+                "line": 825,
+                "message": "WARNING 10-23 08:21:26 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 109105"
+              }
+            ]
+          }
+        },
+        "log_advisories": {
+          "attention": [],
+          "ffn": []
+        },
+        "failed_stage": "shutdown",
+        "finished_at": "2026-10-23T08:21:29.016635+00:00"
+      },
+      "loaded_process_count": 16,
+      "loaded_processes": {
+        "110718": {
+          "pid": 110718,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111082": {
+          "pid": 111082,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111289": {
+          "pid": 111289,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111496": {
+          "pid": 111496,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "110719": {
+          "pid": 110719,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111080": {
+          "pid": 111080,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111290": {
+          "pid": 111290,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "111494": {
+          "pid": 111494,
+          "role": "attention",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112348": {
+          "pid": 112348,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112349": {
+          "pid": 112349,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112350": {
+          "pid": 112350,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112351": {
+          "pid": 112351,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112352": {
+          "pid": 112352,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112353": {
+          "pid": 112353,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112354": {
+          "pid": 112354,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "112355": {
+          "pid": 112355,
+          "role": "ffn",
+          "run_id": "20261023T081724Z-33e362f2",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        }
+      },
+      "evidence_sha256": {
+        "commands.json": "532dc141b4cb62d9853b1e6d33be7308369e5a26ff9da7ff85913bdc337e63a6",
+        "summary.json": "fc40bb2bfcea444aac3842afb75c4228097cd5cbc6ce5b0435acafa4be720946",
+        "resolved-config.json": "81e93d95129be273deed6725676e19ddac7e0bcd622066abd7f74e7ab7a38cec",
+        "plan.json": "7300855eeaaa023cd257db84dba634cb2d01d9dccf86e5b26c4de91b1d177f3d",
+        "smoke.log": "50f786ce4e6e00b8f8dde65a4710e97fcb11ee6e8de584171d2810e13b9cfda1",
+        "smoke.json": "03fbf2c51dde9a5da64ed14bb190266289ebfc95c2b6867d019390dc16afb70e"
+      }
+    },
+    "mega": {
+      "summary": {
+        "run_id": "20261023T082452Z-4edb6c16",
+        "case_id": "v4-flash-dp2tp4-ep8-async-mrv2-ffn-mrv2-eager-dbo-0-moe-0-layered-1",
+        "run_dir": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/service-mega-02",
+        "status": "failed",
+        "started_at": "2026-10-23T08:24:52.353511+00:00",
+        "stage": "finished",
+        "errors": [
+          "shutdown: attention.log:620: (ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+          "shutdown: ffn.log:814: WARNING 10-23 08:28:54 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+        ],
+        "process_exit_codes": {
+          "preflight": 0,
+          "attention": 0,
+          "ffn": 0,
+          "smoke": 0
+        },
+        "inference_status": "passed",
+        "shutdown_status": "failed",
+        "cleanup_status": "passed",
+        "stage_durations": {
+          "devices": 0.036,
+          "preflight": 0.23,
+          "startup": 230.036,
+          "smoke": 1.939,
+          "cleanup": 13.256
+        },
+        "test_results": {
+          "smoke": "passed"
+        },
+        "stage_started_at": "2026-10-23T08:28:57.849781+00:00",
+        "updated_at": "2026-10-23T08:28:57.849786+00:00",
+        "elapsed_seconds": 245.513,
+        "stage_elapsed_seconds": 0.0,
+        "metrics": {
+          "before": {
+            "http://127.0.0.1:19280": {
+              "status": "captured",
+              "path": "metrics/before-0.prom"
+            }
+          },
+          "after": {
+            "http://127.0.0.1:19280": {
+              "status": "captured",
+              "path": "metrics/after-0.prom"
+            }
+          }
+        },
+        "workload_started": 1792744122.6547823,
+        "log_diagnostics": {
+          "attention": {
+            "inference": [],
+            "shutdown": [
+              {
+                "log": "attention.log",
+                "line": 613,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843] AsyncLLM output_handler failed."
+              },
+              {
+                "log": "attention.log",
+                "line": 614,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843] Traceback (most recent call last):"
+              },
+              {
+                "log": "attention.log",
+                "line": 615,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/async_llm.py\", line 789, in output_handler"
+              },
+              {
+                "log": "attention.log",
+                "line": 616,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843]     outputs = await engine_core.get_output_async()"
+              },
+              {
+                "log": "attention.log",
+                "line": 617,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843]               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+              },
+              {
+                "log": "attention.log",
+                "line": 618,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843]   File \"/vllm-workspace/vllm/vllm/v1/engine/core_client.py\", line 1175, in get_output_async"
+              },
+              {
+                "log": "attention.log",
+                "line": 619,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843]     raise self._format_exception(outputs) from None"
+              },
+              {
+                "log": "attention.log",
+                "line": 620,
+                "message": "(ApiServer_0 pid=121754) ERROR 10-23 08:28:44 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause."
+              },
+              {
+                "log": "attention.log",
+                "line": 657,
+                "message": "(EngineCore_DP0 pid=121479) (EngineCore_DP1 pid=121617) WARNING 10-23 08:28:54 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+              },
+              {
+                "log": "attention.log",
+                "line": 658,
+                "message": "WARNING 10-23 08:28:54 [multiproc_executor.py:494] [shutdown] Executor: workers still running after SIGTERM; sending SIGKILL count=4"
+              },
+              {
+                "log": "attention.log",
+                "line": 659,
+                "message": "WARNING 10-23 08:28:54 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=2"
+              },
+              {
+                "log": "attention.log",
+                "line": 660,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 121479"
+              },
+              {
+                "log": "attention.log",
+                "line": 661,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 121617"
+              },
+              {
+                "log": "attention.log",
+                "line": 663,
+                "message": "WARNING 10-23 08:28:54 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+              },
+              {
+                "log": "attention.log",
+                "line": 664,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 121370"
+              }
+            ]
+          },
+          "ffn": {
+            "inference": [],
+            "shutdown": [
+              {
+                "log": "ffn.log",
+                "line": 814,
+                "message": "WARNING 10-23 08:28:54 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+              },
+              {
+                "log": "ffn.log",
+                "line": 815,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP0 pid 121466"
+              },
+              {
+                "log": "ffn.log",
+                "line": 816,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP1 pid 121570"
+              },
+              {
+                "log": "ffn.log",
+                "line": 817,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP2 pid 121686"
+              },
+              {
+                "log": "ffn.log",
+                "line": 818,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP3 pid 121817"
+              },
+              {
+                "log": "ffn.log",
+                "line": 819,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP4 pid 121926"
+              },
+              {
+                "log": "ffn.log",
+                "line": 820,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP5 pid 122338"
+              },
+              {
+                "log": "ffn.log",
+                "line": 821,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP6 pid 122516"
+              },
+              {
+                "log": "ffn.log",
+                "line": 822,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process EngineCore_DP7 pid 122660"
+              },
+              {
+                "log": "ffn.log",
+                "line": 824,
+                "message": "WARNING 10-23 08:28:54 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=1"
+              },
+              {
+                "log": "ffn.log",
+                "line": 825,
+                "message": "WARNING 10-23 08:28:54 [utils.py:657] [shutdown] Process manager: force killing remaining process VLLM_DP_Coordinator pid 121219"
+              }
+            ]
+          }
+        },
+        "log_advisories": {
+          "attention": [],
+          "ffn": []
+        },
+        "failed_stage": "shutdown",
+        "finished_at": "2026-10-23T08:28:57.849765+00:00"
+      },
+      "loaded_process_count": 16,
+      "loaded_processes": {
+        "122241": {
+          "pid": 122241,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122242": {
+          "pid": 122242,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122394": {
+          "pid": 122394,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122403": {
+          "pid": 122403,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122599": {
+          "pid": 122599,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122596": {
+          "pid": 122596,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122795": {
+          "pid": 122795,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "122797": {
+          "pid": 122797,
+          "role": "attention",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123650": {
+          "pid": 123650,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123651": {
+          "pid": 123651,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123652": {
+          "pid": 123652,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123653": {
+          "pid": 123653,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123654": {
+          "pid": 123654,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123655": {
+          "pid": 123655,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123656": {
+          "pid": 123656,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        },
+        "123657": {
+          "pid": 123657,
+          "role": "ffn",
+          "run_id": "20261023T082452Z-4edb6c16",
+          "files": {
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+            "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source/afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+          }
+        }
+      },
+      "evidence_sha256": {
+        "commands.json": "0a6e87d81bf7291c3317ef5c270a296d47bc9a280d4fc5a0cac4aa56a348fb83",
+        "summary.json": "bb15d305fd48d2c0372aa2357f292bf936753887fc8d0422cc412d804244b050",
+        "resolved-config.json": "44376981fb0a3dfeda564df77a5126f63b1c7fe41a4d9dbe45279aadea84bd6e",
+        "plan.json": "7ee75222dd9d5639cf0c0a39ab4af345de30cdde37ca3cd2bf182cbb152a8a24",
+        "smoke.log": "50f786ce4e6e00b8f8dde65a4710e97fcb11ee6e8de584171d2810e13b9cfda1",
+        "smoke.json": "aa671aba7c15649417864091c14fcc1dbe660c073c225bcc3bcfcdbfdb7ea428"
+      }
+    }
+  }
+}

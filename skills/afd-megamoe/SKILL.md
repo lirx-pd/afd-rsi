@@ -16,6 +16,8 @@ this task; no global skill or online lookup is needed.
 - [runtime-build](../../knowledge/afd/runtime-build.md)
 - [w4a8](../../knowledge/gmm-quantization/w4a8.md)
 - [contract](../../knowledge/measurement/contract.md)
+- [eager-native](../../knowledge/measurement/eager-native.md)
+- [search and recovery](../../knowledge/measurement/search.md)
 
 Confirm effective runner/executor/native dispatch before editing. Keep Attention routing/shared/final weighting and FFN DR/GMM/CS ownership. Preserve quantization and protocol in the first campaign. Freeze workload and gates, read relevant history, propose a falsifiable minimal patch, then use independent evaluation. Output hypothesis, patch and evidence-bound experience; never label synthetic checks as NPU proof.
 

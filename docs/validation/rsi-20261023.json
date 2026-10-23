@@ -1,0 +1,945 @@
+{
+  "schema_version": 1,
+  "created_at": 1792750923.569735,
+  "purpose": "framework validation; no production performance claim",
+  "stages": {
+    "01": {
+      "deployment": "235f16082b7731abd22b9350e728b665c28f6dac2b5686208f8558f7031b8593",
+      "cpu": {
+        "state": {
+          "schema_version": 1,
+          "status": "running",
+          "external_agent": true,
+          "calls": 2,
+          "rounds": [
+            "0001",
+            "0002"
+          ],
+          "active": "0002",
+          "reason": "",
+          "baseline": "19f6b8a5506d4aa4847e8f95ac2da18b",
+          "dispatch": {
+            "round": "0002",
+            "call": 2
+          }
+        },
+        "plan_sha256": "e903b892840a33a46728c9146a287d12e15ec887e574ba571462b25a1ce914eb",
+        "source_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+        "best": {
+          "source": "workspaces/baseline",
+          "source_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+          "baseline": "19f6b8a5506d4aa4847e8f95ac2da18b",
+          "baseline_hash": "e2e9428d22fa1692156c1d13c9ca8396602d5660eef83441ceb22dcc5acc9651",
+          "confirmation": null
+        },
+        "attempts": [
+          {
+            "id": "19f6b8a5506d4aa4847e8f95ac2da18b",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              }
+            ],
+            "baseline": {
+              "complete": true,
+              "hardware_qualified": false
+            }
+          }
+        ]
+      },
+      "ascend": {
+        "state": {
+          "schema_version": 1,
+          "status": "baseline_failed",
+          "external_agent": true,
+          "calls": 0,
+          "rounds": [],
+          "active": null,
+          "reason": "Frozen baseline gates did not all pass; no model call was made.",
+          "baseline": "91070436d2e14e2aa1c5e37022dc06bd"
+        },
+        "plan_sha256": "4a975cd343940fbaad7ee044efa32283802d722a5664ad5ad240d610ac41d997",
+        "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+        "attempts": [
+          {
+            "id": "91070436d2e14e2aa1c5e37022dc06bd",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "service",
+                "status": "valid",
+                "checks_passed": false,
+                "raw_lifecycle": {
+                  "status": "failed",
+                  "inference_status": "passed",
+                  "shutdown_status": "failed",
+                  "cleanup_status": "passed",
+                  "test_results": {
+                    "smoke": "passed"
+                  },
+                  "errors": [
+                    "shutdown: attention.log:622: (ApiServer_1 pid=179554) ERROR 10-23 09:47:47 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+                    "shutdown: ffn.log:812: WARNING 10-23 09:47:57 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+                  ]
+                },
+                "actual_identity_passed": true
+              }
+            ],
+            "baseline": {
+              "complete": false,
+              "hardware_qualified": false
+            }
+          }
+        ]
+      }
+    },
+    "02": {
+      "deployment": "0acc20a7a5dc1e26bbbc5e1ec845f43964e7e7360e928f10364b38d378274aad",
+      "cpu": {
+        "state": {
+          "schema_version": 1,
+          "status": "budget_exhausted",
+          "external_agent": true,
+          "calls": 2,
+          "rounds": [
+            "0001",
+            "0002"
+          ],
+          "active": null,
+          "reason": "Frozen wall time, round or model-call budget exhausted.",
+          "baseline": "51abba24c09f4a3197872a35c48bcc42"
+        },
+        "plan_sha256": "0657b09b08e4b93e32e3e825c5e218fa20623298a841faa4895fbf26789770ff",
+        "source_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+        "best": {
+          "source": "search/rounds/0002/source",
+          "source_hash": "a9d4b560aae31650796831d9d8f2d509fa85b1c099c9407b896d2ca94ace12bb",
+          "parent_hash": "c77728f6f5d835262035f4392773992f190ebe4c3aed1f495b5803a7c3cf9468",
+          "screen": {
+            "attempt": "c50a506b586f4104931b582f2cdbd779",
+            "hash": "85c24fe61dc927eff7379914b9a771d9c614e4c05aab56db7a68faedcb8ccdbf"
+          },
+          "confirmation": {
+            "attempt": "a3df2a0bc2054591a73f87c93933cc67",
+            "hash": "85c24fe61dc927eff7379914b9a771d9c614e4c05aab56db7a68faedcb8ccdbf"
+          }
+        },
+        "attempts": [
+          {
+            "id": "51abba24c09f4a3197872a35c48bcc42",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              }
+            ],
+            "baseline": {
+              "complete": true,
+              "hardware_qualified": false
+            }
+          },
+          {
+            "id": "5f2dcaeebf97466d8b61b16b0e0cbcbd",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "candidate",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "candidate",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              }
+            ],
+            "verdict": {
+              "verdict": "PASS",
+              "backend": "cpu-synthetic",
+              "scope": "synthetic-controller-only",
+              "unit": "synthetic_us",
+              "gain_pct": 9.999999999999998,
+              "samples": {
+                "baseline": [
+                  10.0,
+                  10.0,
+                  10.0,
+                  10.0
+                ],
+                "candidate": [
+                  9.0,
+                  9.0,
+                  9.0,
+                  9.0
+                ]
+              },
+              "reasons": [],
+              "claim": "synthetic controller fixture only"
+            }
+          },
+          {
+            "id": "92eea2cbf6204e4c91bc3ae36da04867",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "candidate",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "candidate",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              }
+            ],
+            "verdict": {
+              "verdict": "PASS",
+              "backend": "cpu-synthetic",
+              "scope": "synthetic-controller-only",
+              "unit": "synthetic_us",
+              "gain_pct": 9.999999999999998,
+              "samples": {
+                "baseline": [
+                  10.0,
+                  10.0,
+                  10.0,
+                  10.0
+                ],
+                "candidate": [
+                  9.0,
+                  9.0,
+                  9.0,
+                  9.0
+                ]
+              },
+              "reasons": [],
+              "claim": "synthetic controller fixture only"
+            }
+          },
+          {
+            "id": "a3df2a0bc2054591a73f87c93933cc67",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "candidate",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "candidate",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              }
+            ],
+            "verdict": {
+              "verdict": "PASS",
+              "backend": "cpu-synthetic",
+              "scope": "synthetic-controller-only",
+              "unit": "synthetic_us",
+              "gain_pct": 10.000000000000009,
+              "samples": {
+                "baseline": [
+                  9.0,
+                  9.0,
+                  9.0,
+                  9.0
+                ],
+                "candidate": [
+                  8.1,
+                  8.1,
+                  8.1,
+                  8.1
+                ]
+              },
+              "reasons": [],
+              "claim": "synthetic controller fixture only"
+            }
+          },
+          {
+            "id": "c50a506b586f4104931b582f2cdbd779",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "candidate",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "candidate",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "candidate",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 8.1
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 9.0
+              }
+            ],
+            "verdict": {
+              "verdict": "PASS",
+              "backend": "cpu-synthetic",
+              "scope": "synthetic-controller-only",
+              "unit": "synthetic_us",
+              "gain_pct": 10.000000000000009,
+              "samples": {
+                "baseline": [
+                  9.0,
+                  9.0,
+                  9.0,
+                  9.0
+                ],
+                "candidate": [
+                  8.1,
+                  8.1,
+                  8.1,
+                  8.1
+                ]
+              },
+              "reasons": [],
+              "claim": "synthetic controller fixture only"
+            }
+          }
+        ]
+      },
+      "ascend": {
+        "state": {
+          "schema_version": 1,
+          "status": "baseline_failed",
+          "external_agent": true,
+          "calls": 0,
+          "rounds": [],
+          "active": null,
+          "reason": "Frozen baseline gates did not all pass; no model call was made.",
+          "baseline": "0beff8215a9d49a996d3682981648390"
+        },
+        "plan_sha256": "76b3cf7a2f99363535cf9ba1c9929ed2e99def211f79efc1bd13a6513aa7008f",
+        "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+        "attempts": [
+          {
+            "id": "0beff8215a9d49a996d3682981648390",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "service",
+                "status": "valid",
+                "checks_passed": false,
+                "raw_lifecycle": {
+                  "status": "failed",
+                  "inference_status": "passed",
+                  "shutdown_status": "failed",
+                  "cleanup_status": "passed",
+                  "test_results": {
+                    "smoke": "passed"
+                  },
+                  "errors": [
+                    "shutdown: attention.log:620: (ApiServer_1 pid=204467) ERROR 10-23 09:58:51 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+                    "shutdown: ffn.log:812: WARNING 10-23 09:59:01 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+                  ]
+                },
+                "actual_identity_passed": true
+              }
+            ],
+            "baseline": {
+              "complete": false,
+              "hardware_qualified": false
+            }
+          }
+        ]
+      },
+      "pytest.log": "..............................................................           [100%]\n62 passed in 35.65s",
+      "foundation-check.log": "Foundation valid: 8 skills, 54 files; hardware unqualified"
+    },
+    "03": {
+      "deployment": "722b5b02d46904c244ea3ed1822d42024a54591f2bfc5e11f9816dd53e61f7a6",
+      "pytest.log": "....................................................................     [100%]\n68 passed in 34.21s",
+      "foundation-check.log": "Foundation valid: 8 skills, 54 files; hardware unqualified",
+      "physical_artifacts": {
+        "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+        "artifacts": {
+          "native/artifacts.json": "f83422189e993fff123b49b141a86cb5d5678cd8b7f065744d56d0073c7e1768"
+        },
+        "build": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-search-20261023-02/ascend-campaign/attempts/0beff8215a9d49a996d3682981648390/build/baseline",
+        "passed": true
+      },
+      "native_benchmark_probe": {
+        "status": "valid",
+        "checks_passed": true,
+        "value": 318.31713872296467,
+        "trial": "attempts/0beff8215a9d49a996d3682981648390/baseline/benchmark/functional-probe"
+      }
+    },
+    "04": {
+      "deployment": "aad5ad894437efb86fa77940facbadc9efefd2c86447d25b865b9f485cb4c5e9",
+      "cpu": {
+        "state": {
+          "schema_version": 1,
+          "status": "running",
+          "external_agent": true,
+          "calls": 1,
+          "rounds": [
+            "0001"
+          ],
+          "active": "0001",
+          "reason": "",
+          "baseline": "40d6b296266f47d29c530aa070e20623",
+          "dispatch": {
+            "round": "0001",
+            "call": 1
+          }
+        },
+        "plan_sha256": "258021a015cef14ddeeea1da3b0f93db2f60113835231c148cf49640442101b5",
+        "source_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+        "best": {
+          "source": "workspaces/baseline",
+          "source_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+          "baseline": "40d6b296266f47d29c530aa070e20623",
+          "baseline_hash": "5d400ea42fb2fbc221d97bc05d99bc595a952e1f6bab4d784eec0fae999f12c5",
+          "confirmation": null
+        },
+        "attempts": [
+          {
+            "id": "40d6b296266f47d29c530aa070e20623",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 10.0
+              }
+            ],
+            "baseline": {
+              "complete": true,
+              "hardware_qualified": false
+            }
+          }
+        ]
+      },
+      "ascend": {
+        "state": {
+          "schema_version": 1,
+          "status": "running",
+          "external_agent": true,
+          "calls": 1,
+          "rounds": [
+            "0001"
+          ],
+          "active": "0001",
+          "reason": "",
+          "baseline": "094191c1cee34b2ea9bc5514c8c3eb65",
+          "dispatch": {
+            "round": "0001",
+            "call": 1
+          }
+        },
+        "plan_sha256": "f3a8c09eb0ee6ff2412c98175937209a0f65867e2ca271439b609dd4f057b11d",
+        "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+        "best": {
+          "source": "workspaces/baseline",
+          "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+          "baseline": "094191c1cee34b2ea9bc5514c8c3eb65",
+          "baseline_hash": "58b2a40333d96bd1b3786e3fce8ea29297859f42552bfbef8f61a010e351bc31",
+          "confirmation": null
+        },
+        "attempts": [
+          {
+            "id": "094191c1cee34b2ea9bc5514c8c3eb65",
+            "status": "completed",
+            "phases": [
+              {
+                "side": "baseline",
+                "phase": "build",
+                "status": "valid"
+              },
+              {
+                "side": "baseline",
+                "phase": "correctness",
+                "status": "valid",
+                "checks_passed": true,
+                "value": null
+              },
+              {
+                "side": "baseline",
+                "phase": "service",
+                "status": "valid",
+                "checks_passed": true,
+                "gate_policy": {
+                  "require_clean_shutdown": false
+                },
+                "shutdown_errors_ignored": true,
+                "raw_lifecycle": {
+                  "status": "failed",
+                  "inference_status": "passed",
+                  "shutdown_status": "failed",
+                  "cleanup_status": "passed",
+                  "test_results": {
+                    "smoke": "passed"
+                  },
+                  "errors": [
+                    "shutdown: attention.log:616: (ApiServer_0 pid=246175) ERROR 10-23 10:18:28 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+                    "shutdown: ffn.log:812: WARNING 10-23 10:18:38 [utils.py:652] [shutdown] Process manager: force killing remaining processes count=8"
+                  ]
+                },
+                "actual_identity_passed": true
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 312.36713911805833
+              },
+              {
+                "side": "baseline",
+                "phase": "benchmark",
+                "status": "valid",
+                "checks_passed": true,
+                "value": 324.14000162056516
+              }
+            ],
+            "baseline": {
+              "complete": true,
+              "hardware_qualified": false
+            }
+          }
+        ]
+      },
+      "pytest.log": ".....................................................................    [100%]\n69 passed in 35.37s",
+      "foundation-check.log": "Foundation valid: 8 skills, 54 files; hardware unqualified"
+    },
+    "05": {
+      "deployment": "62e7a084a2d4528cfcf030031d5347fd6b540e60c75260cee9dc7406a2fd5acd",
+      "pytest.log": ".....................................................................    [100%]\n69 passed in 37.97s",
+      "foundation-check.log": "Foundation valid: 8 skills, 54 files; hardware unqualified"
+    }
+  },
+  "original_source_unchanged": true,
+  "versions": {
+    "torch": "2.10.0+cpu",
+    "torch-npu": "2.10.0.post4",
+    "vllm": "0.30.0+empty",
+    "vllm-ascend": "0.19.1rc2.dev2448+g8d4409d62"
+  },
+  "verified_npu_campaign_controller_hash": "685176b3d32c58bd71fb2b1c3acc61052e55a98b643b9c2483bbeab4f76addb1",
+  "controller_hash": "133427b6502b58230967c752822363a73bae8018af3fed01e91a37cd068a9136",
+  "final_controller_delta_after_npu": [
+    "afd_rsi/search.py"
+  ],
+  "foundation_hash": "2887f69794a2cc1d00de10a756bcfebb5b3f270a14e8b56acc8822dc9133af05",
+  "notes": [
+    "Shutdown-only errors were waived by the final frozen recipe; raw failures were retained.",
+    "The successful real Codex loop used CPU synthetic fields in iTASK; it is not a kernel optimization.",
+    "The final NPU campaign qualified its original baseline and is waiting for an external proposal; no formal kernel search was started.",
+    "Build binaries stay in isolated remote build roots; the archive contains identities, frozen inputs, receipts and raw logs."
+  ]
+}

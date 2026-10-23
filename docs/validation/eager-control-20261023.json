@@ -1,0 +1,265 @@
+{
+  "purpose": "functional no-change control; not optimization or performance qualification",
+  "preparation": {
+    "kind": "no-change control",
+    "source_build": "build03",
+    "artifact_preparation": "byte-for-byte copies of already-built artifacts in an independent runtime root; not a candidate build or improvement"
+  },
+  "settings": {
+    "action": "compare",
+    "repo": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/control-candidate/source",
+    "baseline_repo": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source",
+    "output": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/native-mega-control-01",
+    "device": "0,1,2",
+    "hidden": 256,
+    "intermediate": 512,
+    "experts": 4,
+    "attn_ranks": 1,
+    "pairs": 1,
+    "warmups": 1,
+    "repeats": 2,
+    "per_group": false,
+    "profile": true,
+    "timeout": 360
+  },
+  "foundation_hash": "75786960df138b8f57d846b54197b89cfdcaa21d2b55608f15a2a392f70a5e0a",
+  "controller": {
+    "src/afd_rsi/__init__.py": "97035e4c1973f4df5dda9099d8d6491908ac4852f01ef777464f1cc012b0a604",
+    "src/afd_rsi/__main__.py": "06c91423bb7be56434d2c754fd52066ad153fc4017cb026b469af7b85bc8f878",
+    "src/afd_rsi/campaign.py": "608b6fc7966f9ede59f3c8fa0645d8fffe52926e02bd8319eba5c0022427391c",
+    "src/afd_rsi/cli.py": "f4d8061c5a501f3a8fe4a10571e9b2633c8fc89ec41a905feb4709f4793e84a7",
+    "src/afd_rsi/contracts.py": "bb47c2d432ef69c62f8265c342c3852323166a91411046c14a48a1c715034924",
+    "src/afd_rsi/evaluate.py": "495fbe9efb799b4c0ead444936465c3cd82b67fe98e74f9d902ac26896d8fdcb",
+    "src/afd_rsi/evidence.py": "cd9aba8a0eecaa50cb59d089616be6a23f1b8c06bc87746724c995ff0786941f",
+    "src/afd_rsi/native.py": "1c1604807fce72cd321bd0eb29c84af249dbd2da10665c8083cf5daab3347048",
+    "src/afd_rsi/runner.py": "8c1d5f2acb778126af00b278e00917661c601f4174868ec76f7231685c552d73",
+    "src/afd_rsi/skills.py": "0c204c5d40c9e93dd39d211d7d92a5212453d9ba66891e81a7e39fd27cd30b4b",
+    "src/afd_rsi/workspace.py": "552e1528ed63ef49f70bf1ccb879907a7f03f0e259a490b2fbf7357e24fc1503"
+  },
+  "sides": {
+    "baseline": {
+      "repo": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source",
+      "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+      "artifacts": {
+        "files": {
+          "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+          "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+        },
+        "kernel_artifacts": {
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+        }
+      }
+    },
+    "candidate": {
+      "repo": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/control-candidate/source",
+      "source_hash": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+      "artifacts": {
+        "files": {
+          "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+          "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+        },
+        "kernel_artifacts": {
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+          "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+        }
+      }
+    }
+  },
+  "summary": {
+    "correctness": "PASS",
+    "timing": [
+      {
+        "attention_rank": 0,
+        "case": 0,
+        "baseline_us_by_trial": [
+          298.44000935554504
+        ],
+        "candidate_us_by_trial": [
+          302.5999963283539
+        ],
+        "gain_pct_by_trial": [
+          -1.393910616003519
+        ],
+        "median_gain_pct": -1.393910616003519
+      },
+      {
+        "attention_rank": 0,
+        "case": 1,
+        "baseline_us_by_trial": [
+          231.34999722242355
+        ],
+        "candidate_us_by_trial": [
+          229.5599952340126
+        ],
+        "gain_pct_by_trial": [
+          0.7737203414314344
+        ],
+        "median_gain_pct": 0.7737203414314344
+      },
+      {
+        "attention_rank": 0,
+        "case": 2,
+        "baseline_us_by_trial": [
+          284.3500077724457
+        ],
+        "candidate_us_by_trial": [
+          282.20999240875244
+        ],
+        "gain_pct_by_trial": [
+          0.7525990171260375
+        ],
+        "median_gain_pct": 0.7525990171260375
+      },
+      {
+        "attention_rank": 0,
+        "case": 3,
+        "baseline_us_by_trial": [
+          278.49000692367554
+        ],
+        "candidate_us_by_trial": [
+          278.76000106334686
+        ],
+        "gain_pct_by_trial": [
+          -0.09694930983477686
+        ],
+        "median_gain_pct": -0.09694930983477686
+      },
+      {
+        "attention_rank": 0,
+        "case": 4,
+        "baseline_us_by_trial": [
+          241.0700023174286
+        ],
+        "candidate_us_by_trial": [
+          234.52000319957733
+        ],
+        "gain_pct_by_trial": [
+          2.717052746042851
+        ],
+        "median_gain_pct": 2.717052746042851
+      },
+      {
+        "attention_rank": 0,
+        "case": 5,
+        "baseline_us_by_trial": [
+          428.5999983549118
+        ],
+        "candidate_us_by_trial": [
+          419.26001012325287
+        ],
+        "gain_pct_by_trial": [
+          2.1791853167308575
+        ],
+        "median_gain_pct": 2.1791853167308575
+      },
+      {
+        "attention_rank": 0,
+        "case": 6,
+        "baseline_us_by_trial": [
+          315.8800005912781
+        ],
+        "candidate_us_by_trial": [
+          307.7699989080429
+        ],
+        "gain_pct_by_trial": [
+          2.5674311979405187
+        ],
+        "median_gain_pct": 2.5674311979405187
+      }
+    ],
+    "profiler": [
+      {
+        "file": "gpuxdn010030014227.guian02_140690_20261023083404545_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+        "sha256": "b938250cd1c55df90ed7cc5617e6ffce57ca97e72194d7d9cc454090616965aa",
+        "mega_kernel_count": 8,
+        "names": [
+          "AfdMegaMoeFFN"
+        ]
+      },
+      {
+        "file": "gpuxdn010030014227.guian02_140691_20261023083404550_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+        "sha256": "6927b3a49374c8ef16644bf9d3bb81a2e7390cc8781521a92c9a0b416485e139",
+        "mega_kernel_count": 7,
+        "names": [
+          "AfdMegaMoeFFN"
+        ]
+      },
+      {
+        "file": "gpuxdn010030014227.guian02_137966_20261023083330138_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+        "sha256": "549fcf673e9e6e9b9dacac3787e14c984278f896f17ad304e3451b9998199149",
+        "mega_kernel_count": 8,
+        "names": [
+          "AfdMegaMoeFFN"
+        ],
+        "phase": "profile-baseline"
+      },
+      {
+        "file": "gpuxdn010030014227.guian02_137967_20261023083330138_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+        "sha256": "ac8d2116afa33e329d9f6abbc99cacd327b321d716729bb78946f1495a9d6714",
+        "mega_kernel_count": 7,
+        "names": [
+          "AfdMegaMoeFFN"
+        ],
+        "phase": "profile-baseline"
+      }
+    ],
+    "baseline_mode": "MegaMoe",
+    "promotion": "not evaluated; paired diagnostic comparison only",
+    "claim": "native synthetic weights, eager, serialized Attention sources; not model/service performance"
+  },
+  "phases": [
+    {
+      "phase": "reference",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "baseline-correctness",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "correctness",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "pair-0-baseline",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "pair-0-candidate",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "profile-baseline",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    },
+    {
+      "phase": "profile",
+      "exit_code": 0,
+      "cleanup_complete": true,
+      "ranks": 3
+    }
+  ],
+  "evidence_sha256": {
+    "plan.lock.json": "ab663e2006bf9e1ec631657aa06bab8ff43838356dc3597d8d8894aa6c29533e",
+    "observations.json": "2d49d6d3ceeb2d719782f0409a86916f17798fe5962ca7eb3a5cfd13c0fdf6a5",
+    "summary.json": "eb5fc18748f7e6f2cae24beded266a028ad0eeb7c51d7d593f14ed53fd35cd03",
+    "report.md": "ea70ad2991987692598c7347e04e8a1d16952a352e99b326d0e927d8d760e8d1"
+  },
+  "tests": ".............................................                            [100%]\n45 passed in 24.73s\n",
+  "final_npu_status": "+------------------------------------------------------------------------------------------------+\n| npu-smi 25.5.1.1                 Version: 25.5.1.1                                             |\n+---------------------------+---------------+----------------------------------------------------+\n| NPU   Name                | Health        | Power(W)    Temp(C)           Hugepages-Usage(page)|\n| Chip  Phy-ID              | Bus-Id        | AICore(%)   Memory-Usage(MB)  HBM-Usage(MB)        |\n+===========================+===============+====================================================+\n| 0     Ascend910           | OK            | 165.1       49                0    / 0             |\n| 0     0                   | 0000:9D:00.0  | 0           0    / 0          3151 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 0     Ascend910           | OK            | -           48                0    / 0             |\n| 1     1                   | 0000:9F:00.0  | 0           0    / 0          2890 / 65536         |\n+===========================+===============+====================================================+\n| 1     Ascend910           | OK            | 167.2       50                0    / 0             |\n| 0     2                   | 0000:99:00.0  | 0           0    / 0          3151 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 1     Ascend910           | OK            | -           46                0    / 0             |\n| 1     3                   | 0000:9B:00.0  | 0           0    / 0          2891 / 65536         |\n+===========================+===============+====================================================+\n| 2     Ascend910           | OK            | 163.9       48                0    / 0             |\n| 0     4                   | 0000:95:00.0  | 0           0    / 0          3150 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 2     Ascend910           | OK            | -           48                0    / 0             |\n| 1     5                   | 0000:97:00.0  | 0           0    / 0          2887 / 65536         |\n+===========================+===============+====================================================+\n| 3     Ascend910           | OK            | 162.2       48                0    / 0             |\n| 0     6                   | 0000:91:00.0  | 0           0    / 0          3136 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 3     Ascend910           | OK            | -           47                0    / 0             |\n| 1     7                   | 0000:93:00.0  | 0           0    / 0          2899 / 65536         |\n+===========================+===============+====================================================+\n| 4     Ascend910           | OK            | 170.1       48                0    / 0             |\n| 0     8                   | 0000:8D:00.0  | 0           0    / 0          3150 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 4     Ascend910           | OK            | -           48                0    / 0             |\n| 1     9                   | 0000:8F:00.0  | 0           0    / 0          2887 / 65536         |\n+===========================+===============+====================================================+\n| 5     Ascend910           | OK            | 169.0       48                0    / 0             |\n| 0     10                  | 0000:89:00.0  | 0           0    / 0          3137 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 5     Ascend910           | OK            | -           48                0    / 0             |\n| 1     11                  | 0000:8B:00.0  | 0           0    / 0          2901 / 65536         |\n+===========================+===============+====================================================+\n| 6     Ascend910           | OK            | 164.8       49                0    / 0             |\n| 0     12                  | 0000:85:00.0  | 0           0    / 0          3147 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 6     Ascend910           | OK            | -           46                0    / 0             |\n| 1     13                  | 0000:87:00.0  | 0           0    / 0          2888 / 65536         |\n+===========================+===============+====================================================+\n| 7     Ascend910           | OK            | 164.8       48                0    / 0             |\n| 0     14                  | 0000:81:00.0  | 0           0    / 0          3135 / 65536         |\n+------------------------------------------------------------------------------------------------+\n| 7     Ascend910           | OK            | -           49                0    / 0             |\n| 1     15                  | 0000:83:00.0  | 0           0    / 0          2901 / 65536         |\n+===========================+===============+====================================================+\n+---------------------------+---------------+----------------------------------------------------+\n| NPU     Chip              | Process id    | Process name             | Process memory(MB)      |\n+===========================+===============+====================================================+\n| No running processes found in NPU 0                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 1                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 2                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 3                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 4                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 5                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 6                                                            |\n+===========================+===============+====================================================+\n| No running processes found in NPU 7                                                            |\n+===========================+===============+====================================================+\n"
+}

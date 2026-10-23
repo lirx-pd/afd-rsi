@@ -71,7 +71,7 @@ def parser() -> argparse.ArgumentParser:
         sub.add_argument(
             "--moe-ubatching",
             choices=("on", "off"),
-            help="Async CAM token splitting; defaults on for async",
+            help="Async CAM token splitting; current AFD adapter supports off only (default)",
         )
         sub.add_argument(
             "--devices",

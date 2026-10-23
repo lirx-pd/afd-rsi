@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 模块控制逻辑 | 当前 CPU 测试 | 仅声明控制合同通过 |
 | 本机真实模型/服务 | `service run` 的标准 vllm serve + HTTP | 预检、全部服务、请求、质量/性能、退出和清理结果 |
-| 算子与 FFN 工作项 | 后续独立原生 benchmark | 实际 native 加载身份、设备计时、数值与路由参考 |
+| 算子与 FFN 工作项 | `native build/compare` | 实际 native 加载身份、设备计时、数值与路由参考 |
 | 证明 MegaMoe 实际执行 | 运行配置加 profiler/加载身份探针 | 不能仅凭 HTTP 成功或环境变量判断 |
 
 服务验证不伪造通用 compare 的 rank/source/artifact 输出，服务性能也不直接
@@ -42,12 +42,13 @@ dp2tp4-ep8。设备、网卡、Python、vLLM 和权重必须替换成实际值�
 成功代替当前 DeepSeek-V4 W4A8 MegaMoe 的验证。
 
 ```bash
-export PYTHONPATH="$PWD/src"
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 # 预先设置 TARGET_REPO、MODEL_PATH、DEVICES、RUNTIME_PYTHON、VLLM_BIN、NIC、AFD_HOST。
 ARGS=(--repo "$TARGET_REPO" --model v4-flash --model-path "$MODEL_PATH"
       --device "$DEVICES" --topology dp2tp4-ep8
       --comm async --mrv mrv2 --layered-gmm on --moe-ubatching off
       --execution eager --dbo off
+      --max-model-len 32768 --max-batched-tokens 32768 --max-seqs 16
       --serve-env AFD_ASYNC_CAM_MEGA_MOE=1
       --python "$RUNTIME_PYTHON" --vllm-bin "$VLLM_BIN"
       --nic "$NIC" --afd-host "$AFD_HOST" --offline --test smoke
@@ -66,7 +67,7 @@ run 将实际预检、启动、监控就绪、发送 smoke 请求并清理。检
 status、inference_status、shutdown_status、cleanup_status 和 test_results；
 保留 manifest、preflight、attention/ffn 以及请求日志。强制结束与正常退出不混淆。
 
-eager smoke 通过后，独立目录运行 graph smoke。性能和 GSM8K 同样使用新目录、
+当前先验证 eager。性能和 GSM8K 使用新目录、
 明确的样本数/并发/长度/种子和冻结判据。工具支持 --test all,perf，一次启动后
 执行多个工作负载；它不把质量不达标当成服务崩溃，结果须逐项审核。
 
@@ -77,5 +78,9 @@ eager smoke 通过后，独立目录运行 graph smoke。性能和 GSM8K 同样�
 ## 验证范围
 
 仓库提供 CPU-safe plan 与真实 HTTP/子进程模拟测试，覆盖启动、请求失败和清理。
-这些测试验证测试器合同，不能替代上面的真实 NPU run。当前开发主机没有 NPU
-环境；服务部署与 MegaMoe 路径的上卡结论保留未验证。
+这些测试验证测试器合同，不能替代真实 NPU run。实际上卡验证、服务请求成功与
+关闭失败的边界见 [eager 验证记录](validation/eager-20261023.md)。
+
+本地适配移除了当前 AFD 已不接受的 async_moe_ubatching 字段，splitting 默认 off，
+显式 on 在 plan 阶段被拒绝。来源和修改前后文件哈希保存在 service/provenance.json。
+服务入口不会通过放宽目标的配置校验来启动。

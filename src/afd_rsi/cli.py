@@ -14,6 +14,13 @@ from .contracts import load_recipe
 def main(argv=None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     root = Path(__file__).resolve().parents[2]
+    if arguments and arguments[0] == "native":
+        from .native import main as native_main
+        try:
+            return native_main(arguments[1:], root)
+        except (OSError, ValueError, RuntimeError) as error:
+            print(f"afd-rsi: {error}", file=sys.stderr)
+            return 2
     if arguments and arguments[0] == "service":
         try:
             skills.validate(root)
@@ -23,7 +30,7 @@ def main(argv=None) -> int:
         # The service runner owns signal handling and bounded child cleanup.
         os.execv(sys.executable, [sys.executable, str(root / "benchmarks/service/run.py"), *arguments[1:]])
     parser = argparse.ArgumentParser(prog="afd-rsi")
-    parser.epilog = "Real local service tests: afd-rsi service --help (plan/run/status/pack)."
+    parser.epilog = "Local NPU: afd-rsi native --help (build/compare); afd-rsi service --help (plan/run/status/pack)."
     commands = parser.add_subparsers(dest="action", required=True)
     check = commands.add_parser("check")
     check.add_argument("recipe", nargs="?", type=Path)
@@ -32,14 +39,21 @@ def main(argv=None) -> int:
     prepare = commands.add_parser("prepare")
     prepare.add_argument("recipe", type=Path)
     prepare.add_argument("--output", type=Path, required=True)
-    for name in ("baseline", "compare", "report"):
+    for name in ("baseline", "compare", "report", "resume"):
         commands.add_parser(name).add_argument("run", type=Path)
+    search = commands.add_parser("search")
+    search.add_argument("run", type=Path)
+    search.add_argument("--external-agent", action="store_true", help="exchange request/proposal files with a separate proposer host")
+    proposer = commands.add_parser("propose")
+    proposer.add_argument("request", type=Path)
+    proposer.add_argument("--output", type=Path, required=True)
     patch = commands.add_parser("patch")
     patch.add_argument("run", type=Path)
     patch.add_argument("patch", type=Path)
     export = commands.add_parser("export")
     export.add_argument("run", type=Path)
     export.add_argument("--output", type=Path, required=True)
+    export.add_argument("--best", action="store_true", help="export the confirmed search incumbent")
     args = parser.parse_args(arguments)
     try:
         if args.action == "check":
@@ -60,10 +74,24 @@ def main(argv=None) -> int:
             print(campaign.run_baseline(args.run.resolve(), root))
         elif args.action == "compare":
             print(campaign.run_comparison(args.run.resolve(), root))
+        elif args.action in ("search", "resume"):
+            from .search import search
+            run = args.run.resolve()
+            if args.action == "search" or (run / "search/state.json").is_file():
+                print(search(run, root, external=getattr(args, "external_agent", False)))
+                if (run / "search/pending.json").exists():
+                    print((run / "search/pending.json").read_text())
+            else:
+                print(campaign.resume(run, root))
+        elif args.action == "propose":
+            from .search import propose
+            print(propose(args.request.resolve(strict=True), args.output.resolve(), root))
         elif args.action == "report":
-            print(campaign.report(args.run.resolve(), root))
+            from .search import search_report
+            run = args.run.resolve()
+            print(search_report(run, root) if (run / "search/state.json").exists() else campaign.report(run, root))
         elif args.action == "export":
-            print(campaign.export(args.run.resolve(), args.output.resolve(), root))
+            print(campaign.export(args.run.resolve(), args.output.resolve(), root, best=args.best))
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"afd-rsi: {error}", file=sys.stderr)

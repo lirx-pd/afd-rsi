@@ -11,14 +11,14 @@ import sys
 import tempfile
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 from . import skills
 from .contracts import load_recipe, validate_result
 from .evaluate import evaluate
 from .evidence import digest, read_json, write_json
-from .runner import execute
+from .runner import execute, host_identity, stop_owned
 from .workspace import changed_files, copy_source, inventory
 
 
@@ -66,22 +66,47 @@ def load(run: Path, root: Path) -> dict:
 
 
 @contextmanager
-def exclusive(run: Path):
+def exclusive(run: Path, *, recovery=False):
     with (run / ".controller.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
             raise ValueError("campaign already in use") from error
-        for receipt in (run / "attempts").rglob("process.json"):
-            record = read_json(receipt)
+        if not recovery and (run / "recovery.json").is_file() and read_json(run / "recovery.json").get("health") in ("required", "failed"):
+            raise ValueError("unresolved device health barrier; run resume before scheduling")
+        for receipt in process_receipts(run) if not recovery else []:
+            record = effective_receipt(receipt)
             if record["status"] == "running" or record.get("cleanup_complete") is not True:
                 raise ValueError("unfinished process receipt; inspect and reconcile before continuing")
         yield
 
 
-def check_candidate(run: Path, plan: dict) -> dict:
+def process_receipts(run):
+    # Only executor receipts have this ownership schema; source trees may contain namesakes.
+    for directory in (run / "attempts", run / "search", run / "health"):
+        for path in directory.rglob("process.json"):
+            if {"source", "staging"}.intersection(path.relative_to(directory).parts):
+                continue
+            record = read_json(path)
+            if isinstance(record, dict) and {"status", "cleanup_complete"} <= record.keys():
+                yield path
+
+
+def effective_receipt(path):
+    record = read_json(path)
+    recovery = path.with_name("process-recovery.json")
+    if recovery.is_file():
+        recovered = read_json(recovery)
+        if recovered["receipt_hash"] != digest(path):
+            raise ValueError("recovered process receipt changed")
+        if recovered.get("cleanup_complete") is True:
+            return {**record, "status": "recovered_interruption", "cleanup_complete": True}
+    return record
+
+
+def check_candidate(run: Path, plan: dict, source: Path | None = None) -> dict:
     base = inventory(run / "workspaces/baseline")
-    candidate = inventory(run / "workspaces/candidate")
+    candidate = inventory(source or run / "workspaces/candidate")
     if base != plan["source_snapshot"]:
         raise ValueError("frozen baseline source changed")
     changes = changed_files(base, candidate)
@@ -91,11 +116,11 @@ def check_candidate(run: Path, plan: dict) -> dict:
     return candidate
 
 
-def apply_patch(run: Path, patch: Path, root: Path) -> None:
-    with exclusive(run):
+def apply_patch(run: Path, patch: Path, root: Path, *, source=None, locked=False) -> None:
+    with exclusive(run) if not locked else nullcontext():
         plan = load(run, root)
-        check_candidate(run, plan)
-        source = run / "workspaces/candidate"
+        source = source or run / "workspaces/candidate"
+        check_candidate(run, plan, source)
         with tempfile.TemporaryDirectory(dir=run) as temporary:
             staged = Path(temporary) / "candidate"
             shutil.copytree(source, staged)
@@ -115,25 +140,30 @@ def apply_patch(run: Path, patch: Path, root: Path) -> None:
                 raise ValueError("applied patch differs from validated patch")
 
 
-def artifacts(build: Path, names: list[str]) -> dict:
+def artifacts(build: Path, names: list[str], *, native=False) -> dict:
     values = {}
     for name in names:
         path = build / name
         if path.is_symlink() or not path.resolve().is_relative_to(build.resolve()):
             raise ValueError("artifact escapes build directory")
         values[name] = digest(path)
+    if native:
+        from .native import artifact_identity
+        expected = read_json(build / "native/artifacts.json")
+        if artifact_identity(build / "native/source") != expected:
+            raise ValueError("actual native artifacts changed")
     return values
 
 
 def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
-            identity: dict, build: Path, root: Path) -> dict:
-    source = run / "workspaces" / side
-    output = attempt / side / phase / uuid.uuid4().hex[:12]
+            identity: dict, build: Path, root: Path, *, source=None, output=None) -> dict:
+    source = source or run / "workspaces" / side
+    output = output or attempt / side / phase / uuid.uuid4().hex[:12]
     result_path = output / "result.json"
     substitutions = {"{python}": sys.executable, "{repo}": str(source),
                      "{foundation}": str(run / "foundation"), "{build}": str(build)}
     argv = []
-    for argument in plan["commands"][phase]:
+    for argument in plan["commands"].get(phase, []):
         for marker, value in substitutions.items():
             argument = argument.replace(marker, value)
         argv.append(argument)
@@ -143,104 +173,234 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
         if inventory(source) != identity:
             raise ValueError("source changed before command")
         expected = read_json(build / "artifacts.lock.json") if phase != "build" else {}
-        if phase != "build" and artifacts(build, plan["artifacts"]) != expected:
+        if phase != "build" and artifacts(build, plan["artifacts"], native="native" in plan) != expected:
             raise ValueError("built artifacts changed before command")
         remaining = plan["expires_at"] - time.time()
         if remaining <= 0:
             raise ValueError("campaign budget exhausted")
-        process = execute(argv, source, output, min(plan["timeout_seconds"], remaining), {
+        timeout = min(plan["timeout_seconds"], remaining)
+        if phase == "service":
+            from .service_phase import run_service
+            service = run_service(plan, run, output, build, identity,
+                                  min(plan["service"]["timeout_seconds"], remaining))
+            process = service["process"]
+            observation.update(service)
+        else:
+            process = execute(argv, source, output, timeout, {
             "AFD_RSI_RESULT": str(result_path), "AFD_RSI_BUILD_DIR": str(build),
             "AFD_RSI_SOURCE_HASH": identity["hash"], "AFD_RSI_SIDE": side,
             "AFD_RSI_WORKLOAD_ID": plan["workload_id"],
+            "AFD_RSI_PLAN": str(run / "plan.lock.json"), "AFD_RSI_RUN": str(run),
+            "AFD_RSI_ATTEMPT": str(attempt), "AFD_RSI_TIMEOUT": str(timeout),
             "PYTHONDONTWRITEBYTECODE": "1",
-        })
+            })
         observation["process"] = process
         load(run, root)
         if inventory(source) != identity:
             raise ValueError("source changed during command")
         if not process["cleanup_complete"]:
             raise ValueError("process group cleanup incomplete")
-        if process["status"] != "completed":
+        if process["status"] != "completed" and not (phase == "service" and process["status"] == "failed"):
             raise ValueError(f"command {process['status']}")
-        actual = artifacts(build, plan["artifacts"])
+        actual = artifacts(build, plan["artifacts"], native="native" in plan)
         if phase != "build" and actual != expected:
             raise ValueError("artifacts changed during command")
         if phase == "build":
             write_json(build / "artifacts.lock.json", actual)
             observation.update(status="valid", artifacts=actual)
-        else:
+        elif phase != "service":
             data = read_json(result_path)
             value = validate_result(data, plan, identity["hash"], actual, measured=phase == "benchmark")
             checks = all(all(rank["checks"].values()) for rank in data["ranks"])
             observation.update(status="valid", value=value, checks_passed=checks,
                                result_hash=digest(result_path), artifacts=actual)
+        else:
+            observation.update(status="valid", artifacts=actual)
     except (ValueError, OSError, KeyError, TypeError) as error:
         observation["reason"] = str(error)
+    if (plan["backend"] == "ascend" and phase in ("correctness", "benchmark", "service")
+            and (observation["status"] != "valid" or observation.get("checks_passed") is False)):
+        write_json(run / "recovery.json", {"health": "required", "trial": observation["trial"]})
+    observation["receipts"] = {str(p.relative_to(output)): digest(p) for p in output.rglob("process.json")}
     write_json(output / "observation.json", observation)
     return observation
 
 
-def run_baseline(run: Path, root: Path) -> Path:
-    with exclusive(run):
-        plan = load(run, root)
-        check_candidate(run, plan)
-        attempt = run / "attempts" / uuid.uuid4().hex
-        attempt.mkdir(parents=True)
-        build = attempt / "build/baseline"
-        build.mkdir(parents=True)
-        observations = []
-        for phase in ["build", "correctness"] + ["benchmark"] * plan["repetitions"]:
-            result = command(plan, run, attempt, "baseline", phase, plan["source_snapshot"], build, root)
-            observations.append(result)
-            if result["status"] != "valid" or result.get("checks_passed") is False:
-                break
-        complete = len(observations) == plan["repetitions"] + 2
-        complete = complete and all(x["status"] == "valid" and x.get("checks_passed", True) for x in observations)
-        write_json(attempt / "baseline.json", {"complete": complete, "observations": observations,
-                                              "hardware_qualified": False})
-        return attempt
+def verify_observation(run, observation, source, identity, build, plan, *, check_runtime=True):
+    if check_runtime and observation["status"] == "valid" and inventory(source) != identity:
+        raise ValueError("source changed after completed phase")
+    if check_runtime and observation["status"] == "valid" and artifacts(build, plan["artifacts"], native="native" in plan) != observation["artifacts"]:
+        raise ValueError("completed phase artifacts changed")
+    trial = run / observation["trial"]
+    for name, value in observation.get("receipts", {}).items():
+        if digest(trial / name) != value:
+            raise ValueError("completed process receipt changed")
+    if "result_hash" in observation and digest(trial / "result.json") != observation["result_hash"]:
+        raise ValueError("raw result changed")
+    if observation["phase"] == "service" and observation["status"] == "valid":
+        from .service_phase import evidence_files
+        if (digest(trial / "service/summary.json") != observation["summary_hash"]
+                or digest(trial / "loaded-maps.json") != observation["loaded_maps_hash"]
+                or evidence_files(trial / "service") != observation["evidence"]):
+            raise ValueError("service evidence changed")
 
 
-def run_comparison(run: Path, root: Path) -> Path:
-    run = run.resolve()
-    with exclusive(run):
-        plan = load(run, root)
-        candidate = check_candidate(run, plan)
-        identities = {"baseline": plan["source_snapshot"], "candidate": candidate}
-        attempt = run / "attempts" / uuid.uuid4().hex
-        attempt.mkdir(parents=True)
-        write_json(attempt / "sources.json", identities)
-        observations = []
-        for side in identities:
-            build = attempt / "build" / side
-            build.mkdir(parents=True)
-            result = command(plan, run, attempt, side, "build", identities[side], build, root)
-            if result["status"] != "valid":
-                observations.append(result)
-                break
-            result = command(plan, run, attempt, side, "correctness", identities[side], build, root)
-            observations.append(result)
-            if result["status"] != "valid" or not result["checks_passed"]:
-                break
+def _new_attempt(run, root, kind, *, candidate_source=None, baseline_source=None, name=None):
+    plan = load(run, root)
+    candidate_source = candidate_source or run / "workspaces/candidate"
+    baseline_source = baseline_source or run / "workspaces/baseline"
+    identities = {"baseline": check_candidate(run, plan, baseline_source)}
+    paths = {"baseline": str(baseline_source)}
+    if kind == "comparison":
+        identities["candidate"] = check_candidate(run, plan, candidate_source)
+        paths["candidate"] = str(candidate_source)
+    if any(not Path(path).resolve().is_relative_to(run) for path in paths.values()):
+        raise ValueError("attempt source must be owned by the campaign")
+    attempt = run / "attempts" / (name or uuid.uuid4().hex)
+    staging = run / "preparing" / uuid.uuid4().hex
+    staging.mkdir(parents=True)
+    metadata = {"kind": kind, "sources": identities, "paths": paths}
+    write_json(staging / "attempt.lock.json", metadata)
+    (staging / "attempt.sha256").write_text(digest(staging / "attempt.lock.json") + "\n")
+    write_json(staging / "sources.json", identities)
+    write_json(staging / "progress.json", {"status": "running", "steps": []})
+    attempt.parent.mkdir(exist_ok=True)
+    staging.rename(attempt)
+    return attempt
+
+
+def _continue(run, attempt, root):
+    plan = load(run, root)
+    if digest(attempt / "attempt.lock.json") != (attempt / "attempt.sha256").read_text().strip():
+        raise ValueError("frozen attempt changed")
+    metadata = read_json(attempt / "attempt.lock.json")
+    if read_json(attempt / "sources.json") != metadata["sources"]:
+        raise ValueError("attempt source identities changed")
+    state = read_json(attempt / "progress.json")
+    sides = list(metadata["sources"])
+    jobs = phase_jobs(plan, sides)
+    for index, (side, phase, pair) in enumerate(jobs):
+        source = Path(metadata["paths"][side])
+        identity = metadata["sources"][side]
+        check_candidate(run, plan, source)
+        if inventory(source) != identity:
+            raise ValueError("attempt source changed")
+        build = attempt / "build" / side
+        build.mkdir(parents=True, exist_ok=True)
+        if index == len(state["steps"]):
+            state["steps"].append({"side": side, "phase": phase,
+                                   "trial": str((attempt / side / phase / uuid.uuid4().hex[:12]).relative_to(run))})
+            write_json(attempt / "progress.json", state)
+        step = state["steps"][index]
+        if (step["side"], step["phase"]) != (side, phase):
+            raise ValueError("attempt phase order changed")
+        trial = run / step["trial"]
+        if "result" not in step and (trial / "observation.json").is_file():
+            step["result"] = read_json(trial / "observation.json")
+        if "result" in step:
+            result = step["result"]
+            verify_observation(run, result, source, identity, build, plan)
         else:
-            for repeat in range(plan["repetitions"]):
-                sides = ("baseline", "candidate") if repeat % 2 == 0 else ("candidate", "baseline")
-                for side in sides:
-                    result = command(plan, run, attempt, side, "benchmark", identities[side],
-                                     attempt / "build" / side, root)
-                    result["pair"] = repeat
-                    observations.append(result)
-                    if result["status"] != "valid" or not result["checks_passed"]:
-                        break
-                else:
-                    continue
-                break
+            # An interrupted, uncommitted phase is retried in a new preserved trial.
+            if trial.exists():
+                step.setdefault("interrupted_trials", []).append(step["trial"])
+                trial = attempt / side / phase / uuid.uuid4().hex[:12]
+                step["trial"] = str(trial.relative_to(run))
+                if phase == "build" and any(build.iterdir()):
+                    preserved = attempt / "abandoned-builds" / f"{side}-{uuid.uuid4().hex}"
+                    preserved.parent.mkdir(parents=True, exist_ok=True)
+                    build.rename(preserved)
+                    build.mkdir()
+            write_json(attempt / "progress.json", state)
+            result = command(plan, run, attempt, side, phase, identity, build, root, source=source, output=trial)
+            if pair is not None:
+                result["pair"] = pair
+            step["result"] = result
+            write_json(attempt / "progress.json", state)
+        if result["status"] != "valid" or result.get("checks_passed") is False:
+            break
+    observations = [step["result"] for step in state["steps"] if "result" in step
+                    and (step["phase"] != "build" or step["result"]["status"] != "valid")]
+    if metadata["kind"] == "baseline":
+        complete = len(state["steps"]) == len(jobs) and all(
+            step.get("result", {}).get("status") == "valid" and step["result"].get("checks_passed", True)
+            for step in state["steps"])
+        write_json(attempt / "baseline.json", {"complete": complete, "observations": observations,
+                                               "hardware_qualified": False})
+    else:
         verdict = evaluate(plan, observations)
         write_json(attempt / "observations.json", observations)
         write_json(attempt / "verdict.json", verdict)
         write_json(run / "latest.json", {"attempt": attempt.name, "verdict_hash": digest(attempt / "verdict.json")})
         report(run, root)
-        return attempt
+    state["status"] = "completed"
+    write_json(attempt / "progress.json", state)
+    return attempt
+
+
+def phase_jobs(plan, sides):
+    phases = ["build", "correctness"] + (["service"] if "service" in plan else [])
+    jobs = [(side, phase, None) for side in sides for phase in phases]
+    for pair in range(plan["repetitions"]):
+        jobs.extend((side, "benchmark", pair) for side in (sides if pair % 2 == 0 else sides[::-1]))
+    return jobs
+
+
+def run_baseline(run: Path, root: Path) -> Path:
+    run = run.resolve()
+    with exclusive(run):
+        return _continue(run, _new_attempt(run, root, "baseline"), root)
+
+
+def run_comparison(run: Path, root: Path, *, candidate_source=None, baseline_source=None, locked=False) -> Path:
+    run = run.resolve()
+    with exclusive(run) if not locked else nullcontext():
+        attempt = _new_attempt(run, root, "comparison", candidate_source=candidate_source,
+                               baseline_source=baseline_source)
+        return _continue(run, attempt, root)
+
+
+def recover(run: Path, root: Path):
+    plan = load(run, root)
+    changed = []
+    for path in process_receipts(run):
+        record = effective_receipt(path)
+        if record["status"] != "running" and record.get("cleanup_complete") is True:
+            continue
+        if record.get("host_identity") != host_identity():
+            raise ValueError("stale receipt belongs to a different host/boot; cannot establish resource ownership")
+        cleanup = stop_owned(record, record.get("grace_seconds", 0.5))
+        write_json(path.with_name("process-recovery.json"), {
+            **cleanup, "receipt_hash": digest(path), "host_identity": host_identity(), "recovered_at": time.time()})
+        changed.append(str(path.relative_to(run)))
+        if not cleanup["cleanup_complete"]:
+            raise ValueError("recovery could not clean owned processes")
+    barrier = (run / "recovery.json").is_file() and read_json(run / "recovery.json").get("health") in ("required", "failed")
+    pending = any(read_json(path)["status"] != "completed" for path in (run / "attempts").glob("*/progress.json"))
+    if plan["backend"] == "ascend" and (changed or barrier or pending):
+        health = plan.get("health")
+        if not health:
+            write_json(run / "recovery.json", {"receipts": changed, "health": "required"})
+            raise ValueError("Ascend recovery requires a frozen health command before rescheduling")
+        argv = [part.replace("{python}", sys.executable).replace("{foundation}", str(run / "foundation"))
+                for part in health["command"]]
+        probe = execute(argv, run, run / "health" / uuid.uuid4().hex, health["timeout_seconds"], {})
+        if probe["status"] != "completed" or not probe["cleanup_complete"]:
+            write_json(run / "recovery.json", {"receipts": changed, "health": "failed", "process": probe})
+            raise ValueError("device health check failed; no new trial launched")
+    write_json(run / "recovery.json", {"receipts": changed, "health": "passed" if changed or barrier or pending else "not_needed"})
+    return changed
+
+
+def resume(run: Path, root: Path, *, locked=False):
+    run = run.resolve()
+    with exclusive(run, recovery=True) if not locked else nullcontext():
+        recover(run, root)
+        pending = [p.parent for p in (run / "attempts").glob("*/progress.json")
+                   if read_json(p)["status"] != "completed"]
+        if len(pending) > 1:
+            raise ValueError("multiple unfinished attempts; reconcile before resuming")
+        return _continue(run, pending[0], root) if pending else run
 
 
 def report(run: Path, root: Path) -> Path:
@@ -250,38 +410,83 @@ def report(run: Path, root: Path) -> Path:
     verdict = read_json(attempt / "verdict.json")
     if digest(attempt / "verdict.json") != latest["verdict_hash"]:
         raise ValueError("verdict changed")
-    observations = read_json(attempt / "observations.json")
-    for observation in observations:
-        if observation["status"] == "valid" and "result_hash" in observation:
-            if digest(run / observation["trial"] / "result.json") != observation["result_hash"]:
-                raise ValueError("raw result changed")
+    observations = audit_attempt(run, attempt, root)
     if evaluate(plan, observations) != verdict:
         raise ValueError("verdict inconsistent with observations")
     path = run / "report.md"
+    shutdown_policy = plan.get("service", {}).get("require_clean_shutdown", True)
     path.write_text(f"# {plan['name']}\n\nVerdict: {verdict['verdict']}\n\n"
                     f"Backend: {plan['backend']}; scope: {plan['scope']}; unit: {plan['unit']}\n\n"
+                    f"Require clean service shutdown: {shutdown_policy}; raw lifecycle results are retained.\n\n"
                     f"Claim: {verdict['claim']}\n\n"
                     f"Attempt: {attempt.name}\n\n```json\n{json.dumps(verdict, indent=2)}\n```\n")
     return path
 
 
-def export(run: Path, destination: Path, root: Path) -> Path:
+def audit_attempt(run, attempt, root):
+    plan = load(run, root)
+    if digest(attempt / "attempt.lock.json") != (attempt / "attempt.sha256").read_text().strip():
+        raise ValueError("frozen attempt changed")
+    metadata = read_json(attempt / "attempt.lock.json")
+    state = read_json(attempt / "progress.json")
+    observations = []
+    strict = all(step.get("result", {}).get("status") == "valid" for step in state["steps"])
+    jobs = phase_jobs(plan, list(metadata["sources"]))
+    if len(state["steps"]) > len(jobs):
+        raise ValueError("unexpected attempt phases")
+    for index, step in enumerate(state["steps"]):
+        if (step["side"], step["phase"]) != jobs[index][:2]:
+            raise ValueError("committed attempt phase order changed")
+        if "result" not in step:
+            continue
+        result, side = step["result"], step["side"]
+        if (result["side"], result["phase"], result["trial"]) != (side, step["phase"], step["trial"]):
+            raise ValueError("committed phase identity changed")
+        saved = read_json(run / result["trial"] / "observation.json")
+        if {key: value for key, value in result.items() if key != "pair"} != saved:
+            raise ValueError("committed observation changed")
+        verify_observation(run, result, Path(metadata["paths"][side]), metadata["sources"][side],
+                           attempt / "build" / side, plan, check_runtime=strict)
+        if step["phase"] != "build" or result["status"] != "valid":
+            observations.append(result)
+    if (state["status"] == "completed" and len(state["steps"]) != len(jobs)
+            and all(step.get("result", {}).get("status") == "valid"
+                    and step["result"].get("checks_passed", True) for step in state["steps"])):
+        raise ValueError("completed attempt phases missing")
+    if metadata["kind"] == "comparison" and read_json(attempt / "observations.json") != observations:
+        raise ValueError("comparison observations changed")
+    return observations
+
+
+def export(run: Path, destination: Path, root: Path, *, best=False) -> Path:
     plan = load(run, root)
     if destination.is_relative_to(run) or destination.is_relative_to(Path(plan["source"])):
         raise ValueError("export destination must be outside campaign and original source")
-    check_candidate(run, plan)
-    report(run, root)
-    latest = read_json(run / "latest.json")
-    identity = read_json(run / "attempts" / latest["attempt"] / "sources.json")
-    if inventory(run / "workspaces/candidate") != identity["candidate"]:
-        raise ValueError("candidate changed after evaluation")
+    source = run / "workspaces/candidate"
+    if best:
+        from .search import best_candidate, search_report
+        source = run / best_candidate(run, root)["source"]
+        report_path = search_report(run, root)
+    else:
+        check_candidate(run, plan)
+        latest = read_json(run / "latest.json")
+        identity = read_json(run / "attempts" / latest["attempt"] / "sources.json")
+        if inventory(source) != identity["candidate"]:
+            raise ValueError("candidate changed after evaluation")
+        report_path = report(run, root)
     destination.mkdir(parents=True, exist_ok=False)
-    diff = subprocess.run(["git", "diff", "--no-index", "--binary", "--", "baseline", "candidate"],
-                          cwd=run / "workspaces", capture_output=True)
+    with tempfile.TemporaryDirectory(dir=run) as temporary:
+        staged = Path(temporary)
+        for name, path in (("baseline", run / "workspaces/baseline"), ("candidate", source)):
+            copy_source(path, staged / name, inventory(path))
+        diff = subprocess.run(["git", "diff", "--no-index", "--binary", "--", "baseline", "candidate"],
+                              cwd=staged, capture_output=True)
     if diff.returncode not in (0, 1):
         raise ValueError(diff.stderr.decode())
     (destination / "change.patch").write_bytes(diff.stdout)
-    shutil.copy2(run / "report.md", destination / "report.md")
+    shutil.copy2(report_path, destination / "report.md")
+    if best:
+        shutil.copy2(run / "search/best.json", destination / "best.json")
     shutil.copy2(run / "plan.lock.json", destination / "plan.lock.json")
     (destination / "APPLY.md").write_text("From the exact frozen source snapshot root, apply with "
                                           "`git --git-dir=.git --work-tree=. apply -p2 /path/to/change.patch`.\n"

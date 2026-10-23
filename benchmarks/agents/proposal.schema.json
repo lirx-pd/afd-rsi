@@ -1,0 +1,22 @@
+{
+  "type": "object", "additionalProperties": false,
+  "required": ["stop", "reason", "proposals"],
+  "properties": {
+    "stop": {"type": "boolean"},
+    "reason": {"type": "string"},
+    "proposals": {
+      "type": "array", "maxItems": 3,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["hypothesis", "category", "evidence", "priority", "patch"],
+        "properties": {
+          "hypothesis": {"type": "string"},
+          "category": {"type": "string"},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "priority": {"type": "integer", "minimum": 1, "maximum": 3},
+          "patch": {"type": "string"}
+        }
+      }
+    }
+  }
+}

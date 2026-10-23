@@ -1,0 +1,483 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the AFD plugin project
+"""Synthetic-weight integration of the real Async runner and CAM connector.
+
+Run on three isolated 910C devices with torchrun --nproc-per-node=3.
+This covers native transport, layered compute, repeated replay, and finite
+completion. Production DR cancellation is not part of this fixture. It does not
+claim checkpoint-loader or model E2E coverage.
+"""
+
+from __future__ import annotations
+
+import argparse
+import faulthandler
+import json
+import os
+import socket
+import threading
+import time
+from datetime import timedelta
+from types import SimpleNamespace
+
+import torch
+import torch.distributed as dist
+import torch_npu
+
+from identity import loaded_identity
+
+from afd_plugin.compat.npu.ops import ensure_cam_async_ops_available
+from afd_plugin.config import parse_afd_config
+from afd_plugin.connectors.metadata import AFDTransferContext, AFDTransferMetadata
+from afd_plugin.connectors.npu.async_cam import CAMAsyncAFDConnector
+from afd_plugin.model_executor.npu.async_cam_w4a8 import W4A8LayerWeights
+from afd_plugin.v1.worker.npu.async_ffn_model_runner import AsyncNPUFFNModelRunner
+
+HIDDEN = 256
+EXPERTS = 4
+LAYERS = (2, 5)
+LIMIT = 10.0
+
+
+class SyntheticModel(torch.nn.Module):
+    """Synthetic experts for eager validation; no checkpoint is loaded."""
+
+    def __init__(
+        self,
+        device,
+        per_channel,
+        random_weights=False,
+        routed_scale=1.0,
+        ffn_rank=0,
+        intermediate_size=HIDDEN,
+    ):
+        super().__init__()
+        self.layers = []
+        torch.manual_seed(7 + ffn_rank)
+        for slot, layer_id in enumerate(LAYERS):
+            w13, s13, b13 = self.make_weight(
+                device, per_channel, slot + 1, True, random_weights, intermediate_size
+            )
+            w2, s2, b2 = self.make_weight(
+                device, per_channel, 1, False, random_weights, intermediate_size
+            )
+            self.layers.append(
+                W4A8LayerWeights(
+                    layer_id,
+                    w13,
+                    w2,
+                    s13,
+                    s2,
+                    b13,
+                    b2,
+                    per_channel,
+                    LIMIT,
+                    routed_scale,
+                )
+            )
+
+    @staticmethod
+    def make_weight(
+        device,
+        per_channel,
+        factor,
+        gate_up,
+        random_weights=False,
+        intermediate_size=HIDDEN,
+    ):
+        width = 2 * intermediate_size if gate_up else HIDDEN
+        reduction_size = HIDDEN if gate_up else intermediate_size
+        values = torch.zeros(EXPERTS, reduction_size, width, dtype=torch.int8)
+        diagonal = torch.arange(min(HIDDEN, intermediate_size))
+        values[:, diagonal, diagonal] = 1
+        if gate_up:
+            values[:, diagonal, diagonal + intermediate_size] = 1
+        if random_weights:
+            values.random_(-7, 8)
+            factor *= 0.01
+        groups = 1 if per_channel else 2
+        scale = torch.full((EXPERTS, groups, width), float(factor))
+        if not per_channel:
+            scale[:, 1] *= 2
+        dequant = values.float() * scale.repeat_interleave(reduction_size // groups, 1)
+        bias = (8 * dequant.sum(1)).to(device)
+        packed = values.reshape(-1, 2)
+        packed = ((packed[:, 1] << 4) | (packed[:, 0] & 15)).reshape(
+            EXPERTS, reduction_size, width // 2
+        )
+        weight = torch_npu.npu_format_cast(packed.to(device), 29).view(torch.int32)
+        encoded = scale.view(torch.int32).to(torch.int64)
+        if per_channel and gate_up:
+            encoded = encoded.squeeze(1)
+        return weight.contiguous(), encoded.to(device), bias
+
+    def get_experts_layer_indices(self):
+        return LAYERS
+
+    def get_async_cam_w4a8_layers(self):
+        return self.layers, ""
+
+
+def main():
+    global HIDDEN, EXPERTS
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--per-group", action="store_true")
+    parser.add_argument("--mega-moe", action="store_true")
+    parser.add_argument("--random-weights", action="store_true")
+    parser.add_argument("--routed-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--intermediate-size", type=int, default=HIDDEN
+    )
+    parser.add_argument("--hidden-size", type=int, default=256)
+    parser.add_argument("--local-experts", type=int, default=4)
+    parser.add_argument("--measure", action="store_true")
+    parser.add_argument("--warmups", type=int, default=3)
+    parser.add_argument("--repeats", type=int, default=10)
+    parser.add_argument("--profile-dir")
+    parser.add_argument("--attn-ranks", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--boundary", action="store_true")
+    parser.add_argument("--tile-boundary", action="store_true")
+    parser.add_argument("--save-outputs")
+    parser.add_argument("--reference-outputs")
+    args = parser.parse_args()
+    HIDDEN, EXPERTS = args.hidden_size, args.local_experts
+    if HIDDEN % 256 or args.intermediate_size % 256 or not 256 <= HIDDEN <= 8192 or not 256 <= args.intermediate_size <= 8192:
+        parser.error("H/I must be aligned and in [256,8192]")
+    if not 4 <= EXPERTS <= 256 or args.repeats < 1 or args.warmups < 0:
+        parser.error("invalid expert/repeat bounds")
+    if args.mega_moe and not args.reference_outputs:
+        parser.error("MegaMoE requires saved matching layered eager outputs")
+    os.environ["AFD_ASYNC_CAM_MEGA_MOE"] = "1" if args.mega_moe else "0"
+    faulthandler.dump_traceback_later(60)
+    os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
+    capacity = 256 if args.tile_boundary else 16
+    os.environ["BATCH_SIZE_FACTOR"] = str(capacity / 262144)
+    os.environ["HCCL_BUFFSIZE"] = "64"
+    ensure_cam_async_ops_available()
+    rank = int(os.environ["RANK"])
+    local_rank = int(os.environ["LOCAL_RANK"])
+    world_size = args.attn_ranks + 2
+    assert int(os.environ["WORLD_SIZE"]) == world_size
+    is_ffn = rank >= args.attn_ranks
+    torch.npu.set_device(local_rank)
+    torch.npu.config.allow_internal_format = True
+    device = torch.device("npu", local_rank)
+    dist.init_process_group("gloo", timeout=timedelta(seconds=120))
+    # torchrun's agent owns only the default rendezvous endpoint. The actual
+    # connector creates a distinct Store, as in separate vLLM A/F workers.
+    os.environ["TORCHELASTIC_USE_AGENT_STORE"] = "False"
+    port = [None]
+    if rank == 0:
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port[0] = probe.getsockname()[1]
+    dist.broadcast_object_list(port, src=0)
+    config = SimpleNamespace(
+        additional_config={
+            "afd": {
+                "connector": "CAMAsyncAFDConnector",
+                "role": "ffn" if is_ffn else "attention",
+                "async": True,
+                "compute_gate_on_attention": True,
+                "num_attention_ranks": args.attn_ranks,
+                "num_ffn_ranks": 2,
+                "port": port[0],
+                "connector_extra_config": {
+                    "dynamicQuant": 1,
+                    "attn_ranks_per_dp": 1,
+                    "hccl_buffer_size": 64,
+                },
+            }
+        },
+        model_config=SimpleNamespace(
+            dtype=torch.bfloat16,
+            enforce_eager=True,
+            hf_config=SimpleNamespace(
+                hidden_size=HIDDEN,
+                num_experts_per_tok=2,
+                n_routed_experts=EXPERTS * 2,
+                num_hidden_layers=max(LAYERS) + 1,
+                architectures=["DeepseekV4ForCausalLM"],
+                model_type="deepseek_v4",
+            ),
+        ),
+        scheduler_config=SimpleNamespace(max_num_batched_tokens=capacity),
+        parallel_config=SimpleNamespace(
+            enable_dbo=False,
+            use_ubatching=False,
+            num_ubatches=2,
+            data_parallel_size=2 if is_ffn else args.attn_ranks,
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
+            prefill_context_parallel_size=1,
+            decode_context_parallel_size=1,
+            enable_expert_parallel=True,
+            enable_elastic_ep=False,
+            enable_eplb=False,
+        ),
+        speculative_config=None,
+        cache_config=SimpleNamespace(num_gpu_blocks=None),
+        compilation_config=SimpleNamespace(
+            static_forward_context={}, cudagraph_mode=SimpleNamespace(name="FULL")
+        ),
+        use_v2_model_runner=True,
+    )
+    connector = CAMAsyncAFDConnector(
+        rank,
+        local_rank,
+        config,
+        parse_afd_config(config),
+        rank - args.attn_ranks if is_ffn else rank,
+    )
+    report = {
+        "rank": rank,
+        "per_group": args.per_group,
+        "mega_moe": args.mega_moe,
+        "work": [],
+    }
+    print(json.dumps({"rank": rank, "stage": "connector_created"}), flush=True)
+    if is_ffn:
+        runner = AsyncNPUFFNModelRunner(config, device, connector)
+        runner.model = SyntheticModel(
+            device,
+            not args.per_group,
+            args.random_weights,
+            args.routed_scale,
+            ffn_rank=rank - args.attn_ranks,
+            intermediate_size=args.intermediate_size,
+        )
+        print(json.dumps({"rank": rank, "stage": "weights_ready"}), flush=True)
+        runner.initialize_afd_connector()
+        assert runner._layered_executor is not None
+        if args.mega_moe:
+            mega = runner._mega_executor
+            assert mega is not None
+
+            def align(n):
+                return (n + 511) // 512 * 512
+
+            batch_offset = align(capacity * HIDDEN) + align(capacity * 4)
+            batch_bytes = (5 + 1 + EXPERTS) * 8
+            count_offset = batch_offset + align(batch_bytes)
+            mega_state = SimpleNamespace(
+                token_nums_rankid_layeridx=mega.scratch[
+                    batch_offset : batch_offset + batch_bytes
+                ].view(torch.int64),
+                group_list=mega.scratch[count_offset : count_offset + EXPERTS * 8].view(
+                    torch.int64
+                ),
+            )
+    else:
+        connector.init_afd_connector()
+    # Cold MC2 needs all A/F peers to participate. This finite eager fixture
+    # warms the original operators concurrently before ordered DP cases.
+    with torch.inference_mode():
+        if is_ffn:
+            for _ in range(args.attn_ranks):
+                runner._ffn_forward_connector_driven(single=True)
+        else:
+            hidden = torch.ones((1, HIDDEN), dtype=torch.bfloat16, device=device)
+            context = AFDTransferContext(AFDTransferMetadata(LAYERS[0], 0, [1]))
+            connector.send_attn_output(
+                hidden,
+                context,
+                topk_ids=torch.tensor([[0, 1]], dtype=torch.int32, device=device),
+                topk_weights=torch.full((1, 2), 0.5, device=device),
+            )
+            connector.recv_ffn_output(hidden, context=context)
+        torch.npu.synchronize()
+    dist.barrier()
+    print(json.dumps({"rank": rank, "stage": "transport_ready"}), flush=True)
+    report["identity"] = loaded_identity()
+    report["timing"] = []
+    prof = None
+    if args.profile_dir:
+        prof = torch_npu.profiler.profile(
+            activities=[torch_npu.profiler.ProfilerActivity.CPU, torch_npu.profiler.ProfilerActivity.NPU],
+            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(args.profile_dir),
+        )
+        prof.start()
+    errors = []
+    if not is_ffn:
+        runner = thread = None
+
+    cases = [(2, False, 7), (5, True, 7), (2, False, 7)]
+    if args.boundary:
+        cases.extend(((5, False, 16), (2, True, 16)))
+    if args.tile_boundary:
+        cases.extend(((5, True, 129), (2, False, 129)))
+    base_case_count = len(cases)
+    if args.measure:
+        cases = cases * (args.warmups + args.repeats)
+    expected: list[tuple[int, int, int | None]] = []
+    for layer_id, sparse, tokens in cases:
+        for source in range(args.attn_ranks):
+            chunks = (
+                2 if sparse and 2 * tokens > capacity and rank == args.attn_ranks else 1
+            )
+            rows = 0 if sparse and rank == args.attn_ranks + 1 else None
+            expected.extend(
+                (source, layer_id, tokens if chunks == 2 else rows)
+                for _ in range(chunks)
+            )
+
+    def observe(context):
+        # Test-only host inspection after the matching DR/FFN/CS fence.
+        state = context.states
+        header = state.token_nums_rankid_layeridx.cpu().tolist()
+        report["work"].append(
+            {
+                "source": header[1],
+                "layer": header[2],
+                "rows": int(state.group_list.sum().item()),
+            }
+        )
+
+    if is_ffn and args.mega_moe and not args.measure:
+        original_step = runner._ffn_forward_connector_driven
+
+        def observe_mega_step(**kwargs):
+            result = original_step(**kwargs)
+            torch.npu.current_stream().synchronize()
+            assert result.item() == 0, "MegaMoE device control validation failed"
+            observe(SimpleNamespace(states=mega_state))
+            return result
+
+        runner._ffn_forward_connector_driven = observe_mega_step
+    if is_ffn and not args.mega_moe and not args.measure:
+        original_send = connector.send_ffn_output
+
+        def observe_eager(output, context, **kwargs):
+            result = original_send(output, context, **kwargs)
+            torch.npu.current_stream().synchronize()
+            observe(context)
+            return result
+
+        connector.send_ffn_output = observe_eager
+
+    def serve():
+        try:
+            torch.npu.set_device(local_rank)
+            with torch.inference_mode():
+                for _ in expected:
+                    runner._ffn_forward_connector_driven(single=True)
+        except Exception as exc:
+            errors.append(exc)
+            print(json.dumps({"rank": rank, "service_error": repr(exc)}), flush=True)
+            # Report fixture failure to peers; never substitute eager execution.
+            connector.graph_startup.fail(exc)
+
+    if is_ffn:
+        thread = threading.Thread(target=serve, name="afd-runtime-test", daemon=True)
+        thread.start()
+    dist.barrier()
+    outputs: list[torch.Tensor] = []
+    references = None
+    if not is_ffn and args.reference_outputs:
+        references = torch.load(
+            f"{args.reference_outputs}.rank{rank}.pt", weights_only=True
+        )
+    for case_index, (layer_id, sparse, tokens) in enumerate(cases):
+        for source in range(args.attn_ranks):
+            if rank == source:
+                values = torch.tensor([-12, -9, -0.5, 0.5, 9, 12, 1]).repeat(
+                    (tokens + 6) // 7
+                )[:tokens]
+                inputs = (
+                    (values * (rank + 1))
+                    .bfloat16()[:, None]
+                    .expand(-1, HIDDEN)
+                    .contiguous()
+                )
+                ids = (
+                    torch.arange(tokens * 2)
+                    .reshape(tokens, 2)
+                    .remainder(2 if sparse else EXPERTS * 2)
+                )
+                hidden = inputs.to(device)
+                route_ids = ids.to(device=device, dtype=torch.int32)
+                route_weights = torch.full((tokens, 2), 0.5, device=device)
+                begin = torch.npu.Event(enable_timing=True)
+                end = torch.npu.Event(enable_timing=True)
+                context = AFDTransferContext(AFDTransferMetadata(layer_id, 0, [tokens]))
+                begin.record()
+                connector.send_attn_output(
+                    hidden, context, topk_ids=route_ids, topk_weights=route_weights,
+                )
+                output = connector.recv_ffn_output(hidden, context=context)
+                end.record()
+                done = torch.npu.Event()
+                done.record()
+                deadline = time.monotonic() + 30
+                while not done.query():
+                    connector.graph_startup.check_failure()
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError(
+                            "runtime test CR did not finish in 30 seconds"
+                        )
+                    time.sleep(0.01)
+                if args.measure and case_index >= base_case_count * args.warmups:
+                    report["timing"].append({"case": case_index % base_case_count,
+                        "layer": layer_id, "sparse": sparse, "tokens": tokens,
+                        "transaction_us": begin.elapsed_time(end) * 1000})
+                actual = output.cpu()
+                if references is not None:
+                    torch.testing.assert_close(
+                        actual,
+                        references[len(outputs) % len(references)],
+                        rtol=0.04 if args.mega_moe else 0,
+                        atol=2e-5 if args.mega_moe else 0,
+                    )
+                outputs.append(actual)
+                report["work"].append(
+                    {"layer": layer_id, "sparse": sparse, "tokens": tokens}
+                )
+            # Harness-only scheduling makes source changes reproducible. The
+            # production connector has no per-work cross-DP barrier.
+            dist.barrier()
+    if not is_ffn:
+        if args.save_outputs:
+            torch.save(outputs, f"{args.save_outputs}.rank{rank}.pt")
+        if references is not None:
+            assert len(outputs) % len(references) == 0
+            report[
+                "layered_reference_close" if args.mega_moe else "eager_exact_match"
+            ] = True
+        assert not connector._pending_attention_payloads
+    else:
+        assert thread is not None
+        thread.join(timeout=30)
+        assert not thread.is_alive(), "finite work did not complete within 30 seconds"
+        if errors:
+            raise errors[0]
+        if not args.measure:
+            assert len(report["work"]) == len(expected)
+        for observed, (source, layer, rows) in zip(
+            report["work"], expected if not args.measure else [], strict=True
+        ):
+            assert (observed["source"], observed["layer"]) == (source, layer)
+            if rows is not None:
+                assert observed["rows"] == rows, "zero work or chunk mismatch"
+    if prof is not None:
+        torch.npu.synchronize()
+        prof.stop()
+    # Retain the TCPStore owner until finite eager peers have consumed all work.
+    dist.barrier()
+    if is_ffn:
+        runner.shutdown()
+        runner.shutdown()
+        assert runner.model is None and runner._graph is None
+    else:
+        connector.close()
+    assert not connector.is_initialized and connector.cam_pg is None
+    report["cleanup_complete"] = True
+    reports = [None] * world_size
+    dist.all_gather_object(reports, report)
+    dist.destroy_process_group()
+    faulthandler.cancel_dump_traceback_later()
+    if rank == 0:
+        print(json.dumps({"result": "PASS", "reports": reports}), flush=True)
+
+
+if __name__ == "__main__":
+    main()

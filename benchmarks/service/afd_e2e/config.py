@@ -286,7 +286,7 @@ def from_args(args) -> Case:
     async_mode = args.comm == "async"
     v4 = args.model == "v4-flash"
     if v4 and async_mode:
-        default_model_len, default_batched_tokens = 65536, 32768
+        default_model_len, default_batched_tokens = 32768, 32768
     elif v4:
         default_model_len, default_batched_tokens = 8192, 1024
     elif async_mode:
@@ -307,9 +307,7 @@ def from_args(args) -> Case:
         execution=args.execution,
         dbo=args.dbo == "on",
         layered_gmm=args.layered_gmm == "on",
-        moe_ubatching=(
-            args.moe_ubatching == "on" if args.moe_ubatching else async_mode
-        ),
+        moe_ubatching=args.moe_ubatching == "on",
         devices=devices,
         limit=limit,
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
@@ -354,6 +352,8 @@ def from_args(args) -> Case:
 
 
 def validate(case: Case) -> None:
+    if case.comm == "async" and case.moe_ubatching:
+        raise ValueError("current AFD async connector has no async_moe_ubatching field; use --moe-ubatching off")
     tests = case.tests
     if (
         "perf" in tests

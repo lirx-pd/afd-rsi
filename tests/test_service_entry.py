@@ -39,6 +39,13 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path):
     assert services["ffn"]["environment"]["VLLM_USE_V2_MODEL_RUNNER"] == "1"
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_LAYERED_GMM"] == "1"
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_MEGA_MOE"] == "1"
+    for service in services.values():
+        command = service["command"]
+        additional = json.loads(command[command.index("--additional-config") + 1])
+        extra = additional["afd"]["connector_extra_config"]
+        assert set(extra) == {"hccl_buffer_size", "dynamicQuant", "attn_ranks_per_dp"}
+        assert extra["dynamicQuant"] == 1 and extra["attn_ranks_per_dp"] == 4
+        assert command[command.index("--max-model-len") + 1] == "32768"
     assert all(service["command"][:2] == ["vllm", "serve"] for service in services.values())
     text = json.dumps(plan)
     assert "serve" in text
@@ -52,6 +59,12 @@ def test_service_requires_explicit_target_repo():
     result = invoke("plan", "--device", "0,1,2,3", "--nic", "lo", "--afd-host", "127.0.0.1")
     assert result.returncode != 0
     assert "explicit --repo" in result.stderr
+
+
+def test_service_rejects_removed_async_configuration_before_starting():
+    result = invoke("plan", "--repo", "/work/target", "--comm", "async", "--moe-ubatching", "on")
+    assert result.returncode == 2
+    assert "no async_moe_ubatching field" in result.stderr
 
 
 def test_pinned_service_waits_for_actual_models_http(monkeypatch):

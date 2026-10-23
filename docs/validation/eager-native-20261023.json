@@ -1,0 +1,596 @@
+{
+  "task": "afd-mrv2-async",
+  "run_root": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023",
+  "mode": "eager",
+  "source": "acccf801df79ae15c0828bcaed90b0b438ff66c2b0ad2a996fa38332b6ab957b",
+  "artifacts": {
+    "files": {
+      "afd_plugin/__init__.py": "3f236a3ee5fcf178470dea6003518394037c7a5deb1fe6a02266a5a2b6da881c",
+      "afd_plugin/_C_ascend.cpython-312-aarch64-linux-gnu.so": "04fe9562c7147c99472d6fec4afe889bb908c07556103673452cf4b9ff3f0521",
+      "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so": "23f25198cee16752dc02bcff70759f34edecf8d44edb9b6ddf5467ef274e1352"
+    },
+    "kernel_artifacts": {
+      "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.json": "f698d3f745bd4e05d7fb129b030478d2d44f4e2b589c757318630280c0d7f7d9",
+      "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/AfdMegaMoeFFN_989547696d243c85c3d86b7bd464a2df.o": "d550fecd12c48654a1e74ba14183147588943360b69a25fc867ff92d25375623"
+    }
+  },
+  "build": {
+    "argv": [
+      "/usr/local/python3.12.13/bin/python3",
+      "setup.py",
+      "build_ext",
+      "--inplace"
+    ],
+    "cwd": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-eager-20261023/build03/source",
+    "status": "completed",
+    "cleanup_complete": true,
+    "pid": 69827,
+    "exit_code": 0,
+    "elapsed_seconds": 342.050101403147
+  },
+  "tests": ".........................................                                [100%]\n41 passed in 12.44s\n",
+  "native": {
+    "native-small-02": {
+      "settings": {
+        "action": "compare",
+        "device": "0,1,2",
+        "hidden": 256,
+        "intermediate": 512,
+        "experts": 4,
+        "attn_ranks": 1,
+        "pairs": 2,
+        "warmups": 3,
+        "repeats": 10,
+        "per_group": false,
+        "profile": true,
+        "timeout": 360
+      },
+      "devices": [
+        "0",
+        "1",
+        "2"
+      ],
+      "foundation_hash": "600272fd3b19e951c6971cde1d0be3201d7b6b5305b3b2aa34a8d5b352177a75",
+      "controller": {
+        "src/afd_rsi/__init__.py": "97035e4c1973f4df5dda9099d8d6491908ac4852f01ef777464f1cc012b0a604",
+        "src/afd_rsi/__main__.py": "06c91423bb7be56434d2c754fd52066ad153fc4017cb026b469af7b85bc8f878",
+        "src/afd_rsi/campaign.py": "608b6fc7966f9ede59f3c8fa0645d8fffe52926e02bd8319eba5c0022427391c",
+        "src/afd_rsi/cli.py": "798e2ea4eb62cb2d7aac218a6290231968ae442e8ddef211b67481afe5fda4ee",
+        "src/afd_rsi/contracts.py": "bb47c2d432ef69c62f8265c342c3852323166a91411046c14a48a1c715034924",
+        "src/afd_rsi/evaluate.py": "495fbe9efb799b4c0ead444936465c3cd82b67fe98e74f9d902ac26896d8fdcb",
+        "src/afd_rsi/evidence.py": "cd9aba8a0eecaa50cb59d089616be6a23f1b8c06bc87746724c995ff0786941f",
+        "src/afd_rsi/native.py": "7be5cc839f77b36706aabdb861f6d492838193fde6fb70b5ffc247c9fa6c9b04",
+        "src/afd_rsi/runner.py": "8c1d5f2acb778126af00b278e00917661c601f4174868ec76f7231685c552d73",
+        "src/afd_rsi/skills.py": "0c204c5d40c9e93dd39d211d7d92a5212453d9ba66891e81a7e39fd27cd30b4b",
+        "src/afd_rsi/workspace.py": "552e1528ed63ef49f70bf1ccb879907a7f03f0e259a490b2fbf7357e24fc1503"
+      },
+      "correctness": "PASS",
+      "timing": [
+        {
+          "attention_rank": 0,
+          "case": 0,
+          "layered_us_by_trial": [
+            291.6700094938278,
+            291.39000177383423
+          ],
+          "mega_us_by_trial": [
+            307.8799992799759,
+            295.51000893116
+          ],
+          "gain_pct_by_trial": [
+            -5.557647086952593,
+            -1.4139150733536618
+          ],
+          "median_gain_pct": -3.4857810801531275
+        },
+        {
+          "attention_rank": 0,
+          "case": 1,
+          "layered_us_by_trial": [
+            272.149994969368,
+            270.08000016212463
+          ],
+          "mega_us_by_trial": [
+            246.3100031018257,
+            236.6200014948845
+          ],
+          "gain_pct_by_trial": [
+            9.494761104239853,
+            12.388921300042451
+          ],
+          "median_gain_pct": 10.941841202141152
+        },
+        {
+          "attention_rank": 0,
+          "case": 2,
+          "layered_us_by_trial": [
+            273.44000339508057,
+            265.45000076293945
+          ],
+          "mega_us_by_trial": [
+            293.0999994277954,
+            280.25999665260315
+          ],
+          "gain_pct_by_trial": [
+            -7.189875580973075,
+            -5.579203558899134
+          ],
+          "median_gain_pct": -6.384539569936104
+        },
+        {
+          "attention_rank": 0,
+          "case": 3,
+          "layered_us_by_trial": [
+            282.7799916267395,
+            276.36998891830444
+          ],
+          "mega_us_by_trial": [
+            298.1099933385849,
+            283.6199998855591
+          ],
+          "gain_pct_by_trial": [
+            -5.42117623798522,
+            -2.623298931852459
+          ],
+          "median_gain_pct": -4.022237584918839
+        },
+        {
+          "attention_rank": 0,
+          "case": 4,
+          "layered_us_by_trial": [
+            279.77000176906586,
+            268.6600089073181
+          ],
+          "mega_us_by_trial": [
+            249.31000173091888,
+            238.69000375270844
+          ],
+          "gain_pct_by_trial": [
+            10.887514689044453,
+            11.155365205451432
+          ],
+          "median_gain_pct": 11.021439947247941
+        },
+        {
+          "attention_rank": 0,
+          "case": 5,
+          "layered_us_by_trial": [
+            441.68999791145325,
+            441.37999415397644
+          ],
+          "mega_us_by_trial": [
+            431.0400038957596,
+            430.32999336719513
+          ],
+          "gain_pct_by_trial": [
+            2.4111920274519543,
+            2.5035119246765167
+          ],
+          "median_gain_pct": 2.4573519760642357
+        },
+        {
+          "attention_rank": 0,
+          "case": 6,
+          "layered_us_by_trial": [
+            297.94999957084656,
+            293.6599999666214
+          ],
+          "mega_us_by_trial": [
+            328.5299986600876,
+            311.7299973964691
+          ],
+          "gain_pct_by_trial": [
+            -10.263466733776488,
+            -6.153373776442698
+          ],
+          "median_gain_pct": -8.208420255109592
+        }
+      ],
+      "profiler": [
+        {
+          "file": "gpuxdn010030014227.guian02_89642_20261023080134517_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "9cc6da5cecab96718a9c8dead3b1022f130dc27ed1bac404e1d8c94bae41f422",
+          "mega_kernel_count": 8,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        },
+        {
+          "file": "gpuxdn010030014227.guian02_89643_20261023080134517_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "4ac6e6bf6394a7676c7d51162f338a093d51286d3c160217847bbfb11b9da0a9",
+          "mega_kernel_count": 7,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        }
+      ],
+      "promotion": "not evaluated; paired diagnostic comparison only",
+      "claim": "native synthetic weights, eager, serialized Attention sources; not model/service performance",
+      "phases": [
+        {
+          "phase": "reference",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "correctness",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "pair-0-layered",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "pair-0-mega",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "pair-1-mega",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "pair-1-layered",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        },
+        {
+          "phase": "profile",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 3
+        }
+      ]
+    },
+    "native-wide-01": {
+      "settings": {
+        "action": "compare",
+        "device": "0,1,2,3",
+        "hidden": 4096,
+        "intermediate": 2048,
+        "experts": 32,
+        "attn_ranks": 2,
+        "pairs": 2,
+        "warmups": 3,
+        "repeats": 10,
+        "per_group": true,
+        "profile": true,
+        "timeout": 360
+      },
+      "devices": [
+        "0",
+        "1",
+        "2",
+        "3"
+      ],
+      "foundation_hash": "600272fd3b19e951c6971cde1d0be3201d7b6b5305b3b2aa34a8d5b352177a75",
+      "controller": {
+        "src/afd_rsi/__init__.py": "97035e4c1973f4df5dda9099d8d6491908ac4852f01ef777464f1cc012b0a604",
+        "src/afd_rsi/__main__.py": "06c91423bb7be56434d2c754fd52066ad153fc4017cb026b469af7b85bc8f878",
+        "src/afd_rsi/campaign.py": "608b6fc7966f9ede59f3c8fa0645d8fffe52926e02bd8319eba5c0022427391c",
+        "src/afd_rsi/cli.py": "798e2ea4eb62cb2d7aac218a6290231968ae442e8ddef211b67481afe5fda4ee",
+        "src/afd_rsi/contracts.py": "bb47c2d432ef69c62f8265c342c3852323166a91411046c14a48a1c715034924",
+        "src/afd_rsi/evaluate.py": "495fbe9efb799b4c0ead444936465c3cd82b67fe98e74f9d902ac26896d8fdcb",
+        "src/afd_rsi/evidence.py": "cd9aba8a0eecaa50cb59d089616be6a23f1b8c06bc87746724c995ff0786941f",
+        "src/afd_rsi/native.py": "7be5cc839f77b36706aabdb861f6d492838193fde6fb70b5ffc247c9fa6c9b04",
+        "src/afd_rsi/runner.py": "8c1d5f2acb778126af00b278e00917661c601f4174868ec76f7231685c552d73",
+        "src/afd_rsi/skills.py": "0c204c5d40c9e93dd39d211d7d92a5212453d9ba66891e81a7e39fd27cd30b4b",
+        "src/afd_rsi/workspace.py": "552e1528ed63ef49f70bf1ccb879907a7f03f0e259a490b2fbf7357e24fc1503"
+      },
+      "correctness": "PASS",
+      "timing": [
+        {
+          "attention_rank": 0,
+          "case": 0,
+          "layered_us_by_trial": [
+            418.9999997615814,
+            413.6299937963486
+          ],
+          "mega_us_by_trial": [
+            946.5799927711487,
+            936.3299906253815
+          ],
+          "gain_pct_by_trial": [
+            -125.91407954887109,
+            -126.36897823381375
+          ],
+          "median_gain_pct": -126.14152889134242
+        },
+        {
+          "attention_rank": 0,
+          "case": 1,
+          "layered_us_by_trial": [
+            296.3999956846237,
+            295.8800047636032
+          ],
+          "mega_us_by_trial": [
+            435.9700083732605,
+            437.7800077199936
+          ],
+          "gain_pct_by_trial": [
+            -47.08839902856896,
+            -47.95863210485042
+          ],
+          "median_gain_pct": -47.52351556670969
+        },
+        {
+          "attention_rank": 0,
+          "case": 2,
+          "layered_us_by_trial": [
+            396.2000012397766,
+            398.24000000953674
+          ],
+          "mega_us_by_trial": [
+            916.6499972343445,
+            904.3300151824951
+          ],
+          "gain_pct_by_trial": [
+            -131.36042260625746,
+            -127.08166310788442
+          ],
+          "median_gain_pct": -129.22104285707093
+        },
+        {
+          "attention_rank": 0,
+          "case": 3,
+          "layered_us_by_trial": [
+            535.9100103378296,
+            542.5000190734863
+          ],
+          "mega_us_by_trial": [
+            1663.89000415802,
+            1620.0900077819824
+          ],
+          "gain_pct_by_trial": [
+            -210.4793663229259,
+            -198.6340923174285
+          ],
+          "median_gain_pct": -204.5567293201772
+        },
+        {
+          "attention_rank": 0,
+          "case": 4,
+          "layered_us_by_trial": [
+            308.28000605106354,
+            307.3800057172775
+          ],
+          "mega_us_by_trial": [
+            462.2799903154373,
+            452.890008687973
+          ],
+          "gain_pct_by_trial": [
+            -49.95458065446684,
+            -47.33879896681794
+          ],
+          "median_gain_pct": -48.646689810642386
+        },
+        {
+          "attention_rank": 0,
+          "case": 5,
+          "layered_us_by_trial": [
+            526.3299942016602,
+            520.689994096756
+          ],
+          "mega_us_by_trial": [
+            864.3099963665009,
+            854.229986667633
+          ],
+          "gain_pct_by_trial": [
+            -64.21446732814276,
+            -64.05730787077461
+          ],
+          "median_gain_pct": -64.13588759945868
+        },
+        {
+          "attention_rank": 0,
+          "case": 6,
+          "layered_us_by_trial": [
+            591.0999774932861,
+            590.3300046920776
+          ],
+          "mega_us_by_trial": [
+            1760.2299451828003,
+            1723.829984664917
+          ],
+          "gain_pct_by_trial": [
+            -197.7888702766519,
+            -192.01124302737838
+          ],
+          "median_gain_pct": -194.90005665201514
+        },
+        {
+          "attention_rank": 1,
+          "case": 0,
+          "layered_us_by_trial": [
+            421.3099926710129,
+            406.5599888563156
+          ],
+          "mega_us_by_trial": [
+            920.0699925422668,
+            917.7899956703186
+          ],
+          "gain_pct_by_trial": [
+            -118.38314033551045,
+            -125.74528257247648
+          ],
+          "median_gain_pct": -122.06421145399347
+        },
+        {
+          "attention_rank": 1,
+          "case": 1,
+          "layered_us_by_trial": [
+            295.7099974155426,
+            289.25999999046326
+          ],
+          "mega_us_by_trial": [
+            425.74000358581543,
+            430.4899871349335
+          ],
+          "gain_pct_by_trial": [
+            -43.972137332763175,
+            -48.82458243418602
+          ],
+          "median_gain_pct": -46.3983598834746
+        },
+        {
+          "attention_rank": 1,
+          "case": 2,
+          "layered_us_by_trial": [
+            396.99000120162964,
+            397.47999608516693
+          ],
+          "mega_us_by_trial": [
+            912.4999940395355,
+            902.7900099754333
+          ],
+          "gain_pct_by_trial": [
+            -129.8546540914214,
+            -127.1284137232393
+          ],
+          "median_gain_pct": -128.49153390733034
+        },
+        {
+          "attention_rank": 1,
+          "case": 3,
+          "layered_us_by_trial": [
+            532.1400165557861,
+            533.97998213768
+          ],
+          "mega_us_by_trial": [
+            1681.559979915619,
+            1650.059998035431
+          ],
+          "gain_pct_by_trial": [
+            -215.99953538531432,
+            -209.0115834360966
+          ],
+          "median_gain_pct": -212.50555941070547
+        },
+        {
+          "attention_rank": 1,
+          "case": 4,
+          "layered_us_by_trial": [
+            306.99001252651215,
+            304.639995098114
+          ],
+          "mega_us_by_trial": [
+            437.31001019477844,
+            444.3899989128113
+          ],
+          "gain_pct_by_trial": [
+            -42.45089167420769,
+            -45.87382026765351
+          ],
+          "median_gain_pct": -44.1623559709306
+        },
+        {
+          "attention_rank": 1,
+          "case": 5,
+          "layered_us_by_trial": [
+            536.4300012588501,
+            527.1599888801575
+          ],
+          "mega_us_by_trial": [
+            862.8799915313721,
+            862.5899851322174
+          ],
+          "gain_pct_by_trial": [
+            -60.85602772149876,
+            -63.62963869177774
+          ],
+          "median_gain_pct": -62.24283320663825
+        },
+        {
+          "attention_rank": 1,
+          "case": 6,
+          "layered_us_by_trial": [
+            587.7000093460083,
+            586.4599943161011
+          ],
+          "mega_us_by_trial": [
+            1782.260000705719,
+            1743.1299686431885
+          ],
+          "gain_pct_by_trial": [
+            -203.2601620491746,
+            -197.22913507100094
+          ],
+          "median_gain_pct": -200.24464856008777
+        }
+      ],
+      "profiler": [
+        {
+          "file": "gpuxdn010030014227.guian02_99167_20261023080633300_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "704888d83b58938c1c9150a7c1961e83bf78e49c04f61d00c35ae476ff1641ba",
+          "mega_kernel_count": 16,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        },
+        {
+          "file": "gpuxdn010030014227.guian02_99168_20261023080633301_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "e5e6341695a007b7f218f6a11afbc4b47108742e826850666746f7e88303d3f1",
+          "mega_kernel_count": 14,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        }
+      ],
+      "promotion": "not evaluated; paired diagnostic comparison only",
+      "claim": "native synthetic weights, eager, serialized Attention sources; not model/service performance",
+      "phases": [
+        {
+          "phase": "reference",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "correctness",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "pair-0-layered",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "pair-0-mega",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "pair-1-mega",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "pair-1-layered",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        },
+        {
+          "phase": "profile",
+          "exit_code": 0,
+          "cleanup_complete": true,
+          "ranks": 4
+        }
+      ]
+    }
+  }
+}

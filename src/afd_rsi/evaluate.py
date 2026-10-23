@@ -9,7 +9,7 @@ from .contracts import positive
 def evaluate(plan: dict, observations: list[dict]) -> dict:
     reasons, incomplete, failed = [], False, False
     samples = {"baseline": [], "candidate": []}
-    quality = set()
+    quality, service_quality = set(), set()
     for observation in observations:
         if observation["status"] != "valid":
             incomplete = True
@@ -21,11 +21,16 @@ def evaluate(plan: dict, observations: list[dict]) -> dict:
             reasons.append(f"{side} {phase} checks failed")
         if phase == "correctness":
             quality.add(side)
+        elif phase == "service":
+            service_quality.add(side)
         elif phase == "benchmark":
             samples[side].append(positive(observation["value"], "measurement"))
     if quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both correctness results required")
+    if "service" in plan and service_quality != {"baseline", "candidate"}:
+        incomplete = True
+        reasons.append("both configured service gates required")
     if any(len(values) != plan["repetitions"] for values in samples.values()):
         incomplete = True
         reasons.append("paired measurements incomplete")
@@ -44,4 +49,5 @@ def evaluate(plan: dict, observations: list[dict]) -> dict:
             "backend": plan["backend"], "scope": plan["scope"], "unit": plan["unit"],
             "gain_pct": gain, "samples": samples, "reasons": reasons,
             "claim": "synthetic controller fixture only" if plan["backend"] == "cpu-synthetic"
+            else "limited to configured native and service gates; not production qualification" if "service" in plan
             else "limited to the supplied benchmark and validators; not service qualification"}

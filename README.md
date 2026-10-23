@@ -3,9 +3,9 @@
 面向 AFD MegaMoe 的本机优化工作台。Python 3.11+；执行器要求 Linux 与可读的
 `/proc`。控制程序没有运行时第三方依赖，不导入 torch 或 torch_npu。
 
-当前实现是 **M0 的 A3 知识子集与 M1 的手工候选评测链路**。支持仓库内技能和
-知识闭包校验、内容快照、独立源码工作区、构建、正确性、交替 AB/BA、判定、
-报告与补丁导出。它不依赖其他 RSI 框架代码。
+当前支持仓库内技能/知识闭包、冻结实验、隔离构建、正确性、真实服务验收、
+AB/BA、报告和补丁导出，以及 Codex 提案、受预算约束的自动搜索、独立复测晋升、
+历史经验选择和中断续跑。它不依赖其他 RSI 框架代码。
 
 8 个技能是为本机 A3 MegaMoe 重新整理的工作流，技术正文、参考头文件及完整
 内部依赖均在本仓库；不是完整上游技能库的逐文件迁移。来源范围与参考代码身份
@@ -15,16 +15,22 @@
 启动 A/F、预检、就绪、真实 HTTP 请求和进程清理。详见
 [NPU 服务测试](docs/npu-service-testing.md)，入口为 `python3 -m afd_rsi service --help`。
 
-自动 Agent 搜索、经验晋升、真实 MegaMoe 算子 benchmark/加载身份探针以及完整
-崩溃后恢复尚未实现。当前 `compare` 使用维护者明确提供的本地程序；程序负责
-启动它的所有 rank，并遵守 [结果合同](docs/result-contract.md)。没有远程接口。
+真实 eager 原生实验提供 `native build/compare`，调用目标自己的构建入口、真实
+runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务计时和独立 profiler。
+支持独立 MegaMoe 基线/候选和自动 JSON/Markdown 报告，见 [eager 原生实验](docs/eager-native.md)。不包含 FULL graph。
+本轮样例服务门槛按约定暂不考察正常关闭错误；原始失败仍归档，推理、身份和清理必须通过。
+
+自动搜索使用已有登录的 Codex CLI，也支持提案机和执行机通过文件交换，详见
+[自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 将真实
+原生构建和 AFD E2E 服务接入同一个 campaign。框架不耦合调度平台或 SSH。
+通用 benchmark 遵守 [结果合同](docs/result-contract.md)。
 
 ## 本机演练
 
 从仓库根目录执行。以下输入中的耗时是合成字段，只验证控制链路。
 
 ```bash
-export PYTHONPATH="$PWD/src"
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
 python3 -m afd_rsi check recipes/cpu_demo.toml
 python3 -m afd_rsi context afd-megamoe
 
@@ -45,7 +51,7 @@ Git 目标使用未忽略文件和已跟踪文件；普通目录包含除 `.git`
 `baseline` 保存基线检查；`compare` 会重新构建两侧、先验证正确性，再交替执行
 冻结数量的测量。它保存新 attempt，保留所有原始失败。`min_gain_pct` 是延迟
 下降的百分比，必须为正收益且达到冻结门槛；当前仅支持一个 workload、一个
-主指标及明确 primary rank。复杂 case 集合需拆成不同 campaign。
+主指标及明确 primary rank；case 集合的聚合由冻结 driver 定义。
 
 `patch` 先在临时副本核对允许文件，再应用到候选。也可以手工编辑
 `workspaces/candidate` 中允许的文件。构建输出必须放在提供的 build 目录。
@@ -80,14 +86,16 @@ python3 -m pytest -q
 测试覆盖完整演练、错误输出/退化拒绝、缺失或错误 rank、非有限指标、越界补丁、
 证据变更、预算停止和真实子进程组清理。CPU fixture 不是 NPU 或模型验证。
 
-模型/服务验证采用上述 E2E 流程。下一步按 `docs/design.md` 接入真实 A3 的构建与加载身份核验、独立正确性参考、
-完整 FFN/事务计时，然后实现预算受控的候选生成和经验闭环。
+模型/服务验证采用上述 E2E 流程；`search` 用冻结基线和当前最佳候选完成初筛及
+独立复测，`resume` 先协调进程和设备健康再复用已完成阶段，`export --best` 导出
+确认过的最佳版本。原生入口的合成权重和串行事务边界见其文档。
 
-本次交付与后续边界记录在 [实施记录](docs/implementation-status.md)。
+本次交付与后续边界记录在 [实施记录](docs/implementation-status.md)，实际功能验证见 [RSI 验证](docs/validation/rsi-20261023.md)，此前原生记录见 [eager 验证](docs/validation/eager-20261023.md)。
 
-当前限制：本地命令属于可信 benchmark；子进程必须留在自己的进程组，不支持
-daemonize/setsid 逃离监管。仅核实主机进程退出，未证明 NPU 健康。遇到未完成的
-进程记录会停止，要求先核对现场；不自动恢复或重复启动可能仍活跃的工作。
+当前限制：本地命令仍属于可信 benchmark；执行器用继承的试验标记与 pidfd 跟踪
+退出进程组的子进程。跨主机/重启后的回执无法自动证明资源归属，会停止续跑。
+Ascend 中断后基础计算健康检查通过才继续，不自动重置设备，也不保证所有通信
+故障都能恢复。历史经验不会自动改写底座；FULL graph 和正式性能调优未开展。
 
 项目尚未选定整体发布许可证。复制的 AFD 参考头文件保留原版权声明和其
 `knowledge/reference-code/LICENSE`；不把该许可证自动扩展到其他内容。
