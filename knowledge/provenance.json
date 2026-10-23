@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "authored_at": "2026-10-23",
+  "scope": "A3 local procedures adapted into self-contained original guidance; not complete upstream skill distributions",
+  "hardware_qualification": "not_run",
+  "reference_code": {
+    "file": "knowledge/reference-code/mega_moe_workspace.h",
+    "source_revision": "df8d6a0c403c3ca1b4ed9cf1687e7204908bebec",
+    "source_path": "csrc/npu/ascend_kernels/utils/op_kernel/mega_moe_workspace.h",
+    "source_worktree_snapshot": true,
+    "sha256": "97c236690f67ce5c3b84793beee15b182ca93a129eb0cfc0e404b8e88d52f836",
+    "license": "Apache-2.0",
+    "license_file": "knowledge/reference-code/LICENSE"
+  },
+  "local_knowledge_snapshots": [
+    {
+      "file": "knowledge/performance/arch22-pipeline.md",
+      "source_id": "ascendc-performance-best-practices/references/matmul/arch22/pipeline_design.md",
+      "source_sha256": "411edebe99b43b0bb05bac2754c1d4ffd4abe46c726df718c0c1b4a7131eb0ed",
+      "modifications": "external URL locators removed; technical body preserved",
+      "license": "not declared in provided local source; no additional redistribution grant asserted"
+    },
+    {
+      "file": "knowledge/performance/arch22-reuse-split.md",
+      "source_id": "ascendc-performance-best-practices/references/matmul/arch22/reuse_and_split_design.md",
+      "source_sha256": "080b31488432d91c218eacb24f37608c99425ab7b6b692f2e6e7691a407475a6",
+      "modifications": "external URL locators removed; technical body preserved",
+      "license": "not declared in provided local source; no additional redistribution grant asserted"
+    },
+    {
+      "file": "knowledge/api/mte-address-access.md",
+      "source_id": "ascendc-mc2-best-practice/references/foundations/ascendc-api/moe-dispatch-combine/api-rules/mte-address-access.md",
+      "source_sha256": "04a09460510b9dc72115873de8a4622a956be5e7cccef40b5fabe996f08c033f",
+      "modifications": "external URL locators removed; technical body preserved",
+      "license": "not declared in provided local source; no additional redistribution grant asserted"
+    },
+    {
+      "file": "knowledge/api/sync-and-visibility.md",
+      "source_id": "ascendc-mc2-best-practice/references/foundations/ascendc-api/moe-dispatch-combine/api-rules/sync-and-visibility.md",
+      "source_sha256": "abbb54743b5a2bab7f6e0ad2c9bd0fd0f8d4646e78a6c46d77241da155cd87f0",
+      "modifications": "external URL locators removed; technical body preserved",
+      "license": "not declared in provided local source; no additional redistribution grant asserted"
+    }
+  ]
+}

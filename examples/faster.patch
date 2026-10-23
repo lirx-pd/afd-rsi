@@ -1,0 +1,6 @@
+diff --git a/kernel.json b/kernel.json
+--- a/kernel.json
++++ b/kernel.json
+@@ -1 +1 @@
+-{"synthetic_us": 10.0, "multiplier": 2, "bias": 1}
++{"synthetic_us": 8.0, "multiplier": 2, "bias": 1}

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "scope": "A3 MegaMoe local workflow; hardware performance unqualified",
+  "skills": [
+    "afd-megamoe",
+    "ascendc-code-review",
+    "ascendc-crash-debug",
+    "ascendc-mc2-best-practice",
+    "ascendc-operator-development",
+    "ascendc-perf-optimize",
+    "ascendc-performance-best-practices",
+    "npu-arch"
+  ],
+  "files": {
+    "skills/afd-megamoe/SKILL.md": "472775bf43a0796caa949612ab54c00204d637692c97c3fabad58d3dff56afc7",
+    "skills/ascendc-code-review/SKILL.md": "866f50307f57c534933f07509ca0eefd94c329d6e2fb6e5555fd0cf281faae59",
+    "skills/ascendc-crash-debug/SKILL.md": "1e1a5e72a6c3d5e70563c3c7ae3291d927fb7aed7e1d9d3d96b8330f72b5c53e",
+    "skills/ascendc-mc2-best-practice/SKILL.md": "c59c65780a5469991c9d74fb170b6d5e8124146d3175775aea519cd3a581d5ec",
+    "skills/ascendc-operator-development/SKILL.md": "06db387607c036558f85d65e8d622736e2555054c20310556fb01136d912b541",
+    "skills/ascendc-perf-optimize/SKILL.md": "9bb6339dd8b0d0cf09804fe8fc364690ef1a42537a366608be4147ce77417858",
+    "skills/ascendc-performance-best-practices/SKILL.md": "6383a2f37277806785b2bd0b81df54d08bbb522e9efaeb2392dabc36aff2298a",
+    "skills/npu-arch/SKILL.md": "14f97ca8b73ff751214e1ec8546055f797bb732c65676b8653f5e260152fa822",
+    "knowledge/afd/compact-v2.md": "5caa0fd6a8af2bd73c629e2eee9492a32fbe33945f20beffd04239a3eb6163ee",
+    "knowledge/afd/runtime-build.md": "509060632450f60648019eecf35c525ad80796ce349ccd0cc7adebf7aba8f4e0",
+    "knowledge/api/memory-synchronization.md": "ae6e9b15b793f38ef429cb88eb747e163e58c8d0b284ba41afa6e5ef081db698",
+    "knowledge/api/mte-address-access.md": "04a09460510b9dc72115873de8a4622a956be5e7cccef40b5fabe996f08c033f",
+    "knowledge/api/sync-and-visibility.md": "abbb54743b5a2bab7f6e0ad2c9bd0fd0f8d4646e78a6c46d77241da155cd87f0",
+    "knowledge/architecture/a3.md": "932048f434792cacdc95b60a9239e8d760d7601c9105c4c38bfa8563499dc379",
+    "knowledge/gmm-quantization/w4a8.md": "70f13cc25d4c1816a690ebc6cf998902702d4f9604df15f52591fe0964575350",
+    "knowledge/mc2/window-protocol.md": "1ea76f67f61cd288f7e4cbe969c3b9c20f025cf76062fa576e9808dd78ebc378",
+    "knowledge/measurement/contract.md": "29e28d6cad2fc73127d34b28f6c6867e1fab50173dfeda8d92a8dc393d94a799",
+    "knowledge/performance/arch22-pipeline.md": "411edebe99b43b0bb05bac2754c1d4ffd4abe46c726df718c0c1b4a7131eb0ed",
+    "knowledge/performance/arch22-reuse-split.md": "080b31488432d91c218eacb24f37608c99425ab7b6b692f2e6e7691a407475a6",
+    "knowledge/performance/tiling-pipeline.md": "fecfb012be214109f6cf4d07c2664feebfe10741be47467546b39cf8a947f0b4",
+    "knowledge/provenance.json": "79fd3cfdac9841587851a3ad60af650403827f619463b0bcd57f518dbfba2625",
+    "knowledge/reference-code/LICENSE": "0e8566ea362276878e1f38f97da49964dbea301c15d4aa9d727f97a4c39fd943",
+    "knowledge/reference-code/README.md": "920160dcf2eb36111a47afb79da8439f48e5ae6acf8ced8c7cd91e0cef16b2eb",
+    "knowledge/reference-code/mega_moe_workspace.h": "97c236690f67ce5c3b84793beee15b182ca93a129eb0cfc0e404b8e88d52f836",
+    "knowledge/troubleshooting/review-debug.md": "d8218ac5097b0073888bce41ea4ce68f814b0634be2b101a3df3f8799ae8ef01",
+    "benchmarks/fixtures/cpu_driver.py": "98fa702fcd03ab175b862713168fdf782bb2b58a8f0d9e8fecaaacd8173bdbac"
+  }
+}

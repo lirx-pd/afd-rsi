@@ -1,0 +1,20 @@
+---
+name: afd-megamoe
+description: Optimize the bounded A3 compact_v2 MegaMoe FFN path within AFD.
+---
+
+# afd-megamoe
+
+Scope: local A3 MegaMoe development. Read these repository-owned resources for
+this task; no global skill or online lookup is needed.
+
+- [compact-v2](../../knowledge/afd/compact-v2.md)
+- [runtime-build](../../knowledge/afd/runtime-build.md)
+- [w4a8](../../knowledge/gmm-quantization/w4a8.md)
+- [contract](../../knowledge/measurement/contract.md)
+
+Confirm effective runner/executor/native dispatch before editing. Keep Attention routing/shared/final weighting and FFN DR/GMM/CS ownership. Preserve quantization and protocol in the first campaign. Freeze workload and gates, read relevant history, propose a falsifiable minimal patch, then use independent evaluation. Output hypothesis, patch and evidence-bound experience; never label synthetic checks as NPU proof.
+
+Use the campaign snapshot and actual target facts. Missing evidence remains
+unknown. Foundation and evaluator updates are maintenance work, outside the
+candidate edit scope.

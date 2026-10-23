@@ -1,0 +1,20 @@
+name = "Synthetic controller demonstration"
+backend = "cpu-synthetic"
+source = "../examples/source"
+workload_id = "cpu-fixture-v1"
+scope = "synthetic-controller-only"
+unit = "synthetic_us"
+metric = "synthetic_latency"
+ranks = 2
+primary_rank = 0
+repetitions = 4
+timeout_seconds = 10
+budget_seconds = 300
+min_gain_pct = 2.0
+allowed_files = ["kernel.json"]
+artifacts = ["kernel.json"]
+
+[commands]
+build = ["{python}", "{foundation}/benchmarks/fixtures/cpu_driver.py", "build"]
+correctness = ["{python}", "{foundation}/benchmarks/fixtures/cpu_driver.py", "correctness"]
+benchmark = ["{python}", "{foundation}/benchmarks/fixtures/cpu_driver.py", "benchmark"]
