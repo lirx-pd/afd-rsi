@@ -206,11 +206,8 @@ def _service_command(
         "--no-async-scheduling",
         "--enable-chunked-prefill",
     ]
-    if case.baseline:
-        command.extend((
-            "--data-parallel-rpc-port",
-            str(case.api_port + len(case.baseline_layouts) + instance),
-        ))
+    rpc_offset = len(case.baseline_layouts) + instance if case.baseline else 2 + int(ffn)
+    command.extend(("--data-parallel-rpc-port", str(case.api_port + rpc_offset)))
     if config:
         command.extend(
             ("--additional-config", json.dumps(config, separators=(",", ":")))

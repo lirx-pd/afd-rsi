@@ -5,17 +5,19 @@
   "modifications": [
     "Adapt to current AFDAsyncExtraInfo: omit removed async_moe_ubatching field and reject unsupported on before launch.",
     "Default V4 async context to the verified 32768 tokens instead of 65536.",
-    "For Async CAM graph: keep Attention eager and request explicit FULL on FFN, as required by the target validator."
+    "For Async CAM graph: keep Attention eager and request explicit FULL on FFN, as required by the target validator.",
+    "Default GSM8K strict-match thresholds by model: V2 Lite 0.27, V4 Flash 0.9; retain explicit overrides.",
+    "Assign distinct harness-owned DP RPC ports to Attention and FFN services, as already done for baseline instances."
   ],
   "files": {
     "afd_e2e/__init__.py": "56556490f57be2f31a20453217a00763c95baf86bebc3e9dd7b6d1176c1216ce",
     "afd_e2e/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
-    "afd_e2e/cli.py": "b38085290df1ed5daa766180802bd82e1f49e2b1b104410e1c32c816ec39fd6b",
-    "afd_e2e/config.py": "d5845087ea0d42fb1f0de9c80890c6cc0b932b4e50564b5c20c7dafdbdcb9a5e",
+    "afd_e2e/cli.py": "41b5ae3f89257b6f5d76674abb2c1b2bcf25be8ba1360a455d922aa3e43ef845",
+    "afd_e2e/config.py": "2e7134c180c22b902a69aeff6507e33577c008398d369ddfc9367a6ad084ad92",
     "afd_e2e/evaluation.py": "c89d16bce0b087810d0f0b862599a5840b79211a8b1c3c1a782de8172f5dfe86",
     "afd_e2e/metrics.py": "f7228ed2fd09ea59f3451afa6dabad8d9666f8342ee0c976b36828bcf0823e5a",
     "afd_e2e/performance.py": "adde68b2ecf82331921eb7d39da129cddd8844635e7e300dfdb99ff334f17650",
-    "afd_e2e/planner.py": "b8788b81c3c0591f5fa8b57c13aa598e4cf13d08aed6a07673eb9a3f547892b4",
+    "afd_e2e/planner.py": "513727eb17cf38b75898665ec19971ade91be8bccfa271314c64147af5c5a2a7",
     "afd_e2e/probe.py": "e0d1590f05776d83debbb01fb69354f2dd653a7bb69a930d87823ccca186a37a",
     "afd_e2e/process_utils.py": "8fcd83afca520fe0b45308f6e8a47d9a32357ba134a3e2d299ff1717c9cddce8",
     "afd_e2e/reporting.py": "fd82cbdfee412d72eb24c1da672f94371eb92aaa692bb98ec90aab2b18837dcd",

@@ -313,7 +313,7 @@ def from_args(args) -> Case:
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
         performance=performance_configuration(args),
         dataset_path=args.dataset_path.resolve() if args.dataset_path else None,
-        threshold=args.threshold,
+        threshold=args.threshold if args.threshold is not None else (0.9 if v4 else 0.27),
         fewshot=args.fewshot,
         concurrency=args.concurrency,
         max_gen_tokens=args.max_gen_tokens,
@@ -413,10 +413,10 @@ def validate(case: Case) -> None:
         raise ValueError("memory-utilization must be in (0, 1)")
     if not case.capture_sizes or any(size <= 0 for size in case.capture_sizes):
         raise ValueError("capture-sizes must contain positive integers")
-    port_count = 2 * len(case.baseline_layouts) if case.baseline else 2
+    port_count = 2 * len(case.baseline_layouts) if case.baseline else 4
     if not 1 <= case.api_port <= 65536 - port_count or (not case.baseline and (
         not 1 <= case.afd_port <= 65535
-        or case.afd_port in {case.api_port, case.api_port + 1}
+        or case.afd_port in range(case.api_port, case.api_port + 4)
     )):
         raise ValueError("API/AFD ports must be distinct and in range")
     reserved = {

@@ -58,10 +58,12 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("validation driver escapes foundation")
     if "native" in config:
         native = config["native"]
-        if set(native) - {"execution"} != {"devices", "hidden", "intermediate", "experts", "attn_ranks", "warmups", "repeats", "per_group"}:
+        if set(native) - {"execution", "profile"} != {"devices", "hidden", "intermediate", "experts", "attn_ranks", "warmups", "repeats", "per_group"}:
             raise ValueError("invalid native settings")
         if native.get("execution", "eager") not in ("eager", "graph"):
             raise ValueError("native execution must be eager or graph")
+        if type(native.get("profile", False)) is not bool:
+            raise ValueError("native profile must be boolean")
         for key in ("hidden", "intermediate"):
             positive(native[key], key, integer=True)
             if native[key] % 256 or not 256 <= native[key] <= 8192:

@@ -1,14 +1,28 @@
 # 自动搜索、服务验收与续跑
 
 框架在 Linux 本机运行，Agent 仅提出补丁。`search` 先资格验证基线，再执行
-“证据 → 假设/补丁 → 隔离构建 → 正确性 → 配置的服务验收 → AB/BA → 决策”。
+“证据 → 假设/补丁 → 隔离构建 → 正确性 → 配置的服务验收 → 按配方独立 profiling → AB/BA → 决策”。
 通过初筛的候选还必须在新 attempt 完整复测后才能替换 best。两次比较均以同一
 当前最佳版本为对照；报告不会把合成字段或 HTTP 指标当作算子计时。
 
 ## 单机 Codex
 
-需要 Python 3.11+、Linux pidfd、已安装并登录的 Codex CLI。继承 CLI 的模型/provider
-配置和登录，不读取或复制认证文件；不需要额外模型 SDK。使用仓库固定的 JSON
+需要 Python 3.11+、Linux pidfd、已安装并登录的 Codex CLI。沿用 CLI 的 provider
+配置和登录，不读取或复制认证文件；不需要额外模型 SDK。模型与推理强度显式固定：
+
+- 实验操作：`gpt-6.1-sol` / `medium`。固定控制器直接执行实验，无需额外模型调用。
+- 分析证据、profiling 和优化方向：`gpt-6-astra` / `xhigh`。
+- 编写候选补丁：`gpt-6.1-sol` / `xhigh`。
+
+这里将 ultra high 对应为 CLI 的 `xhigh`。提案先分析再写补丁；分析决定停止时不调用
+编码模型。两步共享原有超时和 deadline，不静默降级；归档各自命令、输出、JSONL、
+stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数，每次内含至多
+两次模型调用。外部文件交换采用相同流程。模型规则固化在仓库
+`knowledge/measurement/codex-models.md`。修改后的提案器用于新 campaign。
+Ascend 样例给每次提案 1200 秒和 524288 字节上下文；两步模型调用共享超时。
+priority=3 为优先、1 为备选，控制器按 priority 加类别晋升次数减失败次数取最大值。
+
+使用仓库固定的 JSON
 schema 和只读模式；补丁由控制器进行 git-apply 和允许文件检查。
 
 ```bash
@@ -40,8 +54,36 @@ side/service/trial 中。启用服务时，两侧每次初筛和确认都必须�
 全部冻结测试、实际映射库身份和 cleanup 必须通过；报告/启动/推理错误不能
 借此忽略。该策略只能在 prepare 前设置，Agent 无权修改。没有把服务结果伪装为
 native 全 rank 指标。样例配置为真实 V4 W4A8、
-16 设备 DP2TP4/EP8 的 eager 或 graph smoke（按 recipe 分开冻结）；正式精度/性能应在 prepare 前固定对应的
-GSM8K/perf 参数和数据，不能在搜索中放宽门槛。
+16 设备 DP2TP4/EP8，eager/graph 按 recipe 分开冻结。默认执行 smoke、30 条 GSM8K
+strict-match（V4 Flash 门槛 0.9，V2 Lite 默认门槛 0.27）以及一个小 prefill 点：128 输入 token、1 输出 token、并发 1，
+2 次 warmup、8 次测量。离线数据集须已缓存，或在 prepare 前配置 `--dataset-path`。
+GSM8K 样本数/分数和 HTTP TTFT mean/p50/p90 进入观察、比较报告及 Agent 上下文。
+TTFT 是辅助性能指标，包含服务/网络开销；晋升仍使用冻结的原生主指标。
+这组小样本用于跑通功能，不代表正式精度或性能资格。
+
+## 自动 profiling 和瓶颈假设
+
+样例 `[native].profile = true`：基线通过数值和服务门槛后，先单独采集 profiling，
+再进行不带 profiler 的原生计时，最后生成首份 Agent 请求。比较时仅采集通过门槛
+的候选；复测同样执行。失败的构建、数值或服务门槛不会启动 profiling。
+
+复用已有 torch_npu profiler 子进程，保留每个 FFN rank 的原始 trace、
+`kernel_details.csv`、加载身份与哈希；控制器汇总 top kernels 的次数、总/平均设备
+任务时长及占比，不导入 torch。已完成 profile 可在续跑复核后复用，篡改或不完整
+结果不能通过；异常使用现有健康检查屏障。profile 期间的耗时不进入主指标。
+
+Agent 请求会包含当前最佳版本的 profile、最近候选的 profile 和历史判定，并加载
+仓库内性能策略 skill。Agent 从设备耗时最大的任务出发，结合源码和 tiling 提出可
+证伪的小补丁，后续仍走数值、GSM8K、prefill、独立计时和确认流程。MegaMoe 是
+融合任务，仅凭任务总时长无法断言 Cube/MTE/通信 bound；原生合成 trace 也不能
+单独解释模型 TTFT。具体证据边界已固化到仓库本地知识。
+
+独立 profile 还会构建一份带算子内部打点的诊断副本，采集 72 个核的
+GetSystemCycle 阶段、依赖等待和发布区间，并检查数值、记录上限和 scratch guard。
+生产服务与普通计时继续使用未打点产物。当前 profile 摘要包含选定核前四个 tile，
+覆盖双槽首次复用；历史 profile 保留阶段总量和原始归档，避免重复时间线占满
+上下文。源码、测量事实和仓库知识优先于日志，预算按实际 JSON 文件大小计算。
+每个核使用自己的时间原点，不能据此对齐跨核时钟或声称 Cube 物理利用率。
 
 ## Agent 和 NPU 不在同一台机器
 

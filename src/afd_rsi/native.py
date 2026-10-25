@@ -150,6 +150,75 @@ def profile_evidence(directory: Path, ffn_ranks: int) -> list:
     return evidence
 
 
+def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
+    """Summarize device tasks without inventing a fused kernel's internal bound."""
+    evidence = profile_evidence(directory, ranks - attn_ranks)
+    summaries = []
+    for rank in range(attn_ranks, ranks):
+        files = list((directory / f'rank-{rank}').rglob('kernel_details.csv'))
+        if len(files) != 1:
+            raise ValueError(f'need one exported device trace for FFN rank {rank}')
+        tasks = {}
+        with files[0].open(newline='') as handle:
+            for row in csv.DictReader(handle):
+                duration = float(row['Duration(us)'])
+                if not math.isfinite(duration) or duration <= 0:
+                    raise ValueError('invalid profiler device task duration')
+                item = tasks.setdefault(row['Name'], {'name': row['Name'], 'count': 0, 'total_us': 0})
+                item['count'] += 1
+                item['total_us'] += duration
+        if not any('afdmegamoeffn' in name.lower().replace('_', '') for name in tasks):
+            raise ValueError(f'MegaMoe device tasks missing for FFN rank {rank}')
+        total = sum(t['total_us'] for t in tasks.values())
+        top = sorted(tasks.values(), key=lambda t: t['total_us'], reverse=True)[:10]
+        for item in top:
+            item.update(mean_us=item['total_us'] / item['count'], task_duration_share_pct=100 * item['total_us'] / total)
+        summaries.append({'rank': rank, 'device_task_total_us': total, 'top_kernels': top})
+    pipeline = directory / 'pipeline'
+    internal = analyze_pipeline(pipeline, attn_ranks, ranks) if pipeline.exists() else None
+    return {'pipeline': internal, 'scope': 'native synthetic seven-case transactions; separate profiled execution',
+            'evidence': evidence, 'ffn_ranks': summaries,
+            'analysis': 'Rank tasks by summed device duration. Investigate the largest tasks first. '
+                'AfdMegaMoeFFN is fused: this trace alone cannot identify Cube, Vector, MTE or communication bound. '
+                'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
+            'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
+                'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
+                'HTTP prefill TTFT is a separate service metric; do not attribute it to this trace without evidence.'}
+
+
+def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
+    identities = read_json(directory / 'identity.json')
+    summaries = []
+    for rank in range(attn_ranks, ranks):
+        transactions = read_json(directory / f'rank-{rank}.json')
+        if not transactions:
+            raise ValueError('empty pipeline trace')
+        totals = {}
+        for transaction in transactions:
+            cores = transaction['cores']
+            if len(cores) != 72 or {c['core'] for c in cores} != set(range(72)):
+                raise ValueError('incomplete pipeline cores')
+            for core in cores:
+                for start, end, code, sequence in core['events']:
+                    if not core['start'] <= start <= end <= core['end']:
+                        raise ValueError('pipeline event outside core lifetime')
+                    key = str(code)
+                    totals[key] = totals.get(key, 0) + end-start
+        selected = []
+        for core in transactions[0]['cores']:
+            if core['core'] in (0, 4, 8, 28, 47, 48, 60, 71):
+                selected.append(dict(core=core['core'], lifetime_cycles=core['end']-core['start'],
+                    events=[[start-core['start'], end-core['start'], code, sequence]
+                            for start, end, code, sequence in core['events'] if sequence in (0, 1, 2, 3, 4)]))
+        summaries.append(dict(rank=rank, transactions=len(transactions), summed_core_cycles=totals,
+                              first_transaction=transactions[0]['work'], selected_cores=selected))
+    return dict(identity=identities, ffn_ranks=summaries,
+                scope='instrumented eager diagnostic of seven-case fixture; not promotion timing',
+                warning='Per-core cycles include waits. Selected events are [start,end,code,sequence], '
+                    'relative to each core entry; cross-core clocks are not aligned. '
+                    'Summed spans are neither critical-path latency nor PMU activity.')
+
+
 def write_report(output: Path, summary: dict):
     lines = ["# Native comparison", "", summary["claim"], "",
              f"Numerical consistency: **{summary['correctness']}**", "",

@@ -1,8 +1,10 @@
 """Bounded proposal search over frozen campaigns; the model never owns acceptance."""
 
 import fnmatch
+import copy
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -97,14 +99,32 @@ def request_context(run, plan, best, records, number):
         evidence[0]['facts']['observations'] = read_json(run / 'attempts' / best['baseline'] / 'baseline.json')['observations']
     else:
         evidence[0]['facts']['verdict'] = read_json(run / 'attempts' / best['confirmation']['attempt'] / 'verdict.json')
+        evidence[0]['facts']['observations'] = read_json(run / 'attempts' / best['confirmation']['attempt'] / 'observations.json')
     # Keep only phase summaries here; full receipts and logs stay in the evidence archive.
     if 'observations' in evidence[0]['facts']:
         evidence[0]['facts']['observations'] = [{key: value for key, value in item.items()
-            if key in ('side', 'phase', 'status', 'checks_passed', 'value', 'reason')}
+            if key in ('side', 'phase', 'status', 'checks_passed', 'value', 'reason', 'service_metrics')}
             for item in evidence[0]['facts']['observations']]
+    incumbent = run / 'attempts' / (best['baseline'] if best['confirmation'] is None else best['confirmation']['attempt'])
+    for step in read_json(incumbent / 'progress.json')['steps']:
+        item = step.get('result', {})
+        if item.get('profiling'):
+            evidence.append({'id': 'profile-incumbent', 'facts': {
+                'source_hash': best['source_hash'], **item['profiling']}})
     for index, record in enumerate(records):
         evidence.append({'id': f'history-{index}', 'facts': {
             key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis')}})
+    for index, record in enumerate(records[-2:]):
+        for name in record['evidence']:
+            if name.endswith('/observation.json') and (run / name).is_file():
+                observation = read_json(run / name)
+                if observation.get('profiling'):
+                    profiling = copy.deepcopy(observation['profiling'])
+                    # Keep current detailed timelines; history retains totals and archived raw evidence.
+                    for rank in (profiling.get('pipeline') or {}).get('ffn_ranks', []):
+                        rank.pop('selected_cores', None)
+                    evidence.append({'id': f'profile-history-{index}-{len(evidence)}', 'facts': {
+                        'source_hash': record['candidate_hash'], 'decision': record['decision'], **profiling}})
     # Later observations are most useful after a failed compiler/correctness/service gate.
     snippets = []
     for record in records[-4:]:
@@ -121,38 +141,67 @@ def request_context(run, plan, best, records, number):
                'execution': {key: plan.get(key) for key in ('ranks', 'primary_rank', 'repetitions', 'native', 'service')},
                'objective': {'metric': plan['metric'], 'scope': plan['scope'], 'unit': plan['unit'],
                              'min_gain_pct': plan['min_gain_pct'], 'backend': plan['backend']},
-               'evidence': evidence, 'logs': snippets, 'source_files': {}, 'knowledge': '',
+               'evidence': evidence, 'logs': [], 'source_files': {}, 'knowledge': '',
                'instructions': 'Use only supplied evidence and local knowledge. Return complete unified diffs. '
                    'Validators, gates, framework and original source are immutable. Hypotheses are not measured facts. '
-                   'Only a confirmed PASS replaces best. Avoid already tested patches and failed approaches.'}
+                   'Only a confirmed PASS replaces best. Avoid already tested patches and failed approaches. '
+                   'When profile evidence exists, cite it and explain a source-backed bottleneck hypothesis. '
+                   'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
+                   'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time.'}
     limit = plan['search']['max_context_bytes']
-    # Bound the whole serialized request, while retaining the most recent evidence.
-    while len(json.dumps(context, ensure_ascii=False).encode()) > limit // 2 and len(context['evidence']) > 1:
-        del context['evidence'][1]
-    while len(json.dumps(context, ensure_ascii=False).encode()) > limit // 2 and context['logs']:
-        del context['logs'][0]
-    for name in sorted(inventory(source)['files']):
-        if any(fnmatch.fnmatchcase(name, pattern) for pattern in plan['allowed_files']):
-            path = source / name
-            try:
-                content = path.read_text()
-            except UnicodeError:
-                continue
-            context['source_files'][name] = content
-            if len(json.dumps(context, ensure_ascii=False).encode()) > limit * 3 // 4:
-                del context['source_files'][name]
-                context.setdefault('omitted_source_files', []).append(name)
-    knowledge = skills.context(run / 'foundation', 'afd-megamoe')
+    # Match write_json's actual artifact size, including indentation and the newline.
+    def size():
+        return len((json.dumps(context, indent=2, ensure_ascii=False, allow_nan=False) + '\n').encode())
+
+    while size() > limit // 2 and len(context['evidence']) > 1:
+        # Keep the incumbent profile ahead of older history when even facts exceed the budget.
+        index = next((i for i, item in enumerate(context['evidence'])
+                      if item['id'].startswith('history-')), len(context['evidence']) - 1)
+        del context['evidence'][index]
+    files = inventory(source)['files']
+    allowed = sorted(name for name in files
+                     if any(fnmatch.fnmatchcase(name, pattern) for pattern in plan['allowed_files']))
+    queue = list(allowed)
+    seen = set(queue)
+    context['read_only_source_files'] = []
+    context['instructions'] += ' Included dependencies outside allowed_files are read-only; never patch them.'
+    for name in queue:
+        try:
+            content = (source / name).read_text()
+        except UnicodeError:
+            continue
+        context['source_files'][name] = content
+        if size() > limit * 3 // 4:
+            del context['source_files'][name]
+            context.setdefault('omitted_source_files', []).append(name)
+            continue
+        if name not in allowed:
+            context['read_only_source_files'].append(name)
+        # Resolve only frozen repository files, never SDK headers or another checkout.
+        for include in re.findall(r'^\s*#\s*include\s*"([^"\n]+)"', content, re.MULTILINE):
+            local = (source / name).parent.joinpath(include).resolve()
+            relative = local.relative_to(source.resolve()).as_posix() if local.is_relative_to(source.resolve()) else None
+            matches = [relative] if relative in files else [p for p in files if p == include or p.endswith('/' + include)]
+            if len(matches) == 1 and matches[0] not in seen:
+                seen.add(matches[0])
+                queue.append(matches[0])
+    knowledge = skills.context(run / 'foundation', 'ascendc-perf-optimize') + '\n\n' + skills.context(run / 'foundation', 'afd-megamoe')
     # Context is a bounded view; the complete frozen foundation remains in the campaign.
     while knowledge:
         context['knowledge'] = knowledge
-        if len(json.dumps(context, ensure_ascii=False).encode()) <= limit:
+        if size() <= limit:
             break
         knowledge = knowledge[:max(0, len(knowledge) - 2000)]
     if not knowledge:
         context['knowledge'] = ''
-    if len(json.dumps(context, ensure_ascii=False).encode()) > limit:
+    if size() > limit:
         raise ValueError('request metadata exceeds the frozen context budget')
+    # Logs use only space left after source, measured facts and local knowledge.
+    for snippet in reversed(snippets):
+        context['logs'].insert(0, snippet)
+        if size() > limit:
+            del context['logs'][0]
+            break
     return context
 
 
@@ -301,7 +350,7 @@ def search(run: Path, root: Path, *, external=False):
                 break
             if state['active'] is None:
                 if time.time() >= plan['expires_at'] or len(state['rounds']) >= settings['max_rounds'] or state['calls'] >= settings['max_calls']:
-                    state.update(status='budget_exhausted', reason='Frozen wall time, round or model-call budget exhausted.')
+                    state.update(status='budget_exhausted', reason='Frozen wall time, round or Agent-dispatch budget exhausted.')
                     _save_state(run, state)
                     break
                 name = f'{len(state["rounds"]) + 1:04d}'
@@ -329,7 +378,7 @@ def search(run: Path, root: Path, *, external=False):
                 # Charge before dispatch; interrupted/failed calls are never refunded on resume.
                 if state.get('dispatch', {}).get('round') != state['active']:
                     if state['calls'] >= settings['max_calls']:
-                        state.update(status='budget_exhausted', reason='Model-call budget exhausted.')
+                        state.update(status='budget_exhausted', reason='Agent-dispatch budget exhausted.')
                         _save_state(run, state)
                         break
                     state['calls'] += 1
@@ -440,7 +489,7 @@ def search_report(run, root):
     state = read_json(run / 'search/state.json')
     best = best_candidate(run, root) if (run / 'search/best.json').is_file() else None
     lines = [f'# {plan["name"]}', '', f'Search status: {state["status"]}', '',
-             f'Reason: {state["reason"]}', '', f'Model calls charged: {state["calls"]} / {plan["search"]["max_calls"]}', '',
+             f'Reason: {state["reason"]}', '', f'Agent dispatches charged: {state["calls"]} / {plan["search"]["max_calls"]}', '',
              f'Backend: {plan["backend"]}; scope: {plan["scope"]}; unit: {plan["unit"]}', '',
              f'Require clean service shutdown: {plan.get("service", {}).get("require_clean_shutdown", True)}; raw lifecycle results are retained.', '',
              f'Best source: {best["source_hash"] if best else "none: baseline unqualified"}', '',

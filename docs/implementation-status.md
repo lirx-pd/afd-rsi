@@ -1,7 +1,8 @@
-# 实施状态：2026-10-23
+# 实施状态：2026-10-24
 
 当前已实现可运行的实验闭环和受预算控制的 Agent 搜索：构建、验证、比较、服务
-验收、报告、最佳候选、续跑和经验检索。支持独立冻结的 eager/FULL graph 配方，不以本轮算子性能收益验收。
+验收、报告、最佳候选、续跑和经验检索。支持独立冻结的 eager/FULL graph 配方；
+自动优化按冻结主指标和完整独立复测验收，生产模型性能仍需单独验证。
 框架不耦合 iTASK 或 SSH；实际部署/执行由外部工具完成。
 
 已实现：
@@ -22,6 +23,19 @@
 - 历史经验包含假设、事实、源码/补丁身份、判定与证据哈希；相同合同的跨 campaign
   记录可检索。重复补丁去重、类别历史评分和模型上下文均实际影响下一轮选择。
 - `export --best` 导出最佳版本的累积补丁；原始工作树及底座不参与候选自动修改。
+- Ascend 样例服务验收固定为 smoke、30 条 GSM8K strict-match 和一个小 prefill 点；
+  GSM8K 实际样本数/门槛校验，prefill HTTP TTFT mean/p50/p90 归档并进入比较和 Agent
+  上下文。prefill 为辅助指标，主指标/独立确认规则保持冻结。
+- 基线和通过数值、服务门槛的候选自动运行独立 profiling；每个 FFN rank 的真实
+  device trace、CSV、进程回执和身份均留档。按任务时长汇总 top kernels，复用/续跑
+  时校验证据，异常触发现有健康屏障，profile 时长不混入普通 benchmark。
+- 请求加入最佳/最近候选的 profile 分析以及仓库内性能策略 skill，驱动下一轮可证伪
+  的源码优化假设。融合任务内的 Cube/MTE/通信归因仍需要更细证据，不能从总时长推断。
+- 独立诊断副本采集 MegaMoe 72 核逐 tile 阶段、依赖等待和发布区间，检查数值、
+  记录上限与 scratch guard；生产服务和 benchmark 继续使用未打点产物。
+- 上下文优先保留源码依赖、测量事实和仓库知识，再加入日志；按实际 JSON 大小限额。
+  当前 profile 包含前四个 tile，历史记录保留总量与原始归档；priority=3 为优先。
+
 
 本轮关闭错误按用户要求暂不考察。样例 recipe 固定
 `service.require_clean_shutdown=false`，只豁免 E2E 明确归类为 shutdown 的错误；
@@ -35,14 +49,33 @@
 实际验证详情及证据身份见 [RSI 验证记录](validation/rsi-20261023.md)。
 此前原生小/宽形状与 profiler 记录保留在 [eager 验证](validation/eager-20261023.md)。
 FULL graph 接入后的 iTASK 完整回归 **73 项通过、无跳过**；原生 campaign
-correctness/benchmark 与真实 V4 服务 gate 已通过。当前源码另有独立的 CANN
-编译错误，实测使用此前已构建基线；详情见 [FULL graph 验证](validation/graph-20261023.md)。
+correctness/benchmark 与真实 V4 服务 gate 已通过。当时 CANN 编译错误导致该次
+实测使用此前已构建基线；历史详情见 [FULL graph 验证](validation/graph-20261023.md)。
+该编译错误现已在 `beea4aa` 修复，本轮真实候选检验已重新构建当前版本并通过。
 当前使用方法见 [自动搜索与续跑](automatic-search.md)。
 
 边界：
 
 - 合成 fixture 和合成权重原生事务不等于真实模型的正式精度/性能验收。
-- 本轮没有正式优化 MegaMoe，也不宣布生产收益。
+- 已开展受控 MegaMoe 自动候选迭代；冻结原生事务收益不代表生产模型收益。
 - 未验证 NPU 硬故障后的自动恢复或设备复位；健康检查只证明基础计算可用。
 - 经验不会自动改写冻结技能/知识；独立策略质量评测、多 workload 搜索尚未实现。
 - 已有旧 campaign 使用各自实际快照；升级底座后创建新 campaign，不改写旧判定。
+
+真实候选单轮检验已完成：以 `beea4aa` 为基线，由 Codex 提出一行 OutputTile
+空行 AIV 优化，构建、FULL 数值、真实 V4 服务和四组 AB/BA 均实际执行。
+观测降幅 1.50% 未达到冻结 2% 门槛，按规则拒绝、保留经验，真实仓库未改；
+best 导出为空、真实经验去重验证与 73 项回归通过。详见
+[真实候选检验](validation/real-candidate-20261023.md)。
+
+GSM8K/prefill/profiling 增强已完成：最终容器回归 91 项通过，真实 FULL 基线
+GSM8K 27/30、候选补测 28/30，小 prefill 均 8/8，原生两侧数值与 profile 通过。
+一次自动比较因内部端口 EADDRINUSE 判为不完整并拒绝，补测不改写其判定，未晋升；
+本轮未应用优化补丁，期间出现的外部源码修改不在本次验收范围。详情见 [指标与 profiling 验证](validation/metrics-profiling-20261023.md)。
+
+
+2026-10-24 多轮自动优化已完成六个真实候选验证；第六个输入提前回填候选
+初筛增益 3.671313%、完整独立确认 2.521912%，均为 PASS，已由 best 导出并
+保留唯一 pipeline 头文件修改。框架回归在 NPU Linux 全部 103 项通过。
+细粒度打点支持等待缩短，但没有建立模型端到端提速或连续 Cube 活动结论。
+完整数据、稀疏 case 边界和框架修复见 [多轮优化验证](validation/megamoe-iterations-20261024.md)。

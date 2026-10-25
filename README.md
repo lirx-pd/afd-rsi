@@ -22,7 +22,11 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 
 自动搜索使用已有登录的 Codex CLI，也支持提案机和执行机通过文件交换，详见
 [自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
-原生构建和 AFD E2E 服务接入同一个 campaign。框架不耦合调度平台或 SSH。
+原生构建和 AFD E2E 服务接入同一个 campaign。默认验收 30 条 GSM8K，并记录
+128 输入/1 输出 token 的小 prefill TTFT；通过门槛后自动采集独立 profiling，
+把每个 FFN rank 的设备任务分析和历史结果交给 Agent 提出下一轮优化假设。框架不耦合调度平台或 SSH。
+独立诊断构建还记录 MegaMoe 内部逐核、逐 tile 的阶段和等待；当前摘要覆盖首次双槽
+复用，生产服务与普通计时使用未打点产物。内部周期不是 Cube PMU 利用率。
 通用 benchmark 遵守 [结果合同](docs/result-contract.md)。
 
 ## 本机演练
@@ -95,7 +99,16 @@ python3 -m pytest -q
 当前限制：本地命令仍属于可信 benchmark；执行器用继承的试验标记与 pidfd 跟踪
 退出进程组的子进程。跨主机/重启后的回执无法自动证明资源归属，会停止续跑。
 Ascend 中断后基础计算健康检查通过才继续，不自动重置设备，也不保证所有通信
-故障都能恢复。历史经验不会自动改写底座；正式性能调优未开展。
+故障都能恢复。历史经验不会自动改写底座；原生事务优化不能替代正式模型性能验收。
 
 项目尚未选定整体发布许可证。复制的 AFD 参考头文件保留原版权声明和其
 `knowledge/reference-code/LICENSE`；不把该许可证自动扩展到其他内容。
+
+真实单轮 Codex 候选的构建、FULL 验证、服务、AB/BA 与拒绝经验检验见
+[真实候选验证记录](docs/validation/real-candidate-20261023.md)。
+
+30 条 GSM8K、小 prefill 与自动 profiling 的实现及真实验证见
+[指标与 profiling 验证](docs/validation/metrics-profiling-20261023.md)。
+
+多轮真实候选、内部流水打点、独立确认和保留版本见
+[MegaMoe 多轮优化验证](docs/validation/megamoe-iterations-20261024.md)。

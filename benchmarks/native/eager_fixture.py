@@ -18,6 +18,7 @@ import os
 import socket
 import threading
 import time
+from pathlib import Path
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -135,6 +136,7 @@ def main():
     parser.add_argument("--warmups", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=10)
     parser.add_argument("--profile-dir")
+    parser.add_argument("--pipeline-trace-dir")
     parser.add_argument("--full-graph", action="store_true")
     parser.add_argument("--attn-ranks", type=int, choices=(1, 2), default=1)
     parser.add_argument("--boundary", action="store_true")
@@ -254,6 +256,17 @@ def main():
         if args.mega_moe:
             mega = runner._mega_executor
             assert mega is not None
+            pipeline_records = []
+            if args.pipeline_trace_dir:
+                from pipeline_trace import TRACE_CORES, TRACE_STRIDE
+                assert not args.full_graph and not args.measure
+                size = mega.scratch.numel()
+                trace_storage = torch.zeros(size + TRACE_CORES * TRACE_STRIDE + 512,
+                                            dtype=torch.uint8, device=device)
+                mega.scratch = trace_storage[:size]
+                trace_tail = trace_storage[size:size + TRACE_CORES * TRACE_STRIDE]
+                trace_guard = trace_storage[-512:]
+                trace_guard.fill_(165)
 
             def align(n):
                 return (n + 511) // 512 * 512
@@ -370,7 +383,7 @@ def main():
     if args.profile_dir:
         prof = torch_npu.profiler.profile(
             activities=[torch_npu.profiler.ProfilerActivity.CPU, torch_npu.profiler.ProfilerActivity.NPU],
-            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(args.profile_dir),
+            on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(str(Path(args.profile_dir) / f"rank-{rank}")),
         )
         prof.start()
     errors = []
@@ -417,6 +430,11 @@ def main():
             torch.npu.current_stream().synchronize()
             assert result.item() == 0, "MegaMoE device control validation failed"
             observe(SimpleNamespace(states=mega_state))
+            if args.pipeline_trace_dir:
+                from pipeline_trace import decode
+                assert (trace_guard.cpu() == 165).all(), 'pipeline trace guard overwritten'
+                rows = trace_tail.cpu().view(torch.int64).reshape(72, 2080).tolist()
+                pipeline_records.append(decode(rows, report['work'][-1]))
             return result
 
         runner._ffn_forward_connector_driven = observe_mega_step
@@ -597,6 +615,10 @@ def main():
     else:
         connector.close()
     assert not connector.is_initialized and connector.cam_pg is None
+    if is_ffn and args.pipeline_trace_dir:
+        directory = Path(args.pipeline_trace_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f'rank-{rank}.json').write_text(json.dumps(pipeline_records) + '\n')
     report["cleanup_complete"] = True
     reports = [None] * world_size
     dist.all_gather_object(reports, report)

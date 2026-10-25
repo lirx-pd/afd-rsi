@@ -29,6 +29,7 @@ attn_ranks = 1
 warmups = 1
 repeats = 2
 per_group = false
+profile = true
 
 [health]
 command = ["{python}", "{foundation}/benchmarks/native/health.py", "--device", "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15"]
@@ -36,8 +37,8 @@ timeout_seconds = 120
 
 [service]
 repo = "native/source"
-args = ["--model", "v4-flash", "--model-path", "/home/admin/model", "--device", "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on", "--moe-ubatching", "off", "--execution", "eager", "--dbo", "off", "--serve-env", "AFD_ASYNC_CAM_MEGA_MOE=1", "--test", "smoke", "--max-model-len", "32768", "--max-batched-tokens", "32768", "--max-seqs", "16", "--memory-utilization", "0.7", "--api-port", "19280", "--afd-port", "6455", "--nic", "eth0", "--startup-timeout", "600", "--request-timeout", "120", "--offline"]
-timeout_seconds = 900
+args = ["--model", "v4-flash", "--model-path", "/home/admin/model", "--device", "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on", "--moe-ubatching", "off", "--execution", "eager", "--dbo", "off", "--serve-env", "AFD_ASYNC_CAM_MEGA_MOE=1", "--test", "smoke,gsm8k,perf", "--limit", "30", "--threshold", "0.9", "--perf-phase", "prefill", "--perf-input-lens", "128", "--perf-output-lens", "1", "--perf-concurrencies", "1", "--perf-mode", "matrix", "--perf-requests", "8", "--perf-warmup", "2", "--max-model-len", "32768", "--max-batched-tokens", "32768", "--max-seqs", "16", "--memory-utilization", "0.7", "--api-port", "19280", "--afd-port", "6455", "--nic", "eth0", "--startup-timeout", "600", "--request-timeout", "120", "--offline"]
+timeout_seconds = 1800
 cleanup_seconds = 60
 require_clean_shutdown = false
 
@@ -45,6 +46,6 @@ require_clean_shutdown = false
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
 max_rounds = 3
 max_calls = 3
-agent_timeout_seconds = 300
-max_context_bytes = 262144
+agent_timeout_seconds = 1200
+max_context_bytes = 524288
 experience_dirs = []

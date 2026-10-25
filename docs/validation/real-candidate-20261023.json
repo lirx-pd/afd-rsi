@@ -1,0 +1,785 @@
+{
+  "base_commit": "beea4aa1cfe53a1916f6bf1ed52d57b28609596f",
+  "source_hash": "1d290c11d286f7b81273d37a89a0a1bfd17fef0061dc46a2cd02bafdbcded179",
+  "foundation_hash": "64b146db99886cfe4fb5ff2ae6d8e4d069b22dcbaaec7c10cf4853135b181bcf",
+  "controller_hash": "538e71058c115e928cf3fee838b860a3497c49dedc5874858931a18ed1433f43",
+  "state": {
+    "schema_version": 1,
+    "status": "budget_exhausted",
+    "external_agent": true,
+    "calls": 1,
+    "rounds": [
+      "0001"
+    ],
+    "active": null,
+    "reason": "Frozen wall time, round or model-call budget exhausted.",
+    "baseline": "70b8ed1853144fddb7b347b76cf0082c"
+  },
+  "best": {
+    "source": "workspaces/baseline",
+    "source_hash": "1d290c11d286f7b81273d37a89a0a1bfd17fef0061dc46a2cd02bafdbcded179",
+    "baseline": "70b8ed1853144fddb7b347b76cf0082c",
+    "baseline_hash": "335ca5f574b702396158c739f376bbd8149f62206366d8053270d2f18e3348b4",
+    "confirmation": null
+  },
+  "native": {
+    "execution": "graph",
+    "devices": "0,1,2",
+    "hidden": 4096,
+    "intermediate": 2048,
+    "experts": 32,
+    "attn_ranks": 1,
+    "warmups": 5,
+    "repeats": 20,
+    "per_group": false
+  },
+  "service_policy": {
+    "require_clean_shutdown": false
+  },
+  "min_gain_pct": 2.0,
+  "repetitions": 4,
+  "runtime": {
+    "host": "gpuxdn010030014227.guian02",
+    "platform": "Linux-6.6.47-002.ant8.aarch64-aarch64-with-glibc2.38",
+    "python": "3.12.13",
+    "packages": {
+      "torch": "2.10.0+cpu",
+      "torch-npu": "2.10.0.post4",
+      "vllm": "0.30.0+empty",
+      "vllm-ascend": "0.19.1rc2.dev2448+g8d4409d62"
+    }
+  },
+  "attempts": [
+    {
+      "id": "70b8ed1853144fddb7b347b76cf0082c",
+      "kind": "baseline",
+      "status": "completed",
+      "observations": [
+        {
+          "side": "baseline",
+          "phase": "correctness",
+          "status": "valid",
+          "checks_passed": true,
+          "value": null,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/correctness/3f269f788a22"
+        },
+        {
+          "side": "baseline",
+          "phase": "service",
+          "status": "valid",
+          "checks_passed": true,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/service/8d68b9fb1379",
+          "actual_identity_passed": true,
+          "shutdown_errors_ignored": true,
+          "lifecycle": {
+            "status": "failed",
+            "inference_status": "passed",
+            "shutdown_status": "failed",
+            "cleanup_status": "passed",
+            "test_results": {
+              "smoke": "passed"
+            },
+            "errors": [
+              "shutdown: attention.log:620: (ApiServer_0 pid=328669) ERROR 10-23 11:43:51 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+              "shutdown: ffn.log:759: (Worker_DP6_EP6 pid=330574) ERROR 10-23 11:43:59 [multiproc_executor.py:1055] RuntimeError: Async graph receive is pending; retain resources"
+            ]
+          }
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1327.5132915803365,
+          "pair": 0,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/benchmark/9350b3c668d9"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1258.4965750575066,
+          "pair": 1,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/benchmark/6e9c1cd5e1fc"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1315.6112894415855,
+          "pair": 2,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/benchmark/48f5139000ad"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1255.5294258253914,
+          "pair": 3,
+          "trial": "attempts/70b8ed1853144fddb7b347b76cf0082c/baseline/benchmark/151c1b43c854"
+        }
+      ],
+      "native_graph": [
+        {
+          "side": "baseline",
+          "pair": 0,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 1,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 2,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 3,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        }
+      ],
+      "baseline.json": {
+        "complete": true,
+        "hardware_qualified": false
+      }
+    },
+    {
+      "id": "d40f43a466ee4220afc30d87b9a21cdc",
+      "kind": "comparison",
+      "status": "completed",
+      "observations": [
+        {
+          "side": "baseline",
+          "phase": "correctness",
+          "status": "valid",
+          "checks_passed": true,
+          "value": null,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/correctness/b57b79219293"
+        },
+        {
+          "side": "baseline",
+          "phase": "service",
+          "status": "valid",
+          "checks_passed": true,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/service/c9c0c294314c",
+          "actual_identity_passed": true,
+          "shutdown_errors_ignored": true,
+          "lifecycle": {
+            "status": "failed",
+            "inference_status": "passed",
+            "shutdown_status": "failed",
+            "cleanup_status": "passed",
+            "test_results": {
+              "smoke": "passed"
+            },
+            "errors": [
+              "shutdown: attention.log:618: (ApiServer_0 pid=355461) ERROR 10-23 12:02:28 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+              "shutdown: ffn.log:778: (Worker_DP3_EP3 pid=357184) (Worker_DP2_EP2 pid=357176) (Worker_DP0_EP0 pid=357185) (Worker_DP5_EP5 pid=357186) ERROR 10-23 12:02:36 [multiproc_executor.py:1055] RuntimeError: Async graph receive is pending; retain resources"
+            ]
+          }
+        },
+        {
+          "side": "candidate",
+          "phase": "correctness",
+          "status": "valid",
+          "checks_passed": true,
+          "value": null,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/correctness/454c263262eb"
+        },
+        {
+          "side": "candidate",
+          "phase": "service",
+          "status": "valid",
+          "checks_passed": true,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/service/e7547d111204",
+          "actual_identity_passed": true,
+          "shutdown_errors_ignored": true,
+          "lifecycle": {
+            "status": "failed",
+            "inference_status": "passed",
+            "shutdown_status": "failed",
+            "cleanup_status": "passed",
+            "test_results": {
+              "smoke": "passed"
+            },
+            "errors": [
+              "shutdown: attention.log:622: (ApiServer_1 pid=374869) ERROR 10-23 12:13:19 [async_llm.py:843] vllm.v1.engine.exceptions.EngineDeadError: EngineCore encountered an issue. See stack trace (above) for the root cause.",
+              "shutdown: ffn.log:766: ERROR 10-23 12:13:27 [multiproc_executor.py:1055] RuntimeError: Async graph receive is pending; retain resources"
+            ]
+          }
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1278.5690050039973,
+          "pair": 0,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/benchmark/18e48b629e1a"
+        },
+        {
+          "side": "candidate",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1232.3274218610354,
+          "pair": 0,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/benchmark/5c1aa14aa4fb"
+        },
+        {
+          "side": "candidate",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1250.2620015825544,
+          "pair": 1,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/benchmark/2f072d177b17"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1239.6915708269391,
+          "pair": 1,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/benchmark/fa2cb0cd4ed1"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1293.6931407877378,
+          "pair": 2,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/benchmark/d10274931d40"
+        },
+        {
+          "side": "candidate",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1218.0877100144114,
+          "pair": 2,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/benchmark/0a34a23e895f"
+        },
+        {
+          "side": "candidate",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1278.6212846636772,
+          "pair": 3,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/candidate/benchmark/315c6c5a2f3a"
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true,
+          "value": 1241.7882823518344,
+          "pair": 3,
+          "trial": "attempts/d40f43a466ee4220afc30d87b9a21cdc/baseline/benchmark/5825e2df2ee4"
+        }
+      ],
+      "native_graph": [
+        {
+          "side": "baseline",
+          "pair": 0,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "candidate",
+          "pair": 0,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "candidate",
+          "pair": 1,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 1,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 2,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "candidate",
+          "pair": 2,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "candidate",
+          "pair": 3,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        },
+        {
+          "side": "baseline",
+          "pair": 3,
+          "ffn": [
+            {
+              "rank": 1,
+              "capture_count": 2,
+              "replay_count": 200,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            },
+            {
+              "rank": 2,
+              "capture_count": 2,
+              "replay_count": 175,
+              "python_transaction_disabled": true,
+              "stable_exposed_addresses": 4
+            }
+          ]
+        }
+      ],
+      "verdict.json": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 1.4985122983045218,
+        "samples": {
+          "baseline": [
+            1278.5690050039973,
+            1239.6915708269391,
+            1293.6931407877378,
+            1241.7882823518344
+          ],
+          "candidate": [
+            1232.3274218610354,
+            1250.2620015825544,
+            1218.0877100144114,
+            1278.6212846636772
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification"
+      }
+    }
+  ],
+  "rounds": [
+    {
+      "phase": "decided",
+      "parent": {
+        "source": "workspaces/baseline",
+        "source_hash": "1d290c11d286f7b81273d37a89a0a1bfd17fef0061dc46a2cd02bafdbcded179",
+        "baseline": "70b8ed1853144fddb7b347b76cf0082c",
+        "baseline_hash": "335ca5f574b702396158c739f376bbd8149f62206366d8053270d2f18e3348b4",
+        "confirmation": null
+      },
+      "request_hash": "341f9045fe0bb8a27d3c363fbacbf636f99e87f41fef4f1fd77d013ddf129606",
+      "call": 1,
+      "response_hash": "0c1bdfd76e952d2d0e5581db387f28a38c24ab6ff3377d01489a551fca7e5351",
+      "selected": {
+        "hypothesis": "Hypothesis: skipping OutputTile setup on compute AIVs with no assigned rows reduces redundant bias loads and pipe resets for sparse expert tiles, improving the frozen transaction-suite mean by at least 2%. The supplied caller still executes flags.Arrive(OUTPUT) on every compute AIV; active-row arithmetic, synchronization participation, workspace and quantization remain unchanged. Evaluate with the existing correctness and service gates and paired AB/BA graph measurements; retain per-case regressions and require a fresh confirming PASS before promotion.",
+        "category": "inactive-vector-work",
+        "evidence": [
+          "baseline"
+        ],
+        "priority": 1,
+        "patch": "--- a/csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_ffn.cpp\n+++ b/csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_ffn.cpp\n@@ -87,6 +87,7 @@\n                                   int64_t layer, uint32_t expert, uint64_t outRow, uint32_t rows,\n                                   TPipe &pipe) {\n     if ASCEND_IS_AIV {\n+        if (GetBlockIdx() - Cam::MEGA_COMM_AIVS >= rows) return;\n         pipe.Reset();\n         const uint32_t h = t.recv.hiddenSize;\n         TBuf<TPosition::VECCALC> buf;\n"
+      },
+      "candidate_hash": "b1545c59a7527ed1667a697a8db0668f563e4839c9173d1dad6d75ecf91e8d69",
+      "screen": "d40f43a466ee4220afc30d87b9a21cdc",
+      "decision": "rejected",
+      "reason": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 1.4985122983045218,
+        "samples": {
+          "baseline": [
+            1278.5690050039973,
+            1239.6915708269391,
+            1293.6931407877378,
+            1241.7882823518344
+          ],
+          "candidate": [
+            1232.3274218610354,
+            1250.2620015825544,
+            1218.0877100144114,
+            1278.6212846636772
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification"
+      }
+    }
+  ],
+  "audit": "All attempts and best verified against frozen source/artifact/receipt/service evidence",
+  "archive": {
+    "archive": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-real-candidate-20261023-01/candidate-evidence.tar.gz",
+    "sha256": "9b1d46865427abff533e61fbc4932e569f436109f47620806af65fdfd954c82b",
+    "size": 4971354,
+    "summary_file": "validation-summary.json",
+    "decision": "rejected"
+  },
+  "aggregate": {
+    "baseline_median_us": 1260.1786436779157,
+    "candidate_median_us": 1241.294711721795,
+    "gain_pct": 1.4985122983045218,
+    "paired_gain_pct": [
+      3.6166669895784986,
+      -0.8526661795856372,
+      5.8441548764253115,
+      -2.9661257748450076
+    ]
+  },
+  "per_case": [
+    {
+      "case": 0,
+      "layer": 2,
+      "sparse": false,
+      "tokens": 7,
+      "trial_mean_us": {
+        "baseline": [
+          1169.9680149555206,
+          1126.1189997196198,
+          1188.0100011825562,
+          1125.916999578476
+        ],
+        "candidate": [
+          1114.8069977760315,
+          1143.2850122451782,
+          1109.0830087661743,
+          1182.9590022563934
+        ]
+      },
+      "baseline_median_us": 1148.0435073375702,
+      "candidate_median_us": 1129.0460050106049,
+      "gain_pct": 1.6547719842972208
+    },
+    {
+      "case": 1,
+      "layer": 5,
+      "sparse": true,
+      "tokens": 7,
+      "trial_mean_us": {
+        "baseline": [
+          389.0199989080429,
+          381.257002055645,
+          376.45300179719925,
+          380.21699637174606
+        ],
+        "candidate": [
+          382.47600197792053,
+          374.7730031609535,
+          377.98200100660324,
+          374.8260021209717
+        ]
+      },
+      "baseline_median_us": 380.7369992136955,
+      "candidate_median_us": 376.40400156378746,
+      "gain_pct": 1.138055313472719
+    },
+    {
+      "case": 2,
+      "layer": 2,
+      "sparse": false,
+      "tokens": 7,
+      "trial_mean_us": {
+        "baseline": [
+          1164.3310010433197,
+          1121.5389966964722,
+          1180.9379875659943,
+          1125.3809869289398
+        ],
+        "candidate": [
+          1116.6299879550934,
+          1136.1799955368042,
+          1098.9959836006165,
+          1169.5360124111176
+        ]
+      },
+      "baseline_median_us": 1144.8559939861298,
+      "candidate_median_us": 1126.4049917459488,
+      "gain_pct": 1.6116439392467874
+    },
+    {
+      "case": 3,
+      "layer": 5,
+      "sparse": false,
+      "tokens": 16,
+      "trial_mean_us": {
+        "baseline": [
+          2356.026017665863,
+          2239.973998069763,
+          2401.0170102119446,
+          2241.751003265381
+        ],
+        "candidate": [
+          2218.6019897460938,
+          2285.566008090973,
+          2194.0510034561157,
+          2366.97199344635
+        ]
+      },
+      "baseline_median_us": 2298.888510465622,
+      "candidate_median_us": 2252.0839989185333,
+      "gain_pct": 2.0359626547356457
+    },
+    {
+      "case": 4,
+      "layer": 2,
+      "sparse": true,
+      "tokens": 16,
+      "trial_mean_us": {
+        "baseline": [
+          393.0050000548363,
+          389.6449998021126,
+          389.53000009059906,
+          390.5939996242523
+        ],
+        "candidate": [
+          390.86800068616867,
+          384.0029999613762,
+          386.30200028419495,
+          381.8779990077019
+        ]
+      },
+      "baseline_median_us": 390.11949971318245,
+      "candidate_median_us": 385.15250012278557,
+      "gain_pct": 1.2731995181088474
+    },
+    {
+      "case": 5,
+      "layer": 5,
+      "sparse": true,
+      "tokens": 129,
+      "trial_mean_us": {
+        "baseline": [
+          974.3580013513565,
+          975.0310003757477,
+          972.8240042924881,
+          996.8460023403168
+        ],
+        "candidate": [
+          985.0079953670502,
+          985.2909982204437,
+          960.441991686821,
+          969.9140101671219
+        ]
+      },
+      "baseline_median_us": 974.6945008635521,
+      "candidate_median_us": 977.461002767086,
+      "gain_pct": -0.2838327189784051
+    },
+    {
+      "case": 6,
+      "layer": 2,
+      "sparse": false,
+      "tokens": 129,
+      "trial_mean_us": {
+        "baseline": [
+          2503.2750010490417,
+          2444.275999069214,
+          2547.0799803733826,
+          2431.8119883537292
+        ],
+        "candidate": [
+          2417.9009795188904,
+          2442.735993862152,
+          2399.757981300354,
+          2504.263973236084
+        ]
+      },
+      "baseline_median_us": 2473.775500059128,
+      "candidate_median_us": 2430.3184866905212,
+      "gain_pct": 1.7567080508141486
+    }
+  ],
+  "original_repository": "verified unchanged; exact source hash equals frozen baseline",
+  "best_export_patch_bytes": 0,
+  "limitations": [
+    "Synthetic-weight native transactions; no service throughput or GSM8K claim",
+    "No independent confirmation because the frozen screening gate failed",
+    "Shutdown errors deferred under the unchanged frozen policy"
+  ],
+  "post_checks": {
+    "archive_sha256": "8de71641d20dd3e05a87a7e5137311ac33aef4c2bd9777dcf97f27ad1a49f4d6",
+    "pytest": "........................................................................ [ 98%]\n.                                                                        [100%]\n73 passed in 29.98s\n",
+    "history": "PASS: verified one rejected experience; duplicate proposal against the same parent is suppressed\n"
+  }
+}

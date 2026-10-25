@@ -142,7 +142,10 @@ def parser() -> argparse.ArgumentParser:
             type=Path,
             help="Local GSM8K directory with main/train and test Parquet files",
         )
-        sub.add_argument("--threshold", type=float, default=0.27)
+        sub.add_argument(
+            "--threshold", type=float,
+            help="GSM8K strict-match threshold (default: v2-lite 0.27, v4-flash 0.9)",
+        )
         sub.add_argument("--fewshot", type=int, default=8)
         sub.add_argument("--concurrency", type=int, default=12)
         sub.add_argument("--max-gen-tokens", type=int, default=512)

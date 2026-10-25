@@ -167,6 +167,8 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
         for marker, value in substitutions.items():
             argument = argument.replace(marker, value)
         argv.append(argument)
+    if phase == "profile":
+        argv = [sys.executable, str(run / "foundation/benchmarks/native/campaign_driver.py"), "profile"]
     observation = {"side": side, "phase": phase, "status": "invalid", "trial": str(output.relative_to(run))}
     try:
         load(run, root)
@@ -214,11 +216,19 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
             checks = all(all(rank["checks"].values()) for rank in data["ranks"])
             observation.update(status="valid", value=value, checks_passed=checks,
                                result_hash=digest(result_path), artifacts=actual)
+            if phase == "profile":
+                from .native import analyze_profile
+                profiling = analyze_profile(output / "traces", plan["native"]["attn_ranks"], plan["ranks"])
+                if data["profiling"] != profiling:
+                    raise ValueError("profile analysis differs from device evidence")
+                observation.update(profiling=profiling,
+                                   profile_files={str(p.relative_to(output)): digest(p)
+                                                  for p in (output / "traces").rglob("*") if p.is_file()})
         else:
             observation.update(status="valid", artifacts=actual)
     except (ValueError, OSError, KeyError, TypeError) as error:
-        observation["reason"] = str(error)
-    if (plan["backend"] == "ascend" and phase in ("correctness", "benchmark", "service")
+        observation.update(status="invalid", reason=str(error))
+    if (plan["backend"] == "ascend" and phase in ("correctness", "benchmark", "service", "profile")
             and (observation["status"] != "valid" or observation.get("checks_passed") is False)):
         write_json(run / "recovery.json", {"health": "required", "trial": observation["trial"]})
     observation["receipts"] = {str(p.relative_to(output)): digest(p) for p in output.rglob("process.json")}
@@ -238,11 +248,23 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
     if "result_hash" in observation and digest(trial / "result.json") != observation["result_hash"]:
         raise ValueError("raw result changed")
     if observation["phase"] == "service" and observation["status"] == "valid":
-        from .service_phase import evidence_files
+        from .service_phase import evidence_files, service_metrics
         if (digest(trial / "service/summary.json") != observation["summary_hash"]
                 or digest(trial / "loaded-maps.json") != observation["loaded_maps_hash"]
                 or evidence_files(trial / "service") != observation["evidence"]):
             raise ValueError("service evidence changed")
+        if "service_metrics" in observation:
+            summary = read_json(trial / "service/summary.json")
+            metrics = service_metrics(summary, read_json(trial / "service/plan.json")["configuration"]) if all(
+                value == "passed" for value in summary["test_results"].values()) else {}
+            if metrics != observation["service_metrics"]:
+                raise ValueError("service metrics differ from evidence")
+    if observation["phase"] == "profile" and observation["status"] == "valid":
+        from .native import analyze_profile
+        actual = {str(p.relative_to(trial)): digest(p) for p in (trial / "traces").rglob("*") if p.is_file()}
+        if (actual != observation["profile_files"] or analyze_profile(
+                trial / "traces", plan["native"]["attn_ranks"], plan["ranks"]) != observation["profiling"]):
+            raise ValueError("profile evidence changed")
 
 
 def _new_attempt(run, root, kind, *, candidate_source=None, baseline_source=None, name=None):
@@ -341,6 +363,9 @@ def _continue(run, attempt, root):
 def phase_jobs(plan, sides):
     phases = ["build", "correctness"] + (["service"] if "service" in plan else [])
     jobs = [(side, phase, None) for side in sides for phase in phases]
+    if plan.get("native", {}).get("profile", False):
+        # Qualify first; profile the incumbent once, then each qualified candidate.
+        jobs.append((sides[-1], "profile", None))
     for pair in range(plan["repetitions"]):
         jobs.extend((side, "benchmark", pair) for side in (sides if pair % 2 == 0 else sides[::-1]))
     return jobs

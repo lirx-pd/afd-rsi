@@ -13,7 +13,7 @@
           "hypothesis": {"type": "string"},
           "category": {"type": "string"},
           "evidence": {"type": "array", "items": {"type": "string"}},
-          "priority": {"type": "integer", "minimum": 1, "maximum": 3},
+          "priority": {"type": "integer", "minimum": 1, "maximum": 3, "description": "3 is preferred; 1 is fallback. Controller selects the highest priority plus category promotions minus failures."},
           "patch": {"type": "string"}
         }
       }

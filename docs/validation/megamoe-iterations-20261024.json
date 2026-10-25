@@ -1,0 +1,886 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-24",
+  "status": "confirmed-and-retained",
+  "promotion": {
+    "parent_hash": "4449945484c15ae54e10ef6388cb17029a7034dc7ed30a89eff57a33b0cea582",
+    "source_hash": "64cd64ce7612a7c49b4dda3e6666f5c45c2c17c4e10509f3004f4f44a6c4350b",
+    "changed_files": [
+      "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_pipeline.h"
+    ],
+    "patch_sha256": "f6be2492ac809a097f39c0b581fcc84d37daf1655dd70ac99596f1dee135059f",
+    "screen": {
+      "attempt": "7e17987dc4684c9d85f45a47eb1accc6",
+      "hash": "aeb28ac6ee215fcd97a909e84ce97581e4764e6464416e37886ff4bc25903b24"
+    },
+    "confirmation": {
+      "attempt": "296b9e73684849ce9f0730688c80eef7",
+      "hash": "a46c627a0376f40594df49d2959c79fde6136c5fb41f26fc3db3199ad08ab335"
+    },
+    "committed": false
+  },
+  "experiments": [
+    {
+      "candidate": "inactive-output",
+      "screen_attempt": "db06e57afcfc4124b0d50c753adc0722",
+      "screen": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 1.0898913802883214,
+        "samples": {
+          "baseline": [
+            396.9921405826296,
+            396.9385719725064,
+            401.0785687714815
+          ],
+          "candidate": [
+            395.0950000435114,
+            382.1114283055067,
+            392.6653574619974
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 114.35796413570642,
+                  "p50": 114.4636683166027,
+                  "p90": 116.91890023648739
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 111.47922254167497,
+                  "p50": 111.39562632888556,
+                  "p90": 111.84624638408422
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 114.4636683166027,
+            "candidate": 111.39562632888556,
+            "gain_pct": 2.6803631517653748,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": false
+    },
+    {
+      "candidate": "g2-before-next-g1",
+      "screen_attempt": "886c3adb5d34473ebc65d52f36f06619",
+      "screen": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 0.5243012888481169,
+        "samples": {
+          "baseline": [
+            395.09571556534087,
+            391.95035823753904,
+            390.64785705081056
+          ],
+          "candidate": [
+            395.0389272400311,
+            387.1232108878238,
+            389.8953574576548
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 113.65128704346716,
+                  "p50": 113.6901481077075,
+                  "p90": 116.7378168553114
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 115.18587777391076,
+                  "p50": 115.22596515715122,
+                  "p90": 119.60473116487265
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 113.6901481077075,
+            "candidate": 115.22596515715122,
+            "gain_pct": -1.3508796276601842,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": false
+    },
+    {
+      "candidate": "prepare-cache-invalidation",
+      "screen_attempt": "2f0832be3f144e308de9fc42b53985b9",
+      "screen": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 0.09513229668726142,
+        "samples": {
+          "baseline": [
+            413.66500141365185,
+            397.6328559219837,
+            400.94642926539694
+          ],
+          "candidate": [
+            391.5953572307314,
+            408.0967841936009,
+            400.5649997187512
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 112.89895582012832,
+                  "p50": 112.55030706524849,
+                  "p90": 116.18647463619709
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 114.29585493169725,
+                  "p50": 114.61811792105436,
+                  "p90": 116.824059933424
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 112.55030706524849,
+            "candidate": 114.61811792105436,
+            "gain_pct": -1.8372325315888283,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": false
+    },
+    {
+      "candidate": "cube-baseN-192",
+      "screen_attempt": "be41bdef375645a0bb1cece903abfa52",
+      "screen": {
+        "verdict": "PASS",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 5.777512035928368,
+        "samples": {
+          "baseline": [
+            400.4071426710912,
+            401.1549989559821,
+            395.6621414316552
+          ],
+          "candidate": [
+            376.6160724418504,
+            377.273571810552,
+            386.6485705865281
+          ]
+        },
+        "reasons": [],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 113.37210657075047,
+                  "p50": 113.4392386302352,
+                  "p90": 114.81077149510384
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 116.34358810260892,
+                  "p50": 116.87905807048082,
+                  "p90": 122.92323336005211
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 113.4392386302352,
+            "candidate": 116.87905807048082,
+            "gain_pct": -3.032301240541657,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "confirmation_attempt": "b317ee5246084093aea1be0ecee8b7ef",
+      "confirmation": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 1.533587534839076,
+        "samples": {
+          "baseline": [
+            400.28392523527145,
+            392.171072108405,
+            394.2203590912478
+          ],
+          "candidate": [
+            396.1850008262055,
+            388.1746448044266,
+            383.2750025072268
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 114.74327743053436,
+                  "p50": 115.47646019607782,
+                  "p90": 116.47430583834648
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 113.22540394030511,
+                  "p50": 113.16645238548517,
+                  "p90": 115.91648831963539
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 115.47646019607782,
+            "candidate": 113.16645238548517,
+            "gain_pct": 2.0004144625409226,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": false
+    },
+    {
+      "candidate": "root-private-arrival",
+      "screen_attempt": "6d94459bcb9748cd93027280b4b92380",
+      "screen": {
+        "verdict": "FAIL",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 0.3136639326607571,
+        "samples": {
+          "baseline": [
+            392.34821338738715,
+            413.82821729140625,
+            396.2382131389209
+          ],
+          "candidate": [
+            389.6478568868978,
+            394.99535677688465,
+            402.13285652654514
+          ]
+        },
+        "reasons": [
+          "positive gain meeting the frozen threshold required"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 114.2269850242883,
+                  "p50": 114.53341320157051,
+                  "p90": 115.54646175354719
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 113.25725680217147,
+                  "p50": 113.11033926904202,
+                  "p90": 114.86949324607849
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 114.53341320157051,
+            "candidate": 113.11033926904202,
+            "gain_pct": 1.2424967463634307,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": false
+    },
+    {
+      "candidate": "pipeline-input-reuse",
+      "screen_attempt": "7e17987dc4684c9d85f45a47eb1accc6",
+      "screen": {
+        "verdict": "PASS",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 3.671312690659234,
+        "samples": {
+          "baseline": [
+            399.4289269404752,
+            400.76571303818906,
+            393.45178699919154
+          ],
+          "candidate": [
+            390.5517858053957,
+            383.7407127554928,
+            384.76464205554555
+          ]
+        },
+        "reasons": [],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 112.47675772756338,
+                  "p50": 112.04291693866253,
+                  "p90": 116.53597801923752
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 114.56988099962473,
+                  "p50": 114.61581103503704,
+                  "p90": 115.5512560158968
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 112.04291693866253,
+            "candidate": 114.61581103503704,
+            "gain_pct": -2.296346941576899,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "confirmation_attempt": "296b9e73684849ce9f0730688c80eef7",
+      "confirmation": {
+        "verdict": "PASS",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": 2.521911518376563,
+        "samples": {
+          "baseline": [
+            395.9171428744282,
+            389.76928644946645,
+            395.1367868908814
+          ],
+          "candidate": [
+            373.31749897982394,
+            393.78999918699265,
+            385.1717867489372
+          ]
+        },
+        "reasons": [],
+        "claim": "limited to configured native and service gates; not production qualification",
+        "service_metrics": {
+          "baseline": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 116.04612390510738,
+                  "p50": 115.90890865772963,
+                  "p90": 120.41598912328482
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          },
+          "candidate": {
+            "gsm8k": {
+              "samples": 30,
+              "strict_match": 0.9333333333333333,
+              "threshold": 0.9
+            },
+            "performance": [
+              {
+                "id": "point-000",
+                "phase": "prefill",
+                "input_lens": [
+                  128
+                ],
+                "output_lens": [
+                  1
+                ],
+                "concurrency": 1,
+                "requests": 8,
+                "warmup_requests": 2,
+                "ttft_ms": {
+                  "mean": 115.65131205134094,
+                  "p50": 116.6637297719717,
+                  "p90": 119.89964302629232
+                },
+                "scope": "client HTTP time to first token; includes service overhead"
+              }
+            ]
+          }
+        },
+        "service_metric_policy": "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric.",
+        "service_performance_comparison": [
+          {
+            "point": "point-000",
+            "metric": "ttft_p50_ms",
+            "baseline": 115.90890865772963,
+            "candidate": 116.6637297719717,
+            "gain_pct": -0.6512192401629813,
+            "claim": "auxiliary client HTTP measurement; not a promotion gate"
+          }
+        ]
+      },
+      "promoted": true
+    }
+  ],
+  "confirmation_per_case": {
+    "scope": "Diagnostic case medians of three per-trial means; frozen promotion uses the suite mean.",
+    "attempt": "296b9e73684849ce9f0730688c80eef7",
+    "cases": [
+      {
+        "case": 0,
+        "tokens": 7,
+        "layer": 2,
+        "sparse": false,
+        "baseline": 358.4599979221821,
+        "candidate": 347.1275009214878,
+        "gain_pct": 3.1614397886467804
+      },
+      {
+        "case": 1,
+        "tokens": 7,
+        "layer": 5,
+        "sparse": true,
+        "baseline": 248.09749983251095,
+        "candidate": 249.51500073075294,
+        "gain_pct": -0.571348320397802
+      },
+      {
+        "case": 2,
+        "tokens": 7,
+        "layer": 2,
+        "sparse": false,
+        "baseline": 357.43749886751175,
+        "candidate": 339.0900008380413,
+        "gain_pct": 5.133064686162414
+      },
+      {
+        "case": 3,
+        "tokens": 16,
+        "layer": 5,
+        "sparse": false,
+        "baseline": 368.1674972176552,
+        "candidate": 351.27000138163567,
+        "gain_pct": 4.589621833464008
+      },
+      {
+        "case": 4,
+        "tokens": 16,
+        "layer": 2,
+        "sparse": true,
+        "baseline": 255.42000494897366,
+        "candidate": 257.6124966144562,
+        "gain_pct": -0.8583868228804192
+      },
+      {
+        "case": 5,
+        "tokens": 129,
+        "layer": 5,
+        "sparse": true,
+        "baseline": 717.7400067448616,
+        "candidate": 707.2075009346008,
+        "gain_pct": 1.4674541911114058
+      },
+      {
+        "case": 6,
+        "tokens": 129,
+        "layer": 2,
+        "sparse": false,
+        "baseline": 462.56500110030174,
+        "candidate": 433.6500056087971,
+        "gain_pct": 6.251012381551712
+      }
+    ]
+  },
+  "scope": "synthetic-weight-full-transaction-suite-mean; actual V4 Flash W4A8 service gates; not production performance qualification",
+  "profile_audit": {
+    "early": {
+      "verdicts": 2,
+      "profiles": 3
+    },
+    "current": {
+      "verdicts": 6,
+      "profiles": 7,
+      "profile_raw_hashes_match": true,
+      "formal_verdicts_recomputed": true
+    }
+  },
+  "framework_tests": {
+    "wsl": {
+      "passed": 102,
+      "skipped": 1,
+      "skip": "HTTP socket binding unavailable in WSL sandbox"
+    },
+    "npu_linux": {
+      "passed": 103,
+      "skipped": 0
+    }
+  },
+  "limits": [
+    "No established model HTTP TTFT gain",
+    "Some sparse cases slower",
+    "Own-core diagnostic spans are not PMU utilization or cross-core overlap",
+    "Shutdown-only errors waived by frozen user policy; raw failures retained",
+    "No production stress or cross-host qualification"
+  ]
+}

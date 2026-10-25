@@ -42,6 +42,7 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_MEGA_MOE"] == "1"
     for service in services.values():
         command = service["command"]
+        assert command[command.index('--data-parallel-rpc-port') + 1] == str(19282 + int(service['role'] == 'ffn'))
         assert ('--enforce-eager' in command) == (execution == 'eager' or service['role'] == 'attention')
         if execution == 'graph' and service['role'] == 'ffn':
             compilation = json.loads(command[command.index('--compilation-config') + 1])
@@ -118,3 +119,24 @@ def test_pinned_runner_rejects_exited_service_before_http(monkeypatch):
     case = from_args(parser().parse_args(["run", "--baseline", "--topology", "dp1", "--device", "0"]))
     with pytest.raises(RuntimeError, match="FFN process exited"):
         wait_ready(case, [SimpleNamespace(ensure_alive=exited)])
+
+
+@pytest.mark.parametrize("model, default", [("v2-lite", 0.27), ("v4-flash", 0.9)])
+@pytest.mark.parametrize("override", [None, 0.0, 0.8])
+def test_gsm8k_threshold_defaults_follow_model(monkeypatch, model, default, override):
+    monkeypatch.syspath_prepend(str(ROOT / "benchmarks/service"))
+    from afd_e2e.cli import parser
+    from afd_e2e.config import from_args
+
+    args = ["plan", "--model", model, "--model-path", "/work/weights"]
+    if override is not None:
+        args += ["--threshold", str(override)]
+    case = from_args(parser().parse_args(args))
+    assert case.threshold == (default if override is None else override)
+
+
+@pytest.mark.parametrize("extra", [("--api-port", "65533"), ("--afd-port", "19282")])
+def test_service_rejects_rpc_ports_out_of_range_or_overlapping(extra):
+    result = invoke("plan", "--repo", "/work/target", "--device", "0,1,2,3", *extra)
+    assert result.returncode != 0
+    assert "ports must be distinct and in range" in result.stderr

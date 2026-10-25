@@ -17,3 +17,10 @@ Run `python -m pytest` and `PYTHONPATH=src python -m afd_rsi check` after change
 Foundation maintenance requires `PYTHONPATH=src python tools/freeze_foundation.py`
 and inspection of the manifest diff. Do not regenerate a manifest to conceal an
 unexpected change. There is no automatic knowledge promotion or framework edit.
+
+Codex model policy: experiment operation uses `gpt-6.1-sol` with `medium`;
+code/patch generation uses `gpt-6.1-sol` with `xhigh`; evidence analysis,
+profiling interpretation and optimization planning use `gpt-6-astra` with
+`xhigh`. Here the requested "ultra high" means `xhigh`, not `ultra`.
+The frozen controller runs experiments directly; do not add a model between its
+validation stages. The proposal adapter analyzes first, then generates patches.

@@ -17,12 +17,14 @@ shutdown-only. Preserve the failed raw lifecycle summary and explicitly record
 that waiver; inference, every configured test, loaded identity and cleanup must
 still pass. The Agent cannot change this policy during search.
 
-Model-call reservations and round state are persisted before dispatch. Wall
+Agent-dispatch reservations and round state are persisted before dispatch. Wall
 time is the original campaign deadline; resume cannot reset any budget. A file
 exchange may separate the proposer from the executor, but it cannot change the
 frozen workload, timeout or acceptance rules. Preserve raw model events and the
 submitted proposal alongside experiment evidence. Token usage is an observation,
-not an enforced token budget; model calls and wall time are bounded.
+not an enforced token budget; Agent dispatches and wall time are bounded.
+The built-in adapter uses at most two model calls per dispatch; follow the
+[Codex model policy](codex-models.md) for role assignment and audit records.
 
 Recover only processes with the trial's ownership tag, matching host and boot.
 Use pidfds rather than signalling a reused numeric PID. Preserve the original
@@ -41,3 +43,7 @@ the same parent. Penalize failed categories and reward confirmed promotions
 when ranking the next proposals. A category score guides exploration; it is not
 proof of causality. Never automatically promote an experience into frozen
 skills or knowledge. Maintainers review such changes outside candidate search.
+
+Priority 3 is preferred and 1 is fallback. The controller selects the maximum
+of priority plus category promotions minus category failures; list order does
+not override that score. Do not describe an unselected proposal as an experiment.

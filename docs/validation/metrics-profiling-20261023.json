@@ -1,0 +1,625 @@
+{
+  "state": {
+    "schema_version": 1,
+    "status": "budget_exhausted",
+    "external_agent": true,
+    "calls": 1,
+    "rounds": [
+      "0001"
+    ],
+    "active": null,
+    "reason": "Frozen wall time, round or model-call budget exhausted.",
+    "baseline": "66b2d50d80444dfca91b25787133af48"
+  },
+  "source_hash": "1d290c11d286f7b81273d37a89a0a1bfd17fef0061dc46a2cd02bafdbcded179",
+  "attempts": [
+    {
+      "id": "66b2d50d80444dfca91b25787133af48",
+      "kind": "baseline",
+      "phases": [
+        {
+          "side": "baseline",
+          "phase": "build",
+          "status": "valid",
+          "checks_passed": null
+        },
+        {
+          "side": "baseline",
+          "phase": "correctness",
+          "status": "valid",
+          "checks_passed": true
+        },
+        {
+          "side": "baseline",
+          "phase": "service",
+          "status": "valid",
+          "checks_passed": true
+        },
+        {
+          "side": "baseline",
+          "phase": "profile",
+          "status": "valid",
+          "checks_passed": true
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true
+        },
+        {
+          "side": "baseline",
+          "phase": "benchmark",
+          "status": "valid",
+          "checks_passed": true
+        }
+      ],
+      "baseline_complete": true
+    },
+    {
+      "id": "d29d918d506c46c39567ad3006be36eb",
+      "kind": "comparison",
+      "phases": [
+        {
+          "side": "baseline",
+          "phase": "build",
+          "status": "valid",
+          "checks_passed": null
+        },
+        {
+          "side": "baseline",
+          "phase": "correctness",
+          "status": "valid",
+          "checks_passed": true
+        },
+        {
+          "side": "baseline",
+          "phase": "service",
+          "status": "invalid",
+          "checks_passed": null
+        }
+      ],
+      "verdict": {
+        "verdict": "INCONCLUSIVE",
+        "backend": "ascend",
+        "scope": "synthetic-weight-full-transaction-suite-mean",
+        "unit": "us",
+        "gain_pct": null,
+        "samples": {
+          "baseline": [],
+          "candidate": []
+        },
+        "reasons": [
+          "'gsm8k'",
+          "both correctness results required",
+          "both configured service gates required",
+          "qualified candidate profile required",
+          "paired measurements incomplete"
+        ],
+        "claim": "limited to configured native and service gates; not production qualification"
+      }
+    }
+  ],
+  "final_controller_hash": "450ab5d4acb628b989958bc9c0ababb49c4ccd7c4e5922e29ab4c92f1b92ee69",
+  "execution_controller_hash": "89cd051faa4ba73ed0c1a53ae335dafefaef63d19442ee88a44a2e228b99666e",
+  "services": [
+    {
+      "attempt": "66b2d50d80444dfca91b25787133af48",
+      "side": "baseline",
+      "gsm8k": {
+        "samples": 30,
+        "strict_match": 0.9,
+        "threshold": 0.27
+      },
+      "performance": [
+        {
+          "id": "point-000",
+          "phase": "prefill",
+          "input_lens": [
+            128
+          ],
+          "output_lens": [
+            1
+          ],
+          "concurrency": 1,
+          "requests": 8,
+          "warmup_requests": 2,
+          "ttft_ms": {
+            "mean": 112.34553903341293,
+            "p50": 112.93141078203917,
+            "p90": 115.00182747840881
+          },
+          "scope": "client HTTP time to first token; includes service overhead"
+        }
+      ],
+      "actual_identity_passed": true,
+      "lifecycle": {
+        "status": "failed",
+        "inference_status": "passed",
+        "shutdown_status": "failed",
+        "cleanup_status": "passed",
+        "test_results": {
+          "smoke": "passed",
+          "gsm8k": "passed",
+          "perf": "passed"
+        }
+      },
+      "shutdown_errors_ignored": true,
+      "mapped_processes": 16,
+      "verified_measured_prefill_requests": 8
+    },
+    {
+      "kind": "supplemental-candidate",
+      "source_hash": "6e1254a396939c1f33ee42ac036469328da92a4d4bb451d91dde39b7cdb21f5c",
+      "gsm8k": {
+        "samples": 30,
+        "strict_match": 0.9333333333333333,
+        "threshold": 0.27
+      },
+      "performance": [
+        {
+          "id": "point-000",
+          "phase": "prefill",
+          "input_lens": [
+            128
+          ],
+          "output_lens": [
+            1
+          ],
+          "concurrency": 1,
+          "requests": 8,
+          "warmup_requests": 2,
+          "ttft_ms": {
+            "mean": 114.672158844769,
+            "p50": 114.43916615098715,
+            "p90": 116.16076789796352
+          },
+          "scope": "client HTTP time to first token; includes service overhead"
+        }
+      ],
+      "actual_identity_passed": true,
+      "mapped_processes": 16,
+      "lifecycle": {
+        "status": "failed",
+        "inference_status": "passed",
+        "shutdown_status": "failed",
+        "cleanup_status": "passed",
+        "test_results": {
+          "smoke": "passed",
+          "gsm8k": "passed",
+          "perf": "passed"
+        }
+      },
+      "shutdown_errors_ignored": true,
+      "verified_measured_prefill_requests": 8
+    }
+  ],
+  "profiles": [
+    {
+      "attempt": "66b2d50d80444dfca91b25787133af48",
+      "side": "baseline",
+      "scope": "native synthetic seven-case transactions; separate profiled execution",
+      "evidence": [
+        {
+          "file": "rank-1/gpuxdn010030014227.guian02_435283_20261023130500044_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "688691d1fd9c4ff8840eb1acd71730eef6463a37c553a42e4373b020511c4db5",
+          "mega_kernel_count": 8,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        },
+        {
+          "file": "rank-2/gpuxdn010030014227.guian02_435284_20261023130500026_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+          "sha256": "677953d82353b4957e57cd354b3ea0f726a4dcab1593328a7029d2de3d66c53b",
+          "mega_kernel_count": 7,
+          "names": [
+            "AfdMegaMoeFFN"
+          ]
+        }
+      ],
+      "ffn_ranks": [
+        {
+          "rank": 1,
+          "device_task_total_us": 306730.078,
+          "top_kernels": [
+            {
+              "name": "AfdMegaMoeFFN",
+              "count": 8,
+              "total_us": 303954.11,
+              "mean_us": 37994.26375,
+              "task_duration_share_pct": 99.09498017993528
+            },
+            {
+              "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+              "count": 3,
+              "total_us": 2770.248,
+              "mean_us": 923.416,
+              "task_duration_share_pct": 0.9031549882760438
+            },
+            {
+              "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+              "count": 4,
+              "total_us": 5.720000000000001,
+              "mean_us": 1.4300000000000002,
+              "task_duration_share_pct": 0.001864831788684252
+            }
+          ]
+        },
+        {
+          "rank": 2,
+          "device_task_total_us": 315683.57399999996,
+          "top_kernels": [
+            {
+              "name": "AfdMegaMoeFFN",
+              "count": 7,
+              "total_us": 313189.38399999996,
+              "mean_us": 44741.34057142857,
+              "task_duration_share_pct": 99.20990821017503
+            },
+            {
+              "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+              "count": 3,
+              "total_us": 2488.37,
+              "mean_us": 829.4566666666666,
+              "task_duration_share_pct": 0.7882481715694211
+            },
+            {
+              "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+              "count": 4,
+              "total_us": 5.82,
+              "mean_us": 1.455,
+              "task_duration_share_pct": 0.0018436182555383767
+            }
+          ]
+        }
+      ],
+      "analysis": "Rank tasks by summed device duration. Investigate the largest tasks first. AfdMegaMoeFFN is fused: this trace alone cannot identify Cube, Vector, MTE or communication bound. Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.",
+      "next_step": "Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. HTTP prefill TTFT is a separate service metric; do not attribute it to this trace without evidence."
+    }
+  ],
+  "best": {
+    "source": "workspaces/baseline",
+    "source_hash": "1d290c11d286f7b81273d37a89a0a1bfd17fef0061dc46a2cd02bafdbcded179",
+    "baseline": "66b2d50d80444dfca91b25787133af48",
+    "baseline_hash": "dd192f15d2ea08359de5c9a01a11907d6d5f150c35e81081197f0209331047c3",
+    "confirmation": null
+  },
+  "experience_records": 1,
+  "next_context_preview_only": true,
+  "next_context_evidence_ids": [
+    "baseline",
+    "profile-incumbent",
+    "history-0"
+  ],
+  "same_parent_duplicate_suppressed": true,
+  "original_source_unchanged": true,
+  "profile_skipped_after_failed_service": true,
+  "dataset_hashes": {
+    "train": "ea82612ea9582142387730c793eb67d3b12849002bc0b7fa6f8efafa7351419d",
+    "test": "ee7b8da9e381df27b9e3f7758a159ab2bdaa4dbaa910546cbbc47e0cb44e4f59"
+  },
+  "model_hashes": {
+    "config.json": "6c6cdc4a47e00e41137081429b95bd5c1cf91ba62e87309d1398431de7f4a8e1",
+    "tokenizer_config.json": "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547",
+    "quant_model_description.json": "a2e85871ba049d8b475bb5de5b75a79b6fedb577eefc2ae86d57879143431b60",
+    "quant_model_weights.safetensors.index.json": "d31d82605fa440e5c6ccfdf8bccdebe65626e2cf7f3deb0292ba2a686d611752"
+  },
+  "supplement": {
+    "native_correctness": "PASS",
+    "profiles": {
+      "profile": {
+        "scope": "native synthetic seven-case transactions; separate profiled execution",
+        "evidence": [
+          {
+            "file": "rank-1/gpuxdn010030014227.guian02_495494_20261023135152925_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+            "sha256": "15604ccf4bd17e8e9958ae6788889c95f88024fb1635ddd0dffe9e597e49a7f4",
+            "mega_kernel_count": 8,
+            "names": [
+              "AfdMegaMoeFFN"
+            ]
+          },
+          {
+            "file": "rank-2/gpuxdn010030014227.guian02_495495_20261023135152943_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+            "sha256": "f51acc50e9f883aa5331c7a3316a2c48f857b3911b5bd4c4d0dbd395ad7e8919",
+            "mega_kernel_count": 7,
+            "names": [
+              "AfdMegaMoeFFN"
+            ]
+          }
+        ],
+        "ffn_ranks": [
+          {
+            "rank": 1,
+            "device_task_total_us": 320519.7759999999,
+            "top_kernels": [
+              {
+                "name": "AfdMegaMoeFFN",
+                "count": 8,
+                "total_us": 317457.6979999999,
+                "mean_us": 39682.21224999999,
+                "task_duration_share_pct": 99.04465239611301
+              },
+              {
+                "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+                "count": 3,
+                "total_us": 3055.4379999999996,
+                "mean_us": 1018.4793333333332,
+                "task_duration_share_pct": 0.9532759688438073
+              },
+              {
+                "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+                "count": 4,
+                "total_us": 6.639999999999999,
+                "mean_us": 1.6599999999999997,
+                "task_duration_share_pct": 0.0020716350431993318
+              }
+            ]
+          },
+          {
+            "rank": 2,
+            "device_task_total_us": 302546.276,
+            "top_kernels": [
+              {
+                "name": "AfdMegaMoeFFN",
+                "count": 7,
+                "total_us": 300048.124,
+                "mean_us": 42864.017714285714,
+                "task_duration_share_pct": 99.17429094384227
+              },
+              {
+                "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+                "count": 3,
+                "total_us": 2491.652,
+                "mean_us": 830.5506666666666,
+                "task_duration_share_pct": 0.8235606244910448
+              },
+              {
+                "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+                "count": 4,
+                "total_us": 6.5,
+                "mean_us": 1.625,
+                "task_duration_share_pct": 0.0021484316666981547
+              }
+            ]
+          }
+        ],
+        "analysis": "Rank tasks by summed device duration. Investigate the largest tasks first. AfdMegaMoeFFN is fused: this trace alone cannot identify Cube, Vector, MTE or communication bound. Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.",
+        "next_step": "Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. HTTP prefill TTFT is a separate service metric; do not attribute it to this trace without evidence."
+      },
+      "profile-baseline": {
+        "scope": "native synthetic seven-case transactions; separate profiled execution",
+        "evidence": [
+          {
+            "file": "rank-1/gpuxdn010030014227.guian02_492760_20261023135117627_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+            "sha256": "9836e42358a7119498a555b73fb96b1f0d2148744678e2b0135f1af7d332b16d",
+            "mega_kernel_count": 8,
+            "names": [
+              "AfdMegaMoeFFN"
+            ]
+          },
+          {
+            "file": "rank-2/gpuxdn010030014227.guian02_492761_20261023135117623_ascend_pt/ASCEND_PROFILER_OUTPUT/kernel_details.csv",
+            "sha256": "bbb54c43c81787056baf737a52741dd2157b60a0130858dd560f07be02901323",
+            "mega_kernel_count": 7,
+            "names": [
+              "AfdMegaMoeFFN"
+            ]
+          }
+        ],
+        "ffn_ranks": [
+          {
+            "rank": 1,
+            "device_task_total_us": 328283.82200000004,
+            "top_kernels": [
+              {
+                "name": "AfdMegaMoeFFN",
+                "count": 8,
+                "total_us": 325274.242,
+                "mean_us": 40659.28025,
+                "task_duration_share_pct": 99.08323840582068
+              },
+              {
+                "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+                "count": 3,
+                "total_us": 3003.52,
+                "mean_us": 1001.1733333333333,
+                "task_duration_share_pct": 0.9149156305363106
+              },
+              {
+                "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+                "count": 4,
+                "total_us": 6.06,
+                "mean_us": 1.515,
+                "task_duration_share_pct": 0.0018459636430088837
+              }
+            ]
+          },
+          {
+            "rank": 2,
+            "device_task_total_us": 320980.90400000004,
+            "top_kernels": [
+              {
+                "name": "AfdMegaMoeFFN",
+                "count": 7,
+                "total_us": 318517.014,
+                "mean_us": 45502.43057142857,
+                "task_duration_share_pct": 99.23238735722421
+              },
+              {
+                "name": "aclnnInplaceFillScalar_FillAiCpu_Fill",
+                "count": 3,
+                "total_us": 2458.29,
+                "mean_us": 819.43,
+                "task_duration_share_pct": 0.7658679907014031
+              },
+              {
+                "name": "aclnnInplaceZero_ZerosLikeAiCore_ZerosLike",
+                "count": 4,
+                "total_us": 5.6,
+                "mean_us": 1.4,
+                "task_duration_share_pct": 0.0017446520743801006
+              }
+            ]
+          }
+        ],
+        "analysis": "Rank tasks by summed device duration. Investigate the largest tasks first. AfdMegaMoeFFN is fused: this trace alone cannot identify Cube, Vector, MTE or communication bound. Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.",
+        "next_step": "Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. HTTP prefill TTFT is a separate service metric; do not attribute it to this trace without evidence."
+      }
+    },
+    "timing": [
+      {
+        "attention_rank": 0,
+        "case": 0,
+        "baseline_us_by_trial": [
+          353.84999215602875,
+          356.4800024032593
+        ],
+        "candidate_us_by_trial": [
+          345.32999992370605,
+          355.66000640392303
+        ],
+        "gain_pct_by_trial": [
+          2.407797773403888,
+          0.23002580616251295
+        ],
+        "median_gain_pct": 1.3189117897832006
+      },
+      {
+        "attention_rank": 0,
+        "case": 1,
+        "baseline_us_by_trial": [
+          242.32999980449677,
+          248.06000292301178
+        ],
+        "candidate_us_by_trial": [
+          242.67999827861786,
+          242.3899993300438
+        ],
+        "gain_pct_by_trial": [
+          -0.14443051805532128,
+          2.285738743108754
+        ],
+        "median_gain_pct": 1.0706541125267164
+      },
+      {
+        "attention_rank": 0,
+        "case": 2,
+        "baseline_us_by_trial": [
+          354.6700030565262,
+          357.97999799251556
+        ],
+        "candidate_us_by_trial": [
+          351.39000415802,
+          356.1999946832657
+        ],
+        "gain_pct_by_trial": [
+          0.9248030197759377,
+          0.49723540958483753
+        ],
+        "median_gain_pct": 0.7110192146803876
+      },
+      {
+        "attention_rank": 0,
+        "case": 3,
+        "baseline_us_by_trial": [
+          353.630006313324,
+          369.1699951887131
+        ],
+        "candidate_us_by_trial": [
+          359.6700131893158,
+          354.5600026845932
+        ],
+        "gain_pct_by_trial": [
+          -1.7080018007974813,
+          3.9575243639861655
+        ],
+        "median_gain_pct": 1.124761281594342
+      },
+      {
+        "attention_rank": 0,
+        "case": 4,
+        "baseline_us_by_trial": [
+          245.2399954199791,
+          245.48999965190887
+        ],
+        "candidate_us_by_trial": [
+          242.94999986886978,
+          255.52000105381012
+        ],
+        "gain_pct_by_trial": [
+          0.9337773584555995,
+          -4.0857067155986915
+        ],
+        "median_gain_pct": -1.575964678571546
+      },
+      {
+        "attention_rank": 0,
+        "case": 5,
+        "baseline_us_by_trial": [
+          611.2100183963776,
+          603.43998670578
+        ],
+        "candidate_us_by_trial": [
+          623.8999962806702,
+          615.9000098705292
+        ],
+        "gain_pct_by_trial": [
+          -2.076205805262666,
+          -2.064832201917752
+        ],
+        "median_gain_pct": -2.070519003590209
+      },
+      {
+        "attention_rank": 0,
+        "case": 6,
+        "baseline_us_by_trial": [
+          427.279993891716,
+          420.16999423503876
+        ],
+        "candidate_us_by_trial": [
+          418.40000450611115,
+          418.9399927854538
+        ],
+        "gain_pct_by_trial": [
+          2.078260043192025,
+          0.2927390024183666
+        ],
+        "median_gain_pct": 1.1854995228051957
+      }
+    ],
+    "promotion_evaluated": false,
+    "replaces_failed_automatic_verdict": false
+  },
+  "source_revision": "beea4aa1cfe53a1916f6bf1ed52d57b28609596f",
+  "framework_archive_sha256": "1ee7e965173c2db778f43c4fb4fae110b56296f771b301380e6af57594165b3e",
+  "evidence_archive_sha256": "f35b76eb5f9fc3c93ac8c33eb1504e0d125b7d7788249237b2a601e165ec4ebe",
+  "evidence_archive_bytes": 69088673,
+  "validation": {
+    "wsl": {
+      "passed": 90,
+      "skipped": 1,
+      "skip_reason": "sandbox local HTTP socket bind"
+    },
+    "npu_container": {
+      "passed": 91,
+      "skipped": 0
+    },
+    "frozen_remote_source_unchanged": true,
+    "local_worktree_modified_during_validation": true,
+    "local_worktree_hash_at_final_check": "166b87ebed84f73c4da579d9aa04145864b480cb3e7d650fbf11e31d81ca5616",
+    "local_changes_not_written_by_this_task": [
+      "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_ffn.cpp",
+      "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_pipeline.h",
+      "docs/npu/ASYNC_CAM_MEGA_MOE_PERFORMANCE.md"
+    ]
+  },
+  "provider_request_sha256": "e42dd3f8f2ac2ab6ef2395a7cce3a6af61a26112033421fbc3669e3f459a5719",
+  "proposal_sha256": "9a856e3037a56c45d4f07bf1510e4e28ef0f1057193753e40638322d4f519ff2",
+  "local_evidence": "runs/metrics-profile-20261023-01/evidence.tar.gz",
+  "original_source_scope": "Remote frozen input referenced by the plan; the concurrent WSL worktree is recorded separately.",
+  "local_evidence_verification": {
+    "archive_sha256": "f35b76eb5f9fc3c93ac8c33eb1504e0d125b7d7788249237b2a601e165ec4ebe",
+    "verified_files": 2744,
+    "all_member_hashes_and_executable_modes_match": true
+  }
+}
