@@ -8,22 +8,25 @@
     "For Async CAM graph: keep Attention eager and request explicit FULL on FFN, as required by the target validator.",
     "Default GSM8K strict-match thresholds by model: V2 Lite 0.27, V4 Flash 0.9; retain explicit overrides.",
     "Assign distinct harness-owned DP RPC ports to Attention and FFN services, as already done for baseline instances.",
-    "Reuse one service startup for accuracy and performance matrices, with configurable cancellable inter-suite and inter-point settling outside timing."
+    "Reuse one service startup for accuracy and performance matrices, with configurable cancellable inter-suite and inter-point settling outside timing.",
+    "Add optional fixed-DP imbalanced prefill and long-context decode scenarios with raw counter/token-event audits, DP3TP4/EP4 planning, and per-token stream interval."
   ],
   "files": {
     "afd_e2e/__init__.py": "56556490f57be2f31a20453217a00763c95baf86bebc3e9dd7b6d1176c1216ce",
     "afd_e2e/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
-    "afd_e2e/cli.py": "3b20c44c4048a38a66aaee362971511bdbe57046af15a3cd90dad29fbeafb794",
-    "afd_e2e/config.py": "f4f82bfb57518fb48e6bca1ba69dbfa4ccba018e5c52257be0010f8e25eaf593",
+    "afd_e2e/cli.py": "41ba9a223093c9681aad55afaee64f6ff308d080f06bcc06123b6c9a03639d51",
+    "afd_e2e/config.py": "b16848e25eb08962b5d253691e41d11037a4c3f662e020dae0391ddd1e94c2c8",
     "afd_e2e/evaluation.py": "c89d16bce0b087810d0f0b862599a5840b79211a8b1c3c1a782de8172f5dfe86",
     "afd_e2e/metrics.py": "f7228ed2fd09ea59f3451afa6dabad8d9666f8342ee0c976b36828bcf0823e5a",
-    "afd_e2e/performance.py": "6e291a89914854ddd8043ac8a768dba08935480a5fd3e7808ab232b435da54d8",
-    "afd_e2e/planner.py": "513727eb17cf38b75898665ec19971ade91be8bccfa271314c64147af5c5a2a7",
+    "afd_e2e/performance.py": "fedf50af41a2f4dc6240b295f8fbf67754e694b4a32d977329c49012244a943d",
+    "afd_e2e/planner.py": "10419ac915b8e6c93f484249542e2f3f87cc807289a3e6579a7aac3ab002d14e",
     "afd_e2e/probe.py": "e0d1590f05776d83debbb01fb69354f2dd653a7bb69a930d87823ccca186a37a",
     "afd_e2e/process_utils.py": "8fcd83afca520fe0b45308f6e8a47d9a32357ba134a3e2d299ff1717c9cddce8",
-    "afd_e2e/reporting.py": "fd82cbdfee412d72eb24c1da672f94371eb92aaa692bb98ec90aab2b18837dcd",
+    "afd_e2e/reporting.py": "db501edb40b6392ee77f3e73d1756813a6e5967b73080e51b0ef9d2ec2d2023f",
     "afd_e2e/routing.py": "dbef13062e82cc7700381e497ee681f4d5bec0e3bef8a13b17dbb897ca05d4b4",
     "afd_e2e/runner.py": "99cb88bebb1b5ab83fc41c67c35b8eed55810f80e81625eaa7cdb5b8d6095e40",
+    "afd_e2e/scenario_contract.py": "b41d63c91560b1454636d2c7032a4b93f3d0b1fdac1648e89c3c522927e7e415",
+    "afd_e2e/scenarios.py": "20c53e4f1970f1e9bd751617315da184a3f652267af9723472276168c7c1b14d",
     "afd_e2e/workloads.py": "0ac6d7ecdb90d0f6c9ab1e390daa748e3cef61fcc36f091d7dffbd4dfeee210b"
   },
   "upstream_files": {

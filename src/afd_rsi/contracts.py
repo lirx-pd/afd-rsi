@@ -108,8 +108,11 @@ def load_recipe(path: Path) -> dict:
             positive(service[key], f"service {key}")
     if "search" in config:
         search = config["search"]
-        if set(search) != {"agent_command", "max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}:
+        required = {"agent_command", "max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
+        if not required <= set(search) or set(search) - required - {'goal'}:
             raise ValueError("invalid search settings")
+        if 'goal' in search and (not isinstance(search['goal'], str) or not search['goal'].strip()):
+            raise ValueError('search goal must be a nonempty string')
         argv_list(search["agent_command"], "agent command")
         for key in ("max_rounds", "max_calls", "max_context_bytes"):
             positive(search[key], key, integer=True)

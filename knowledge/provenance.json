@@ -41,5 +41,17 @@
       "modifications": "external URL locators removed; technical body preserved",
       "license": "not declared in provided local source; no additional redistribution grant asserted"
     }
+  ],
+  "reviewed_external_campaigns": [
+    {
+      "id": "megamoe-expert-packing-20261025",
+      "date": "2026-10-25",
+      "knowledge_file": "knowledge/performance/megamoe-expert-packing-20261025.md",
+      "evidence_file": "knowledge/performance/megamoe-expert-packing-20261025.json",
+      "evidence_sha256": "10e9701ae116bb738069388b7a6b9c139724ed72ec0c8682cdf1bcc821bf472e",
+      "artifact_sha256": "35fcd0f9b3223030fd22992a6137bf5929809017205207cbedd38cd14c0f3afa",
+      "scope": "manually reviewed external A3/V4 measurements; no compatible experience fingerprint or RSI paired-promotion verdict",
+      "framework_hardware_qualification_changed": false
+    }
   ]
 }

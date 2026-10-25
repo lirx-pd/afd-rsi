@@ -93,3 +93,8 @@ GSM8K 27/30、候选补测 28/30，小 prefill 均 8/8，原生两侧数值与 p
 分层验证完整回归 126 项通过、1 项本机套接字权限跳过；提案定向检查 7 项通过。
 本轮为 CPU 控制器验证，未新增 NPU 收益或运行耗时结论，见
 [分层验证回归](validation/staged-validation-20261025.md)。
+
+2026-10-25 专项配方已接入固定 DP 不均衡 prefill 和长上下文 decode 共同窗口 TPOT，
+单服务复用、原始计数器/SSE 归约审计、对照报告及 Agent goal 完整串联。原生主指标不变。
+最终 iTASK CPU 协议测试 26 项通过；不是模型/NPU 性能实测，见
+[专项指标验证](validation/service-scenarios-20261025.md)。

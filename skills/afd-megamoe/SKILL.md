@@ -12,11 +12,13 @@ Do not invent a launcher or fabricate compare rank evidence from HTTP summaries.
 Scope: local A3 MegaMoe development. Read these repository-owned resources for
 this task; no global skill or online lookup is needed.
 
+- [expert-packed tiles and service limits](../../knowledge/performance/megamoe-expert-packing-20261025.md)
 - [compact-v2](../../knowledge/afd/compact-v2.md)
 - [runtime-build](../../knowledge/afd/runtime-build.md)
 - [w4a8](../../knowledge/gmm-quantization/w4a8.md)
 - [contract](../../knowledge/measurement/contract.md)
 - [eager-native](../../knowledge/measurement/eager-native.md)
+- [fixed-DP prefill and long-context decode](../../knowledge/measurement/service-scenarios.md)
 - [profiling and prefill](../../knowledge/measurement/profiling.md)
 - [Codex model policy](../../knowledge/measurement/codex-models.md)
 - [search and recovery](../../knowledge/measurement/search.md)

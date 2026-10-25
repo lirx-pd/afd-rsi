@@ -1,0 +1,38 @@
+{
+  "scope": "Controller and CPU HTTP/SSE protocol fixtures only; no actual model/NPU performance run",
+  "controller_hash": "e386a3dae717ce1e4b38fb5471a040f17ca47ca658a8aa2ded1c19b772bb811c",
+  "foundation_manifest_sha256": "8d18f94869e62a9bb81cb11cfc104228d9801761fd3f771d9ebe3c9506e8f635",
+  "local_full_regression_before_frozen_path_fix": {
+    "passed": 151,
+    "skipped": 2,
+    "seconds": 305.33
+  },
+  "local_final_targeted": {
+    "passed": 52,
+    "skipped": 1,
+    "seconds": 104.53,
+    "modules": [
+      "test_service_scenarios",
+      "test_profiling",
+      "test_staged_validation"
+    ]
+  },
+  "itask_final_protocol_tests": {
+    "task": "afd-mrv2-async",
+    "remote": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/rsi-scenario-tests-69abedd1879d428a805c85e7d22fe537/final",
+    "passed": 26,
+    "skipped": 0,
+    "seconds": 1.18,
+    "archive_sha256": "abbf059d8358a7b220d19f0d779bd9429323e8532d0638b9571a21e8182dbb85",
+    "real_http_fixture": true,
+    "uses_npu": false
+  },
+  "runtime_source_checks": [
+    "X-data-parallel-rank consumed by installed vLLM generate/base/serving.py",
+    "completion serving supports return_token_ids",
+    "engine argument parser supports --stream-interval"
+  ],
+  "scenario_recipe": "recipes/ascend_pipeline_scenarios.toml",
+  "model_performance_measured": false,
+  "target_worktree_modified": false
+}

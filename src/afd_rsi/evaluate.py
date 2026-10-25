@@ -78,4 +78,20 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
                  'candidate': b['ttft_ms']['p50'], 'gain_pct': (1 - b['ttft_ms']['p50'] / a['ttft_ms']['p50']) * 100,
                  'claim': 'auxiliary client HTTP measurement; not a promotion gate'}
                 for a, b in zip(before, after, strict=True)]
+            before = service_metrics['baseline'].get('scenarios', [])
+            after = service_metrics['candidate'].get('scenarios', [])
+            comparisons = []
+            for a, b in zip(before, after, strict=True):
+                if a['id'] != b['id'] or a['configuration'] != b['configuration']:
+                    raise ValueError('service scenario comparison contract mismatch')
+                rows = [(f"dp{r['dp_rank']}_ttft_p50_ms", r['ttft_ms']['p50'], s['ttft_ms']['p50'])
+                        for r, s in zip(a['per_dp'], b['per_dp'], strict=True)]
+                if a['id'] == 'long-decode':
+                    rows.extend((key + '_p50', a[key]['p50'], b[key]['p50'])
+                                for key in ('common_window_tpot_ms', 'request_tpot_ms'))
+                for metric, old, new in rows:
+                    comparisons.append(dict(scenario=a['id'], metric=metric, baseline=old, candidate=new,
+                        gain_pct=(1 - new / old) * 100, claim='auxiliary fixed-DP HTTP/SSE metric; not native kernel time'))
+            if comparisons:
+                result['service_scenario_comparison'] = comparisons
     return result

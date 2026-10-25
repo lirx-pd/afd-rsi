@@ -58,9 +58,17 @@ Preserve raw per-core intervals: summed spans double-count overlap and are not
 elapsed time. GetSystemCycle clocks must not be assumed cross-core synchronized.
 Compare waits and work on each core before attributing a pipeline bottleneck.
 Request summaries retain selected cores through sequences 1..4, covering the
-first reuse of the current two-slot ring. Historical profiles retain phase totals
-and raw archive identities; detailed timelines stay in the archived observations.
+first reuse of the original two-slot diagnostic target. Historical profiles retain
+phase totals and raw archive identities; detailed timelines stay in the archived
+observations.
 Current profile timelines, source dependencies and knowledge precede log tails
 in the context budget. The limit includes the actual indented request file.
 The diagnostic source and binary identities are archived separately; production
 service and timing continue to use the immutable uninstrumented artifacts.
+
+For the newer three-slot, expert-packed target, see the
+[reviewed external study](../performance/megamoe-expert-packing-20261025.md).
+Its first-16-tile probe is separate from this driver. Check actual target layout,
+clock assumptions and diagnostic support before reusing a probe. A positive finite
+CANN duration can still underflow beyond the capture envelope; preserve invalid
+rows and apply the frozen failure policy rather than deleting evidence to pass.

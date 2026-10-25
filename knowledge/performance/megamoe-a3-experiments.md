@@ -91,3 +91,9 @@ source-backed hypothesis and unchanged independent acceptance gates.
    release, y/SENT output protection and all arrival visibility/participant rules.
    This only begins to reduce pipeline gaps; it does not prove continuous Cube
    activity. Future combinations require new hypotheses against this new parent.
+
+## Reviewed follow-up, 2026-10-25
+
+The [expert-packed tile study](megamoe-expert-packing-20261025.md) uses a newer
+three-slot parent, 512-row multi-expert tiles and separate native/service evidence.
+It is manually imported guidance, not another promotion under the campaign above.

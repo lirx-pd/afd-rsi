@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "record_type": "manually-reviewed-external-campaign",
+  "date": "2026-10-25",
+  "framework_promotion": false,
+  "compatible_dynamic_experience": false,
+  "identity": {
+    "target_base_revision": "0f839d61256d8d666b427d61cbdf331807c41cf7",
+    "control_kernel_sha256": "fbc03d657ca009c65b1f6073ec4f4d7ffc31b970413c07775e1ebe143130cb2e",
+    "candidate_kernel_sha256": "16008a55303c0027e8cfb9ab68f793e724c30b6841e3dc0b19bd6e2e87ad16ea",
+    "candidate_sources": [
+      {
+        "file": "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_ffn.cpp",
+        "sha256": "326ab81e0a2093a26657724a9031aa94e5fb1e539655095fea641b3839beeb74"
+      },
+      {
+        "file": "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/afd_mega_moe_pipeline.h",
+        "sha256": "6d9ae5f15b45d3c912dc1fc6fa1fa2cf1e486751f18ea17ceff5513640c753eb"
+      },
+      {
+        "file": "csrc/npu/ascend_kernels/utils/op_kernel/mega_moe_workspace.h",
+        "sha256": "026727ca31e5d570a5da7564ee46fad0292bf7ccf66495445090a29b04a7c8b4"
+      }
+    ]
+  },
+  "artifact": {
+    "name": "mega-moe-deep-opt-results.tar.gz",
+    "sha256": "35fcd0f9b3223030fd22992a6137bf5929809017205207cbedd38cd14c0f3afa",
+    "bytes": 49906443,
+    "manifest_files_verified": 1138,
+    "imported_evidence_sha256": {
+      "qualification.json": "ebd664514fa5ee21f7fa7b498d723ec1f51f22a36209d4ba2587195c090ca795",
+      "profile-analysis.json": "c4b6aa9e3edb9c3642bc1d501db9c5873056a87936f9694da95caa07590aba51",
+      "internal-summary.json": "b5fe5df0728f76944fabcd4557c32195f31b74f91bcd37b77e61d4f8c8b22e4b",
+      "native-summary.json": "6297951b7e86b0b2c8668e5ee359bc30f5eb4eabd2bcd0ff648ec6db895147c6",
+      "local-validation/production-source-check.json": "14269efda593cebfb4b875f0693a730d2afc9cd2a57d2dc81f44df32f52b722f",
+      "local-validation/local-start-identity.json": "12edf4269cd9bf13a0bc485b814b68bb95dc41daa2682f6b822fddaf3b54d229"
+    }
+  },
+  "target": {
+    "hardware": "A3 / arch22",
+    "cann": "9.1.0",
+    "hidden": 4096,
+    "intermediate": 2048,
+    "experts_per_ffn_rank": 64,
+    "top_k": 6,
+    "aic": 24,
+    "aiv": 48,
+    "communication_aiv": 16,
+    "compute_aiv": 32,
+    "ub_bytes": 196352,
+    "tile_rows": 512,
+    "ring_slots": 3,
+    "attention_dp": 3,
+    "attention_tp": 4,
+    "ffn_ep": 4,
+    "attention_graph": "eager",
+    "attention_dbo": true,
+    "ffn_graph": "FULL",
+    "ffn_two_stream": false,
+    "prefix_cache": false,
+    "max_num_batched_tokens": 32768,
+    "max_model_len": 65537,
+    "max_num_seqs": 16,
+    "gpu_memory_utilization": 0.92,
+    "dbo_decode_token_threshold": 2,
+    "dbo_prefill_token_threshold": 512
+  },
+  "native_protocol": {
+    "scope": "ready-input DS/MegaMoE/CR synthetic diagonal weights, TP4 plus four FFN ranks; not model E2E",
+    "metric": "max FFN-rank mean final-five CANN Task Duration(us)",
+    "calls": 12,
+    "excluded_initial_calls": 7,
+    "extra_warmup_calls": 1,
+    "profiler": "msprof task-based PipeUtilization",
+    "internal_probes": false,
+    "paired_ab_ba": false,
+    "fresh_confirmation": "candidate only; no fresh control",
+    "numeric_and_guard_checks_every_call": true,
+    "additional_numerical_case": "73 row-varying inputs per Attention TP rank with distinct expert scales"
+  },
+  "native": [
+    {
+      "case": "balanced2048",
+      "control_us": 6844.996,
+      "candidate_us": [
+        3443.7200000000003,
+        3443.628
+      ],
+      "reduction_pct": 49.69063531958236
+    },
+    {
+      "case": "hot129",
+      "control_us": 1710.0240000000001,
+      "candidate_us": [
+        1039.4279999999999,
+        1039.524
+      ],
+      "reduction_pct": 39.212782978484526
+    },
+    {
+      "case": "decode1",
+      "control_us": 315.712,
+      "candidate_us": [
+        215.052,
+        215.716
+      ],
+      "reduction_pct": 31.778329616865996
+    }
+  ],
+  "service_protocol": {
+    "model": "V4 Flash W4A8, 43 layers",
+    "profiler": false,
+    "fresh_control_retest": false,
+    "statistical_significance_established": false,
+    "imbalanced_prefill": {
+      "requests": 24,
+      "qps": 3,
+      "per_dp_requests": [
+        8,
+        8,
+        8
+      ],
+      "per_request_input_tokens_by_dp": [
+        16384,
+        512,
+        512
+      ],
+      "output_tokens": 1,
+      "actual_dp_input_ratio": [
+        32,
+        1,
+        1
+      ],
+      "dp_affinity": "HTTP X-data-parallel-rank, verified engine token counters",
+      "warmup": "one exact-shape request per DP"
+    },
+    "long_context_decode": {
+      "requests": 6,
+      "concurrency": 6,
+      "per_dp_requests": [
+        2,
+        2,
+        2
+      ],
+      "input_tokens": 32768,
+      "output_tokens": 512,
+      "warmup": "six same-context requests, 32 output tokens",
+      "common_window": "one second after latest first token until one second before earliest final token",
+      "minimum_window_tokens_per_request": 128,
+      "preemptions": 0,
+      "small_token_two_stage_layouts_verified_ranks": 12,
+      "full_ffn_graph_verified_ranks": 4
+    }
+  },
+  "service": {
+    "unfused": {
+      "heavy_prefill_ttft_ms": 1624.6211568359286,
+      "light_prefill_ttft_ms": 248.30217158887535,
+      "common_decode_tpot_ms": 254.3095122472092,
+      "common_decode_tokens_per_s": 23.628349517670625
+    },
+    "previous_mega": {
+      "heavy_prefill_ttft_ms": 2111.744666006416,
+      "light_prefill_ttft_ms": 341.994033777155,
+      "common_decode_tpot_ms": 257.8207903287438,
+      "common_decode_tokens_per_s": 23.29269594401822
+    },
+    "tile512": {
+      "heavy_prefill_ttft_ms": 1628.8999044336379,
+      "light_prefill_ttft_ms": 265.1086321566254,
+      "common_decode_tpot_ms": 245.97701253295648,
+      "common_decode_tokens_per_s": 24.4055787183408
+    },
+    "pack512": {
+      "heavy_prefill_ttft_ms": 1621.7568826396018,
+      "light_prefill_ttft_ms": 244.76043845061213,
+      "common_decode_tpot_ms": 245.3199662906169,
+      "common_decode_tokens_per_s": 24.460761068428877
+    }
+  },
+  "service_change_percent": {
+    "unfused": {
+      "heavy_prefill_ttft_reduction_pct": 0.1763041299982282,
+      "light_prefill_ttft_reduction_pct": 1.4263802509659196,
+      "common_decode_tpot_reduction_pct": 3.534883881124251,
+      "common_decode_throughput_gain_pct": 3.522935658860682
+    },
+    "previous_mega": {
+      "heavy_prefill_ttft_reduction_pct": 23.202984302711414,
+      "light_prefill_ttft_reduction_pct": 28.43137181448632,
+      "common_decode_tpot_reduction_pct": 4.848648560182934,
+      "common_decode_throughput_gain_pct": 5.014727050994816
+    }
+  },
+  "accuracy": {
+    "samples": 300,
+    "strict_match": 0.96,
+    "frozen_score": 0.9566666666666667,
+    "same_documents_and_prompts": true,
+    "reference_topology": "Attention DP2TP4 / FFN EP8; new run DP3TP4 / EP4 with DBO",
+    "changed_texts": 169,
+    "improved": [
+      62,
+      87,
+      98
+    ],
+    "worsened": [
+      24,
+      182
+    ]
+  },
+  "diagnostics": {
+    "pmu_balanced_limiting_rank": {
+      "control_aic_mac_ratio": 0.1432,
+      "candidate_aic_mac_ratio": 0.2852,
+      "control_aiv_scalar_ratio": 0.8096,
+      "candidate_aiv_scalar_ratio": 0.6422
+    },
+    "full_decode_probe": {
+      "old_tiles": 6,
+      "packed_tiles": 1,
+      "old_cube_stage_wait_us_per_core": 127.594,
+      "packed_cube_stage_wait_us_per_core": 61.209,
+      "packed_inter_tile_overlap": 0
+    },
+    "software_dependency_and_ownership_checks": 12752,
+    "tile_sequence_window": [
+      1,
+      16
+    ],
+    "long_transaction_coverage": "prefix only",
+    "span_includes_completion_fences": true,
+    "physical_dma_mac_overlap_established": false,
+    "cross_core_clock_calibration_established": false,
+    "model_profiles": 28,
+    "invalid_cann_duration_rows": 1,
+    "invalid_row_policy": "preserve raw row; exclude only from descriptive diagnostic aggregates, never turn a failed RSI gate into PASS",
+    "missing_pmu_values": "N/A is unavailable, not zero",
+    "two_43_transaction_graph_slices": {
+      "unfused_device_tasks": 344,
+      "mega_device_tasks": 88,
+      "unfused_graph_launches": 86,
+      "mega_graph_launches": 26,
+      "mechanism": "pre-existing four-transaction graph batching; not introduced by expert packing"
+    }
+  },
+  "workspace": {
+    "shape": "H4096/I2048/E64/TP4",
+    "old_bytes_per_ffn_rank": 35572736,
+    "packed_bytes_per_ffn_rank": 141750272,
+    "increase_bytes_per_ffn_rank": 106177536,
+    "route_index_old_bytes": 256,
+    "route_index_packed_bytes": 1024,
+    "deployment": "rebuild binding, host tiling and kernel together; restart workers and recapture graphs"
+  },
+  "scope_limits": [
+    "not an RSI paired-AB/BA promotion verdict",
+    "single-order service comparison against frozen earlier controls",
+    "accuracy reference DP2TP4/EP8 differs from new DP3TP4/EP4 plus DBO",
+    "not bitwise equivalence or a causal accuracy gain",
+    "do not transfer gains to other workloads or architectures",
+    "does not upgrade the repository diagnostic driver or existing recipes"
+  ]
+}

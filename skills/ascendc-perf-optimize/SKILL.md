@@ -8,6 +8,7 @@ description: Analyze MegaMoe performance with tiling and layered pipeline eviden
 Scope: local A3 MegaMoe development. Read these repository-owned resources for
 this task; no global skill or online lookup is needed.
 
+- [expert-packed tiles and service limits](../../knowledge/performance/megamoe-expert-packing-20261025.md)
 - [tiling-pipeline](../../knowledge/performance/tiling-pipeline.md)
 - [reviewed A3 experiments](../../knowledge/performance/megamoe-a3-experiments.md)
 - [campaign profiling](../../knowledge/measurement/profiling.md)

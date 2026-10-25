@@ -255,7 +255,8 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
             raise ValueError("service evidence changed")
         if "service_metrics" in observation:
             summary = read_json(trial / "service/summary.json")
-            metrics = service_metrics(summary, read_json(trial / "service/plan.json")["configuration"]) if all(
+            metrics = service_metrics(summary, read_json(trial / "service/plan.json")["configuration"],
+                                      run_dir=trial / 'service', foundation=run / 'foundation') if all(
                 value == "passed" for value in summary["test_results"].values()) else {}
             if metrics != observation["service_metrics"]:
                 raise ValueError("service metrics differ from evidence")

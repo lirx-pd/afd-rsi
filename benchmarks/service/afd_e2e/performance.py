@@ -9,7 +9,6 @@ import json
 import math
 import random
 import signal
-import statistics
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -17,6 +16,7 @@ from pathlib import Path
 
 from .reporting import write_json
 from .routing import routes
+from .scenario_contract import distribution
 
 SEED = 42
 METRICS = ("ttft_ms", "tpot_ms", "e2e_ms", "client_queue_ms", "scheduler_lag_ms")
@@ -78,27 +78,6 @@ def points(config: dict) -> list[dict]:
             for side, missing in (("input", missing_inputs), ("output", missing_outputs))
             if missing
         ]
-    return result
-
-
-def distribution(values: list[float]) -> dict:
-    values = sorted(values)
-    result = {
-        "count": len(values),
-        "mean": statistics.mean(values) if values else None,
-        "min": values[0] if values else None,
-        "max": values[-1] if values else None,
-    }
-    for percentile in (50, 90, 95, 99):
-        position = (len(values) - 1) * percentile / 100
-        result[f"p{percentile}"] = (
-            (
-                values[math.floor(position)] * (1 - position % 1)
-                + values[math.ceil(position)] * (position % 1)
-            )
-            if values
-            else None
-        )
     return result
 
 
@@ -195,6 +174,11 @@ async def stream_request(client, url: str, body: dict, record: dict, headers: di
                 )
                 if emitted:
                     last = time.perf_counter()
+                    if record.get("capture_token_times"):
+                        ids = choice.get("token_ids")
+                        if not isinstance(ids, list) or len(ids) != 1 or type(ids[0]) is not int or ids[0] < 0:
+                            raise RuntimeError("Common-window TPOT requires one token ID per SSE event; set --stream-interval 1")
+                        record.setdefault("token_times", []).append(last)
                     if first is None:
                         first = last
                     chunks += 1
@@ -340,12 +324,15 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
         "seed": SEED,
         "configuration": settings,
         "points": [],
+        "scenarios": [],
         "errors": [],
     }
     directory = run_dir / "performance"
     directory.mkdir()
     try:
         capacity = max(settings["concurrencies"])
+        for contract in settings.get("scenario_settings", {}).values():
+            capacity = max(capacity, contract['dp'] * contract['requests_per_dp'])
         async with httpx.AsyncClient(
             timeout=config["request_timeout"],
             trust_env=False,
@@ -377,7 +364,7 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
                 raise RuntimeError("/tokenize must return nonempty valid token IDs")
             result["seed_token_ids"] = vocabulary
             with (directory / "requests.jsonl").open("x", encoding="utf-8") as raw:
-                planned = points(settings)
+                planned = points(settings) if 'matrix' in settings.get('scenarios', ['matrix']) else []
                 for number, point in enumerate(planned, 1):
                     if number > 1:
                         await asyncio.sleep(settings.get("point_interval_seconds", 0))
@@ -497,9 +484,23 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
                         f"{point['id']}: {entry['completed']}/{point['requests']} passed; TTFT={entry['metrics']['ttft_ms']}; TPOT={entry['metrics']['tpot_ms']}",
                         flush=True,
                     )
+                from .scenarios import evaluate_scenario
+                for name in settings.get('scenarios', ['matrix']):
+                    if name == 'matrix':
+                        continue
+                    await asyncio.sleep(settings.get('point_interval_seconds', 0))
+                    print(f"Performance scenario: {name}", flush=True)
+                    result['scenarios'].append(dict(id=name, status='running', configuration=settings['scenario_settings'][name]))
+                    write_json(run_dir / 'performance.json', result)
+                    scenario = await evaluate_scenario(client, base, model, vocabulary, name,
+                        settings['scenario_settings'][name], directory, config['request_timeout'])
+                    result['scenarios'][-1] = scenario
+                    if scenario['status'] != 'passed':
+                        result['errors'].append(f"{name}: {scenario['error']}")
+                    write_json(run_dir / 'performance.json', result)
         result["status"] = (
             "passed"
-            if all(point["status"] == "passed" for point in result["points"])
+            if all(point["status"] == "passed" for point in result["points"] + result['scenarios'])
             else "failed"
         )
     except BaseException as exc:

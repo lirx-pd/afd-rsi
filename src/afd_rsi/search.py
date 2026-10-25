@@ -164,6 +164,8 @@ def request_context(run, plan, best, records, number):
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
                    'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
+    if plan['search'].get('goal'):
+        context['objective']['goal'] = plan['search']['goal']
     if plan.get('validation') == 'operator-first':
         context['proposal_requirements'] = {
             'experiment_fields': ['bottleneck', 'mechanism', 'prediction', 'falsification', 'risk'],

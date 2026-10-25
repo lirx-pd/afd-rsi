@@ -184,6 +184,15 @@ def report_text(summary: dict) -> str:
                     f"{row['input_tokens']}/{row['output_tokens']}="
                     f"{row['completed']}/{row['failed']}/{row['cancelled']}" for row in actual
                 ))
+        for scenario in performance.get('scenarios', []):
+            lines.append(f"Scenario {scenario['id']}: {scenario['status']}")
+            for dp in scenario.get('per_dp', []):
+                lines.append(f"  DP{dp['dp_rank']} input={dp['input_tokens']} TTFT p50={dp['ttft_ms']['p50']:.3f} ms")
+            if 'common_window_tpot_ms' in scenario:
+                lines.append(f"  Common-window TPOT p50={scenario['common_window_tpot_ms']['p50']:.3f} ms; "
+                             f"request TPOT p50={scenario['request_tpot_ms']['p50']:.3f} ms")
+            if scenario.get('error'):
+                lines.append(f"  Error: {scenario['error']}")
     warnings = dict.fromkeys((
         *summary.get("warnings", []),
         *(warning for point in (summary.get("performance") or {}).get("points", [])

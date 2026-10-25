@@ -34,6 +34,9 @@ Ascend 配方默认先做算子数值和配对性能筛选，再独立复测；�
 提案必须给出测量证据、改动机制、预测、否定条件和风险。可用 `compare --operator-only`
 手动只测算子，结果不能替代最终晋升资格。详见 [分层验证](docs/staged-validation.md)。
 
+专项配方 `recipes/ascend_pipeline_scenarios.toml` 新增固定 DP 不均衡 prefill 和
+长上下文 decode TPOT，同一次服务启动完成，详见 [专项服务指标](docs/service-scenarios.md)。
+
 ## 一条命令启动优化
 
 ```bash
@@ -110,6 +113,12 @@ PYTHONPATH=src python3 -m afd_rsi check
 
 冻结工具不由实验执行器调用。修改底座或控制程序后需创建新 campaign；旧实验
 保留实际快照。哈希用于检测漂移，不是对恶意同权限程序的隔离或签名。
+
+新补充的 [A3 专家合批经验](knowledge/performance/megamoe-expert-packing-20261025.md)
+已接入 `afd-megamoe` 和性能分析技能上下文：包含 512 行跨专家 tile、G2/SENT
+所有权、构建身份、真实不均衡 prefill/长上下文 decode 的结果和边界。
+这是人工审阅的外部经验，不是匹配实验指纹的动态 experience，也不代表框架晋升；
+旧 campaign、配方和门槛保持原样。
 
 ## 验证与下一步
 

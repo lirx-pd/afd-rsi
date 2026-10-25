@@ -5,6 +5,8 @@ import math
 import itertools
 import sys
 import threading
+import importlib.util
+import json
 from pathlib import Path
 
 from .evidence import digest, read_json, write_json
@@ -38,7 +40,16 @@ def validate_summary(summary, expected_tests, *, require_clean_shutdown=True):
         value == 'passed' for value in summary['test_results'].values())
 
 
-def service_metrics(summary, configuration):
+def scenario_contract(foundation=None):
+    foundation = foundation or Path(__file__).resolve().parents[2]
+    path = foundation / 'benchmarks/service/afd_e2e/scenario_contract.py'
+    spec = importlib.util.spec_from_file_location('afd_rsi_scenario_contract', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def service_metrics(summary, configuration, *, run_dir=None, foundation=None):
     """Extract real service measurements; never turn HTTP results into rank timings."""
     metrics = {}
     if 'gsm8k' in configuration['tests']:
@@ -59,9 +70,10 @@ def service_metrics(summary, configuration):
         points = performance['points']
         lengths = configuration['performance']
         workloads = []
-        if lengths['mode'] in ('matrix', 'both'):
+        matrix = 'matrix' in lengths.get('scenarios', ['matrix'])
+        if matrix and lengths['mode'] in ('matrix', 'both'):
             workloads.extend(('matrix', [i], [o]) for i, o in itertools.product(lengths['input_lens'], lengths['output_lens']))
-        if lengths['mode'] in ('mixed', 'both'):
+        if matrix and lengths['mode'] in ('mixed', 'both'):
             workloads.append(('mixed', lengths['input_lens'], lengths['output_lens']))
         expected = list(itertools.product(workloads, lengths['concurrencies'], lengths['rps']))
         if len(points) != len(expected):
@@ -84,6 +96,32 @@ def service_metrics(summary, configuration):
             metrics['performance'].append({key: point[key] for key in (
                 'id', 'phase', 'input_lens', 'output_lens', 'concurrency', 'requests', 'warmup_requests')}
                 | {'ttft_ms': ttft, 'scope': 'client HTTP time to first token; includes service overhead'})
+        names = [name for name in lengths.get('scenarios', ['matrix']) if name != 'matrix']
+        observed = performance.get('scenarios', [])
+        if [row['id'] for row in observed] != names:
+            raise ValueError('configured service scenarios missing or reordered')
+        if names:
+            if run_dir is None:
+                raise ValueError('scenario metrics require raw request and counter evidence')
+            driver = scenario_contract(foundation)
+            if not set(names) <= driver.NAMES - {'matrix'}:
+                raise ValueError('unknown service scenario')
+            metrics['scenarios'] = []
+            for name, saved in zip(names, observed, strict=True):
+                directory = run_dir / 'performance/scenarios' / name
+                records = [json.loads(line) for line in (directory / 'requests.jsonl').read_text().splitlines()]
+                contract = lengths['scenario_settings'][name]
+                warmup = [r for r in records if r['phase'] == 'warmup']
+                measured = [r for r in records if r['phase'] == 'measured']
+                if len(warmup) + len(measured) != len(records):
+                    raise ValueError('unknown scenario request phase')
+                driver.verify_requests(warmup, contract, warmup=True)
+                before = (directory / 'before.prom').read_text()
+                driver.counter_delta((directory / 'before-warmup.prom').read_text(), before, contract, warmup=True)
+                actual = driver.summarize(name, contract, measured, before, (directory / 'after.prom').read_text())
+                if saved != actual:
+                    raise ValueError('scenario summary differs from raw requests/counters')
+                metrics['scenarios'].append(actual)
     return metrics
 
 
@@ -179,7 +217,7 @@ def run_service(plan, run, trial, build, source_identity, timeout):
     counts = {role: sum(p['role'] == role for p in mappings.values()) for role in expected_roles}
     identity_ok = not monitor_errors and all(counts[role] >= count for role, count in expected_roles.items())
     require_shutdown = config.get('require_clean_shutdown', True)
-    metrics = service_metrics(summary, service_plan['configuration']) if all(
+    metrics = service_metrics(summary, service_plan['configuration'], run_dir=trial / 'service', foundation=frozen) if all(
         value == 'passed' for value in summary['test_results'].values()) else {}
     return {'process': process, 'checks_passed': validate_summary(summary, expected_tests, require_clean_shutdown=require_shutdown) and identity_ok,
             'service_metrics': metrics,

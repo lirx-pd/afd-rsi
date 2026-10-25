@@ -66,9 +66,14 @@ class PerformanceConfig:
     arrival: str
     phase: str
     point_interval_seconds: float
+    scenarios: tuple[str, ...]
+    scenario_settings: dict
 
 
-def performance_configuration(args) -> PerformanceConfig:
+def performance_configuration(args, attention_dp=0) -> PerformanceConfig:
+    from .scenario_contract import scenario_settings
+    scenarios = tuple(args.perf_scenarios.split(','))
+    contracts = scenario_settings(args, scenarios, attention_dp)
     input_default = "1" if args.perf_phase == "decode" else "128,512,2048"
     output_default = "1" if args.perf_phase == "prefill" else "128"
     lengths = {
@@ -136,6 +141,8 @@ def performance_configuration(args) -> PerformanceConfig:
         arrival=args.perf_arrival,
         phase=args.perf_phase,
         point_interval_seconds=args.perf_point_interval,
+        scenarios=scenarios,
+        scenario_settings=contracts,
     )
 
 
@@ -201,14 +208,14 @@ class Case:
     def attention_ranks(self) -> int:
         if self.baseline:
             return sum(dp * tp for dp, tp in self.baseline_layouts)
-        return 8 if self.model == "v4-flash" else 2
+        return (12 if self.topology == "dp3tp4-ep4" else 8) if self.model == "v4-flash" else 2
 
     @property
     def ffn_ranks(self) -> int:
         if self.baseline:
             return 0
         if self.model == "v4-flash":
-            return 8
+            return 4 if self.topology == "dp3tp4-ep4" else 8
         return 1 if self.topology == "2a1f" else 2
 
     @property
@@ -252,6 +259,7 @@ class Case:
         result["case_id"] = self.case_id
         result["required_devices"] = self.required_devices
         result["tests"] = list(self.tests)
+        result["attention_dp"] = self.attention_ranks // self.attention_tp
         return result
 
 
@@ -317,7 +325,8 @@ def from_args(args) -> Case:
         devices=devices,
         limit=limit,
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
-        performance=performance_configuration(args),
+        performance=performance_configuration(args, (3 if topology == "dp3tp4-ep4" else 2)
+                                               if not args.baseline and v4 and async_mode else 0),
         test_interval_seconds=args.test_interval,
         dataset_path=args.dataset_path.resolve() if args.dataset_path else None,
         threshold=args.threshold if args.threshold is not None else (0.9 if v4 else 0.27),
@@ -370,8 +379,13 @@ def validate(case: Case) -> None:
         raise ValueError("Performance input + output length exceeds --max-model-len")
     if not case.baseline and case.model == "v2-lite" and case.topology not in {"2a1f", "2a2f"}:
         raise ValueError("v2-lite supports 2a1f and 2a2f")
-    if not case.baseline and case.model == "v4-flash" and case.topology != "dp2tp4-ep8":
-        raise ValueError("v4-flash requires Attention DP2/TP4 + FFN DP8/TP1/EP8")
+    if not case.baseline and case.model == "v4-flash" and case.topology not in {"dp2tp4-ep8", "dp3tp4-ep4"}:
+        raise ValueError("v4-flash requires dp2tp4-ep8 or dp3tp4-ep4")
+    if case.topology == "dp3tp4-ep4" and case.comm != 'async':
+        raise ValueError("dp3tp4-ep4 requires async communication")
+    for contract in case.performance.scenario_settings.values():
+        if max(contract['input_lens']) + contract['output_tokens'] > case.max_model_len:
+            raise ValueError("Scenario input + output length exceeds --max-model-len")
     if case.baseline and (
         case.comm != "sync"
         or case.layered_gmm

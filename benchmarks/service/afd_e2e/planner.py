@@ -229,6 +229,8 @@ def _service_command(
             )
         )
     native_dbo = case.dbo or (case.comm == "async" and case.moe_ubatching)
+    if "long-decode" in case.performance.scenarios and role == "attention":
+        command.extend(("--stream-interval", "1"))
     if native_dbo and (case.comm != "async" or role == "attention"):
         if case.dbo:
             command.append("--enable-dbo")
@@ -363,8 +365,9 @@ def describe(case: Case) -> dict:
         ],
         "unused_devices": devices[case.required_devices :],
         "performance_points": points(case.to_dict()["performance"])
-        if "perf" in case.tests
+        if "perf" in case.tests and 'matrix' in case.performance.scenarios
         else [],
+        "performance_scenarios": case.performance.scenario_settings if 'perf' in case.tests else {},
         "notes": [
             "plan does not allocate devices or start services",
         ],
