@@ -133,7 +133,19 @@ def request_context(run, plan, best, records, number):
                 file = run / name
                 if file.is_file():
                     snippets.append({'file': name, 'tail': file.read_text(errors='replace')[-4000:]})
-    context = {'schema_version': 1, 'round': number, 'fingerprint': fingerprint(plan),
+    total = plan['search']['max_rounds']
+    deep_rounds = 1 if total == 1 else min(total - 1, (2 * total + 2) // 3)
+    strategy = {
+        'mode': 'deep' if number <= deep_rounds else 'incremental',
+        'round': number, 'max_rounds': total, 'deep_rounds': deep_rounds,
+        'guidance': ('Prioritize substantial source-backed bottleneck changes, including tile scheduling, '
+            'buffer lifetimes or coordinated tiling. A coherent hypothesis may need multiple allowed files. '
+            'Prove ownership, synchronization and caller compatibility; do not shrink a justified change to one line.'
+            if number <= deep_rounds else
+            'Converge with localized changes to the current best. Prefer one bounded mechanism or tuning parameter; '
+            'avoid new protocol, ABI or broad pipeline redesigns.'),
+    }
+    context = {'schema_version': 1, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
                'provider_hash': digest(run / 'foundation/benchmarks/agents/codex_agent.py'),
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],
                'max_response_bytes': plan['search']['max_context_bytes'] * 2,
@@ -147,7 +159,8 @@ def request_context(run, plan, best, records, number):
                    'Only a confirmed PASS replaces best. Avoid already tested patches and failed approaches. '
                    'When profile evidence exists, cite it and explain a source-backed bottleneck hypothesis. '
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
-                   'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time.'}
+                   'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
+                   'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
     limit = plan['search']['max_context_bytes']
     # Match write_json's actual artifact size, including indentation and the newline.
     def size():

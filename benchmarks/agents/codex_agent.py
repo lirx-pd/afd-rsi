@@ -49,6 +49,7 @@ def main():
         'Return JSON matching the supplied schema. Analysis omits patches; coding supplies complete git-apply unified diffs.\n'
         'The evidence array must contain only exact IDs from request.json, such as baseline, never explanations.\n'
         'Label a hypothesis as a hypothesis.\n'
+        'Follow request.strategy: early deep changes may span allowed files; late changes should be localized.\n'
         'Choose up to three distinct proposals; stop when there is no justified change.\n')
     schema = workspace / 'proposal.schema.json'
     contract = json.loads(Path(__file__).with_name('proposal.schema.json').read_text())

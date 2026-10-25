@@ -137,6 +137,8 @@ def parser() -> argparse.ArgumentParser:
             default=3,
             help="Unmeasured warmup requests per point",
         )
+        sub.add_argument("--test-interval", type=float, default=0, help="Idle seconds between test suites; outside measurements")
+        sub.add_argument("--perf-point-interval", type=float, default=0, help="Idle seconds between performance points; outside measurements")
         sub.add_argument(
             "--dataset-path",
             type=Path,

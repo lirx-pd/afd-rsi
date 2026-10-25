@@ -23,11 +23,36 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 自动搜索使用已有登录的 Codex CLI，也支持提案机和执行机通过文件交换，详见
 [自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
 原生构建和 AFD E2E 服务接入同一个 campaign。默认验收 30 条 GSM8K，并记录
-128 输入/1 输出 token 的小 prefill TTFT；通过门槛后自动采集独立 profiling，
-把每个 FFN rank 的设备任务分析和历史结果交给 Agent 提出下一轮优化假设。框架不耦合调度平台或 SSH。
+128/512/2048 输入、1 输出 token、并发 1/4/8 的 prefill TTFT 矩阵；通过门槛后自动采集独立 profiling，
+把每个 FFN rank 的设备任务分析和历史结果交给 Agent 提出下一轮优化假设。固定控制器不耦合调度平台；统一 optimize 入口支持本机和可选 iTASK 执行器，不使用 SSH。
 独立诊断构建还记录 MegaMoe 内部逐核、逐 tile 的阶段和等待；当前摘要覆盖首次双槽
 复用，生产服务与普通计时使用未打点产物。内部周期不是 Cube PMU 利用率。
 通用 benchmark 遵守 [结果合同](docs/result-contract.md)。
+
+## 一条命令启动优化
+
+```bash
+PYTHONPATH=src python3 -m afd_rsi optimize recipes/ascend_graph.toml --executor itask --task YOUR_TASK --workdir /absolute/persistent/workdir --setup-script /usr/local/Ascend/cann-9.1.0/set_env.sh --output runs/optimization-001
+```
+
+先按现场配置 recipe 中的目标源码、设备、权重、离线数据集与网络。框架会启动已有
+所属任务（已运行则保持），快照代码、部署、prepare 并后台搜索；命令返回后不需要
+保持 Codex 对话。WSL 上的后台 Python worker 定时查看执行状态，仅提案时调用
+已登录 Codex CLI，模型退出后才启动设备实验。WSL/提案机需保持运行。
+本机执行同一命令，使用 `--executor local` 并省略 task/workdir。
+
+```bash
+PYTHONPATH=src python3 -m afd_rsi optimize status runs/optimization-001
+PYTHONPATH=src python3 -m afd_rsi optimize status runs/optimization-001 --follow
+PYTHONPATH=src python3 -m afd_rsi optimize resume runs/optimization-001
+```
+
+简要进度在 `worker.log`，完整状态与事件在 `status.json` / `events.jsonl`；结束后
+自动下载并校验 `results.tar.gz`，导出最佳补丁但不自动修改真实源码。默认轮询 60 秒，
+可用 `--poll-seconds` 设置。任务不会自动停止或删除。一次服务启动内完成 GSM8K
+与默认 9 点 prefill 矩阵，套件间隔 5 秒、点间隔 3 秒；等待不计入性能样本。
+前约 2/3 轮允许较深的协调优化，后期收敛为小改动；全部验收门槛保持不变。
+详细行为、恢复限制见 [统一后台入口](docs/orchestration.md)。
 
 ## 本机演练
 

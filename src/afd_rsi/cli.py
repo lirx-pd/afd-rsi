@@ -14,6 +14,13 @@ from .contracts import load_recipe
 def main(argv=None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     root = Path(__file__).resolve().parents[2]
+    if arguments and arguments[0] == "optimize":
+        from .optimize import main as optimize_main
+        try:
+            return optimize_main(arguments[1:], root)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+            print(f"afd-rsi: {error}", file=sys.stderr)
+            return 2
     if arguments and arguments[0] == "native":
         from .native import main as native_main
         try:
@@ -32,6 +39,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="afd-rsi")
     parser.epilog = "Local NPU: afd-rsi native --help (build/compare); afd-rsi service --help (plan/run/status/pack)."
     commands = parser.add_subparsers(dest="action", required=True)
+    commands.add_parser("optimize", help="One-command background optimization; local or iTASK executor")
     check = commands.add_parser("check")
     check.add_argument("recipe", nargs="?", type=Path)
     context = commands.add_parser("context")

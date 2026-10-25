@@ -1,0 +1,39 @@
+{
+  "scope": "Real iTASK transport and detached orchestration; CPU synthetic recipe and fake Codex CLI only",
+  "job": "/mnt/d/lrx/megamoe/results/afd-rsi-orchestration-20261025/transport-job",
+  "execution": "/a3_inference/itask/workdir/jcz02615514/lrx/afd-mrv2-async/afd-rsi-orchestration-20261025/rsi-dd2acbb543234a389a428f27d32a8edd",
+  "result_archive_sha256": "9556d5b399f1e8f829205e4536c74a6ff450cb83b5b1aec0bc0aa6679fd2d53d",
+  "campaign_state": {
+    "schema_version": 1,
+    "status": "budget_exhausted",
+    "external_agent": true,
+    "calls": 1,
+    "rounds": [
+      "0001"
+    ],
+    "active": null,
+    "reason": "Frozen wall time, round or Agent-dispatch budget exhausted.",
+    "baseline": "f8151ef347e34a3fa79c4e3a920bb148"
+  },
+  "best": {
+    "source": "search/rounds/0001/source",
+    "source_hash": "d693f30a8484ee47d01876a8633213a2b3185c69beb2e616c64cc9e08437207a",
+    "parent_hash": "850f55a52f21a6756ebc52cbed4afa24a0b3cee2c5af6d52999cbcf4c39fc111",
+    "screen": {
+      "attempt": "83d16ca7d9bf406bb0cb439ccbdbc9fa",
+      "hash": "7bd75f76c2039b06ab3f28e10c27c4533a3180af139200ef2e3dc258b7e132d5"
+    },
+    "confirmation": {
+      "attempt": "2b9f28be0a2b46568b730db870c32304",
+      "hash": "7bd75f76c2039b06ab3f28e10c27c4533a3180af139200ef2e3dc258b7e132d5"
+    }
+  },
+  "npu_service_started": false,
+  "target_worktree_modified": false,
+  "final_local_regression": {
+    "passed": 117,
+    "skipped": 1,
+    "seconds": 208.38,
+    "skip_reason": "WSL local socket binding unavailable"
+  }
+}

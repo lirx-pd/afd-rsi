@@ -47,3 +47,6 @@ skills or knowledge. Maintainers review such changes outside candidate search.
 Priority 3 is preferred and 1 is fallback. The controller selects the maximum
 of priority plus category promotions minus category failures; list order does
 not override that score. Do not describe an unselected proposal as an experiment.
+
+Unified background execution and deep-to-incremental strategy are specified in
+[orchestration](orchestration.md). The controller still owns all acceptance.

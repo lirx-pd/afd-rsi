@@ -87,6 +87,9 @@ GetSystemCycle 阶段、依赖等待和发布区间，并检查数值、记录�
 
 ## Agent 和 NPU 不在同一台机器
 
+可用统一 `optimize --executor itask` 入口自动完成以下交换与轮询，见
+[统一后台入口](orchestration.md)。以下保留手工流程，便于检查或接入已有 campaign。
+
 在执行机创建 campaign，并进入文件交换模式：
 
 ```bash
@@ -95,7 +98,7 @@ python3 -m afd_rsi search /path/campaign --external-agent
 
 `campaign/search/pending.json` 给出 request、response 的相对路径、请求 SHA 和
 已经预扣的调用序号。将其中 request.json 复制到已登录的提案机，在同版本仓库
-执行（框架不提供传输/调度接口）：
+执行（手工模式自行传输；统一入口可自动传输）：
 
 ```bash
 python3 -m afd_rsi propose /path/request.json --output /path/new-proposer-output

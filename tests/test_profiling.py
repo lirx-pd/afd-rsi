@@ -97,7 +97,10 @@ def test_recipes_freeze_30_gsm8k_and_one_prefill_point(tmp_path, monkeypatch):
         config = json.loads(json.dumps(case.to_dict()))
         assert config['limit'] == 30 and set(config['tests']) == {'smoke', 'gsm8k', 'perf'}
         assert config['threshold'] == 0.9
-        assert config['performance']['input_lens'] == [128]
+        assert config['performance']['input_lens'] == [128,512,2048]
+        assert config['performance']['concurrencies'] == [1,4,8]
+        assert config['performance']['point_interval_seconds'] == 3
+        assert config['test_interval_seconds'] == 5
         assert config['performance']['output_lens'] == [1]
         assert config['performance']['mode'] == 'matrix'
 

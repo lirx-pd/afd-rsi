@@ -379,6 +379,8 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
             with (directory / "requests.jsonl").open("x", encoding="utf-8") as raw:
                 planned = points(settings)
                 for number, point in enumerate(planned, 1):
+                    if number > 1:
+                        await asyncio.sleep(settings.get("point_interval_seconds", 0))
                     entry = {
                         **point,
                         "warmup_requests": warmup_count,
@@ -426,6 +428,10 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
                     except (asyncio.CancelledError, KeyboardInterrupt):
                         entry["status"] = "cancelled"
                         raise
+                    except Exception as exc:
+                        entry["status"] = "failed"
+                        entry["error"] = f"{type(exc).__name__}: {exc}"
+                        result["errors"].append(f"{point['id']}: {entry['error']}")
                     finally:
                         entry.update(
                             aggregate(records),

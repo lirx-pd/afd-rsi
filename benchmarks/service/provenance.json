@@ -7,22 +7,23 @@
     "Default V4 async context to the verified 32768 tokens instead of 65536.",
     "For Async CAM graph: keep Attention eager and request explicit FULL on FFN, as required by the target validator.",
     "Default GSM8K strict-match thresholds by model: V2 Lite 0.27, V4 Flash 0.9; retain explicit overrides.",
-    "Assign distinct harness-owned DP RPC ports to Attention and FFN services, as already done for baseline instances."
+    "Assign distinct harness-owned DP RPC ports to Attention and FFN services, as already done for baseline instances.",
+    "Reuse one service startup for accuracy and performance matrices, with configurable cancellable inter-suite and inter-point settling outside timing."
   ],
   "files": {
     "afd_e2e/__init__.py": "56556490f57be2f31a20453217a00763c95baf86bebc3e9dd7b6d1176c1216ce",
     "afd_e2e/__main__.py": "935a1c1166b0c1ea35a82256345000bf2c73ded718d77773bc27a71ecce28f7d",
-    "afd_e2e/cli.py": "41b5ae3f89257b6f5d76674abb2c1b2bcf25be8ba1360a455d922aa3e43ef845",
-    "afd_e2e/config.py": "2e7134c180c22b902a69aeff6507e33577c008398d369ddfc9367a6ad084ad92",
+    "afd_e2e/cli.py": "3b20c44c4048a38a66aaee362971511bdbe57046af15a3cd90dad29fbeafb794",
+    "afd_e2e/config.py": "f4f82bfb57518fb48e6bca1ba69dbfa4ccba018e5c52257be0010f8e25eaf593",
     "afd_e2e/evaluation.py": "c89d16bce0b087810d0f0b862599a5840b79211a8b1c3c1a782de8172f5dfe86",
     "afd_e2e/metrics.py": "f7228ed2fd09ea59f3451afa6dabad8d9666f8342ee0c976b36828bcf0823e5a",
-    "afd_e2e/performance.py": "adde68b2ecf82331921eb7d39da129cddd8844635e7e300dfdb99ff334f17650",
+    "afd_e2e/performance.py": "6e291a89914854ddd8043ac8a768dba08935480a5fd3e7808ab232b435da54d8",
     "afd_e2e/planner.py": "513727eb17cf38b75898665ec19971ade91be8bccfa271314c64147af5c5a2a7",
     "afd_e2e/probe.py": "e0d1590f05776d83debbb01fb69354f2dd653a7bb69a930d87823ccca186a37a",
     "afd_e2e/process_utils.py": "8fcd83afca520fe0b45308f6e8a47d9a32357ba134a3e2d299ff1717c9cddce8",
     "afd_e2e/reporting.py": "fd82cbdfee412d72eb24c1da672f94371eb92aaa692bb98ec90aab2b18837dcd",
     "afd_e2e/routing.py": "dbef13062e82cc7700381e497ee681f4d5bec0e3bef8a13b17dbb897ca05d4b4",
-    "afd_e2e/runner.py": "3d7a2681d16ba5fb0b28afe4690a4d8d2fd88e5e982bd08f9590a040a1df1287",
+    "afd_e2e/runner.py": "99cb88bebb1b5ab83fc41c67c35b8eed55810f80e81625eaa7cdb5b8d6095e40",
     "afd_e2e/workloads.py": "0ac6d7ecdb90d0f6c9ab1e390daa748e3cef61fcc36f091d7dffbd4dfeee210b"
   },
   "upstream_files": {

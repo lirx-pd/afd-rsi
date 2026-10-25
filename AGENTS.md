@@ -4,7 +4,9 @@ Use the repository's `skills/` and `knowledge/` content. Do not resolve knowledg
 through global skills, other checkouts, URLs, or downloads. Read the skill for
 the current phase and its declared repository-local resources.
 
-Keep execution local to Linux. The controller imports no accelerator libraries.
+Keep validation local to its Linux execution host. The optional optimize front end
+may deploy to an owned iTASK task through the official CLI; the acceptance
+controller imports neither accelerator nor scheduling libraries.
 Never edit the target's original worktree, the CANN installation, frozen
 validators, campaign gates, or the knowledge snapshot during candidate search.
 Put build output in `AFD_RSI_BUILD_DIR`, outside the candidate source directory.

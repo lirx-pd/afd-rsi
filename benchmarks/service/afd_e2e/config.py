@@ -65,6 +65,7 @@ class PerformanceConfig:
     mode: str
     arrival: str
     phase: str
+    point_interval_seconds: float
 
 
 def performance_configuration(args) -> PerformanceConfig:
@@ -134,6 +135,7 @@ def performance_configuration(args) -> PerformanceConfig:
         mode=args.perf_mode,
         arrival=args.perf_arrival,
         phase=args.perf_phase,
+        point_interval_seconds=args.perf_point_interval,
     )
 
 
@@ -154,6 +156,7 @@ class Case:
     limit: int
     test: str
     performance: PerformanceConfig
+    test_interval_seconds: float
     dataset_path: Path | None
     threshold: float
     fewshot: int
@@ -296,6 +299,9 @@ def from_args(args) -> Case:
     quant = args.dynamic_quant
     if quant is None:
         quant = int(v4 or (Path(model_path) / "quant_model_description.json").is_file())
+    for value in (args.test_interval, args.perf_point_interval):
+        if not math.isfinite(value) or value < 0:
+            raise ValueError("test/performance intervals must be finite and nonnegative")
     case = Case(
         model=args.model,
         model_path=model_path,
@@ -312,6 +318,7 @@ def from_args(args) -> Case:
         limit=limit,
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
         performance=performance_configuration(args),
+        test_interval_seconds=args.test_interval,
         dataset_path=args.dataset_path.resolve() if args.dataset_path else None,
         threshold=args.threshold if args.threshold is not None else (0.9 if v4 else 0.27),
         fewshot=args.fewshot,

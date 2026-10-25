@@ -439,7 +439,15 @@ def execute(case: Case) -> dict:
         }
         workload_started = time.time()
         summary["workload_started"] = workload_started
-        for kind in case.tests:
+        for test_index, kind in enumerate(case.tests):
+            if test_index and case.test_interval_seconds:
+                stage("settle")
+                deadline = time.monotonic() + case.test_interval_seconds
+                while time.monotonic() < deadline:
+                    for service in services:
+                        service.ensure_alive()
+                    progress()
+                    time.sleep(min(0.5, max(0, deadline - time.monotonic())))
             current_test = kind
             summary["test_results"][kind] = "running"
             if kind == "smoke":
