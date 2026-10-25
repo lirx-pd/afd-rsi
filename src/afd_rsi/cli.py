@@ -48,7 +48,10 @@ def main(argv=None) -> int:
     prepare.add_argument("recipe", type=Path)
     prepare.add_argument("--output", type=Path, required=True)
     for name in ("baseline", "compare", "report", "resume"):
-        commands.add_parser(name).add_argument("run", type=Path)
+        subparser = commands.add_parser(name)
+        subparser.add_argument("run", type=Path)
+        if name == "compare":
+            subparser.add_argument("--operator-only", action="store_true", help="Numerical and paired native timing screen; no service/profile and no promotion")
     search = commands.add_parser("search")
     search.add_argument("run", type=Path)
     search.add_argument("--external-agent", action="store_true", help="exchange request/proposal files with a separate proposer host")
@@ -81,7 +84,7 @@ def main(argv=None) -> int:
         elif args.action == "baseline":
             print(campaign.run_baseline(args.run.resolve(), root))
         elif args.action == "compare":
-            print(campaign.run_comparison(args.run.resolve(), root))
+            print(campaign.run_comparison(args.run.resolve(), root, level="operator" if args.operator_only else "full"))
         elif args.action in ("search", "resume"):
             from .search import search
             run = args.run.resolve()

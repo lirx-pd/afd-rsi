@@ -267,7 +267,9 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
             raise ValueError("profile evidence changed")
 
 
-def _new_attempt(run, root, kind, *, candidate_source=None, baseline_source=None, name=None):
+def _new_attempt(run, root, kind, *, candidate_source=None, baseline_source=None, name=None, level="full"):
+    if level not in ("full", "operator"):
+        raise ValueError("unknown validation level")
     plan = load(run, root)
     candidate_source = candidate_source or run / "workspaces/candidate"
     baseline_source = baseline_source or run / "workspaces/baseline"
@@ -281,7 +283,7 @@ def _new_attempt(run, root, kind, *, candidate_source=None, baseline_source=None
     attempt = run / "attempts" / (name or uuid.uuid4().hex)
     staging = run / "preparing" / uuid.uuid4().hex
     staging.mkdir(parents=True)
-    metadata = {"kind": kind, "sources": identities, "paths": paths}
+    metadata = {"kind": kind, "sources": identities, "paths": paths, "validation_level": level}
     write_json(staging / "attempt.lock.json", metadata)
     (staging / "attempt.sha256").write_text(digest(staging / "attempt.lock.json") + "\n")
     write_json(staging / "sources.json", identities)
@@ -300,8 +302,19 @@ def _continue(run, attempt, root):
         raise ValueError("attempt source identities changed")
     state = read_json(attempt / "progress.json")
     sides = list(metadata["sources"])
-    jobs = phase_jobs(plan, sides)
+    level = metadata.get("validation_level", "full")
+    jobs = phase_jobs(plan, sides, level=level)
     for index, (side, phase, pair) in enumerate(jobs):
+        if (plan.get("validation") == "operator-first" and len(sides) == 2
+                and level == "full" and phase in ("service", "profile")):
+            gate = evaluate(plan, [step["result"] for step in state["steps"]
+                                  if "result" in step and step["phase"] != "build"], level="operator")
+            gate_path = attempt / "operator-gate.json"
+            if gate_path.exists() and read_json(gate_path) != gate:
+                raise ValueError("operator gate changed")
+            write_json(gate_path, gate)
+            if gate["verdict"] != "PASS":
+                break
         source = Path(metadata["paths"][side])
         identity = metadata["sources"][side]
         check_candidate(run, plan, source)
@@ -350,7 +363,7 @@ def _continue(run, attempt, root):
         write_json(attempt / "baseline.json", {"complete": complete, "observations": observations,
                                                "hardware_qualified": False})
     else:
-        verdict = evaluate(plan, observations)
+        verdict = evaluate(plan, observations, level=level)
         write_json(attempt / "observations.json", observations)
         write_json(attempt / "verdict.json", verdict)
         write_json(run / "latest.json", {"attempt": attempt.name, "verdict_hash": digest(attempt / "verdict.json")})
@@ -360,7 +373,17 @@ def _continue(run, attempt, root):
     return attempt
 
 
-def phase_jobs(plan, sides):
+def phase_jobs(plan, sides, *, level="full"):
+    if level == "operator" or plan.get("validation") == "operator-first":
+        jobs = [(side, phase, None) for side in sides for phase in ("build", "correctness")]
+        for pair in range(plan["repetitions"]):
+            jobs.extend((side, "benchmark", pair) for side in (sides if pair % 2 == 0 else sides[::-1]))
+        if level == "full":
+            if len(sides) == 2 and "service" in plan:
+                jobs.extend((side, "service", None) for side in sides)
+            if plan.get("native", {}).get("profile", False):
+                jobs.append((sides[-1], "profile", None))
+        return jobs
     phases = ["build", "correctness"] + (["service"] if "service" in plan else [])
     jobs = [(side, phase, None) for side in sides for phase in phases]
     if plan.get("native", {}).get("profile", False):
@@ -377,11 +400,11 @@ def run_baseline(run: Path, root: Path) -> Path:
         return _continue(run, _new_attempt(run, root, "baseline"), root)
 
 
-def run_comparison(run: Path, root: Path, *, candidate_source=None, baseline_source=None, locked=False) -> Path:
+def run_comparison(run: Path, root: Path, *, candidate_source=None, baseline_source=None, locked=False, level="full") -> Path:
     run = run.resolve()
     with exclusive(run) if not locked else nullcontext():
         attempt = _new_attempt(run, root, "comparison", candidate_source=candidate_source,
-                               baseline_source=baseline_source)
+                               baseline_source=baseline_source, level=level)
         return _continue(run, attempt, root)
 
 
@@ -436,7 +459,7 @@ def report(run: Path, root: Path) -> Path:
     if digest(attempt / "verdict.json") != latest["verdict_hash"]:
         raise ValueError("verdict changed")
     observations = audit_attempt(run, attempt, root)
-    if evaluate(plan, observations) != verdict:
+    if evaluate_attempt(plan, attempt, observations) != verdict:
         raise ValueError("verdict inconsistent with observations")
     path = run / "report.md"
     shutdown_policy = plan.get("service", {}).get("require_clean_shutdown", True)
@@ -448,6 +471,11 @@ def report(run: Path, root: Path) -> Path:
     return path
 
 
+def evaluate_attempt(plan, attempt, observations):
+    level = read_json(attempt / "attempt.lock.json").get("validation_level", "full")
+    return evaluate(plan, observations, level=level)
+
+
 def audit_attempt(run, attempt, root):
     plan = load(run, root)
     if digest(attempt / "attempt.lock.json") != (attempt / "attempt.sha256").read_text().strip():
@@ -456,7 +484,7 @@ def audit_attempt(run, attempt, root):
     state = read_json(attempt / "progress.json")
     observations = []
     strict = all(step.get("result", {}).get("status") == "valid" for step in state["steps"])
-    jobs = phase_jobs(plan, list(metadata["sources"]))
+    jobs = phase_jobs(plan, list(metadata["sources"]), level=metadata.get("validation_level", "full"))
     if len(state["steps"]) > len(jobs):
         raise ValueError("unexpected attempt phases")
     for index, step in enumerate(state["steps"]):
@@ -474,9 +502,18 @@ def audit_attempt(run, attempt, root):
                            attempt / "build" / side, plan, check_runtime=strict)
         if step["phase"] != "build" or result["status"] != "valid":
             observations.append(result)
+    gate = None
+    if (attempt / "operator-gate.json").exists():
+        gate = evaluate(plan, observations, level="operator")
+        if (plan.get("validation") != "operator-first" or metadata.get("validation_level", "full") != "full"
+                or read_json(attempt / "operator-gate.json") != gate):
+            raise ValueError("operator gate differs from audited evidence")
     if (state["status"] == "completed" and len(state["steps"]) != len(jobs)
             and all(step.get("result", {}).get("status") == "valid"
-                    and step["result"].get("checks_passed", True) for step in state["steps"])):
+                    and step["result"].get("checks_passed", True) for step in state["steps"])
+            and not (gate is not None and gate["verdict"] != "PASS"
+                     and len(state["steps"]) == next((i for i, job in enumerate(jobs)
+                         if job[1] in ("service", "profile")), len(jobs)))):
         raise ValueError("completed attempt phases missing")
     if metadata["kind"] == "comparison" and read_json(attempt / "observations.json") != observations:
         raise ValueError("comparison observations changed")

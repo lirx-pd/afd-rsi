@@ -12,7 +12,7 @@
 - eager/FULL graph 分开冻结；FULL 保持 Attention eager、FFN 显式 FULL，原生
   驱动检查捕获/replay、稳定地址与禁用 eager 回退。默认 eager 接口保持兼容。
 - 固定版本 AFD E2E 已成为 campaign 阶段，使用实际 side 构建启动标准 vllm serve，
-  保存真实请求、库映射、生命周期结果和日志；每次比较、复测均执行配置的服务门槛。
+  保存真实请求、库映射、生命周期结果和日志；分层筛选后在最终资格执行配置的服务门槛。
 - Codex CLI 的只读结构化提案；支持单机直接调用，也支持提案机/执行机文件交换。
   本轮按授权复用 WSL 登录，所有实验和验收在 iTASK，认证文件不复制。
 - “证据 → 假设/补丁 → 隔离构建 → 验证 → 比较 → 决策”；当前最佳候选单独记录，
@@ -26,7 +26,7 @@
 - Ascend 样例服务验收固定为 smoke、30 条 GSM8K strict-match 和 9 点 prefill 矩阵；
   GSM8K 实际样本数/门槛校验，prefill HTTP TTFT mean/p50/p90 归档并进入比较和 Agent
   上下文。prefill 为辅助指标，主指标/独立确认规则保持冻结。
-- 基线和通过数值、服务门槛的候选自动运行独立 profiling；每个 FFN rank 的真实
+- 基线一次采集 profiling；候选在独立原生复测和最终服务门槛通过后采集；每个 FFN rank 的真实
   device trace、CSV、进程回执和身份均留档。按任务时长汇总 top kernels，复用/续跑
   时校验证据，异常触发现有健康屏障，profile 时长不混入普通 benchmark。
 - 请求加入最佳/最近候选的 profile 分析以及仓库内性能策略 skill，驱动下一轮可证伪
@@ -85,3 +85,11 @@ GSM8K 27/30、候选补测 28/30，小 prefill 均 8/8，原生两侧数值与 p
 默认服务单次启动覆盖精度与性能矩阵，优化策略由前期 deep 转为后期 incremental。
 本轮仅验证入口与异步闭环，未启动新的真实 NPU campaign。详见
 [后台入口验证](validation/orchestration-20261025.md)。
+
+2026-10-25 增加 operator-first 分层验收：初筛和初始基线不启动 E2E，独立原生复测
+达标后才执行最终 E2E 与候选 profile。提案需具备瓶颈、机制、预测、否定条件和风险，
+引用当前测量及 profile；完整实验假设进入历史。见 [分层验证](staged-validation.md)。
+
+分层验证完整回归 126 项通过、1 项本机套接字权限跳过；提案定向检查 7 项通过。
+本轮为 CPU 控制器验证，未新增 NPU 收益或运行耗时结论，见
+[分层验证回归](validation/staged-validation-20261025.md)。

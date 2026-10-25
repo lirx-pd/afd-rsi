@@ -1,9 +1,9 @@
 # Campaign profiling and small prefill
 
-The Ascend recipes freeze smoke, 30 official GSM8K strict-match samples and one
-small prefill point: 128 input token IDs, one output token, concurrency one,
-eight measured requests and two unmeasured warmups. Routing can raise warmups to
-cover all Attention endpoints. GSM8K strict-match defaults to 0.27 for DeepSeek
+The Ascend recipes freeze smoke, 30 official GSM8K strict-match samples and a
+prefill matrix: 128/512/2048 input token IDs, one output token, concurrency 1/4/8,
+eight measured requests and two unmeasured warmups per point. Routing can raise
+warmups to cover all Attention endpoints. GSM8K strict-match defaults to 0.27 for DeepSeek
 V2 Lite and 0.9 for DeepSeek V4 Flash; the V4 recipes explicitly freeze 0.9.
 This small sample is a functional gate, not production accuracy qualification.
 Keep seed 42, eight few-shot examples and 512 maximum generated tokens fixed.
@@ -15,12 +15,14 @@ client overhead. It is an auxiliary performance indicator; promotion still uses
 the frozen paired native transaction metric and independent confirmation. Eight
 requests demonstrate the measurement path, not a statistically reliable gain.
 
-With native.profile=true, a separate profile phase follows successful numerical
-and configured service gates. The initial baseline is profiled before the first
-Agent proposal. Comparisons profile the qualified candidate, including fresh
-confirmation. Failed build/numerical/service gates never trigger profiling.
-Completed profiles are audited and reused on resume. A failed or interrupted
-profile blocks qualification and requires the existing NPU health barrier.
+With native.profile=true, the initial operator-first baseline is profiled once
+after native qualification and before the first proposal. This is diagnostic,
+not service qualification. Ordinary candidate screens run no profiler. Only a
+fresh confirmation that also repeats the native gain and passes the configured
+service gates runs the final candidate profile. Legacy full recipes keep their
+previous profiling order. Completed profiles are audited and reused on resume.
+A failed or interrupted profile blocks qualification and requires the existing
+NPU health barrier. Do not spend a diagnostic rebuild on each unpromising patch.
 
 The child uses torch_npu.profiler on the same native seven-case workload and
 execution mode. Every FFN rank needs its own kernel_details.csv containing actual

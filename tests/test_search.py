@@ -289,7 +289,7 @@ def test_stop_and_experience_commit_resume_after_crash(run, monkeypatch):
     assert len(search.load_experiences(run, campaign.load(run, ROOT))) == 1
 
 
-@pytest.mark.parametrize('scenario', ['stop', 'code', 'analysis_failure', 'code_failure'])
+@pytest.mark.parametrize('scenario', ['stop', 'code', 'analysis_failure', 'code_failure', 'experiment', 'bad_experiment'])
 def test_codex_adapter_routes_models_and_constrains_evidence(tmp_path, monkeypatch, scenario):
     import os
     import subprocess
@@ -314,16 +314,28 @@ def test_codex_adapter_routes_models_and_constrains_evidence(tmp_path, monkeypat
         '    assert not prior["stop"] and prior["proposals"][0]["evidence"] == ["baseline"]\n'
         'stop=scenario == "stop"\n'
         'proposal={"hypothesis":"test", "category":"latency", "priority":1,"evidence":["baseline"]}\n'
+        'if scenario in ("experiment", "bad_experiment"):\n'
+        '    assert "experiment" in props\n'
+        '    proposal["experiment"]={key:"controlled fixture" for key in props["experiment"]["required"]}\n'
+        'if scenario == "bad_experiment": proposal["experiment"]["falsification"]=""\n'
         'if not analysis: proposal["patch"]="test diff"\n'
         'Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"stop":stop,"reason":"done","proposals":[] if stop else [proposal]}))\n'
         'print(json.dumps({"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":3}}))\n')
     executable.chmod(0o755)
     monkeypatch.setenv('PATH', str(executable.parent) + os.pathsep + os.environ['PATH'])
     request = tmp_path / 'request.json'
-    write_json(request, {'evidence': [{'id': 'baseline'}, {'id': 'history-0'}]})
+    context = {'evidence': [{'id': 'baseline'}, {'id': 'history-0'}]}
+    if scenario in ('experiment', 'bad_experiment'):
+        context['proposal_requirements'] = dict(experiment_fields=['bottleneck', 'mechanism', 'prediction', 'falsification', 'risk'], required_evidence_ids=['baseline'])
+    write_json(request, context)
     response = tmp_path / 'result/proposal.json'
     result = subprocess.run([sys.executable, str(ROOT / 'benchmarks/agents/codex_agent.py'),
                              '--request', str(request), '--output', str(response)], capture_output=True)
+    if scenario == 'bad_experiment':
+        assert result.returncode != 0 and not response.exists()
+        assert b'no coding call' in result.stderr
+        assert not (response.parent / 'codex-events.command.json').exists()
+        return
     if scenario.endswith('failure'):
         assert result.returncode != 0 and not response.exists()
         assert b'Codex exited 7' in result.stderr
@@ -333,7 +345,7 @@ def test_codex_adapter_routes_models_and_constrains_evidence(tmp_path, monkeypat
     turns = read_json(response.parent / 'usage.json')['turns']
     assert [turn['model'] for turn in turns] == (['gpt-6-astra'] if scenario == 'stop' else ['gpt-6-astra', 'gpt-6.1-sol'])
     assert all(turn['effort'] == 'xhigh' and turn['input_tokens'] == 5 for turn in turns)
-    assert (response.parent / 'codex-events.jsonl').exists() == (scenario == 'code')
+    assert (response.parent / 'codex-events.jsonl').exists() == (scenario in ('code', 'experiment'))
 
 
 def test_native_manifest_cannot_hide_changed_physical_artifacts(tmp_path):

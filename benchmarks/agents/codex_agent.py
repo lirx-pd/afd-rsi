@@ -53,6 +53,14 @@ def main():
         'Choose up to three distinct proposals; stop when there is no justified change.\n')
     schema = workspace / 'proposal.schema.json'
     contract = json.loads(Path(__file__).with_name('proposal.schema.json').read_text())
+    if request.get('proposal_requirements'):
+        proposal = contract['properties']['proposals']['items']
+        fields = request['proposal_requirements']['experiment_fields']
+        proposal['required'].append('experiment')
+        proposal['properties']['experiment'] = {
+            'type': 'object', 'additionalProperties': False, 'required': fields,
+            'properties': {name: {'type': 'string', 'minLength': 1} for name in fields},
+        }
     contract['properties']['proposals']['items']['properties']['evidence']['items']['enum'] = [
         item['id'] for item in request['evidence']]
     schema.write_text(json.dumps(contract) + '\n')
@@ -65,12 +73,23 @@ def main():
     analysis_path = workspace / 'analysis.json'
     analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
         'Read request.json and AGENTS.md. Analyze evidence, profiling and history. '
-        'Choose falsifiable optimization hypotheses and controlled experiments. Do not write patches.',
+        'Choose falsifiable optimization hypotheses and controlled experiments. '
+        'When proposal_requirements is present, provide the complete experiment and required evidence IDs; '
+        'use measured waits/stages, explain how the source change hides or removes them, and predict an observable '
+        'change with a rejection criterion. Stop rather than guess. Do not write patches.',
         'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events')
     (args.output.parent / 'usage.json').write_text(json.dumps({'turns': usages}) + '\n')
     if analysis['stop']:
         args.output.write_text(json.dumps(analysis) + '\n')
         return
+    requirements = request.get('proposal_requirements')
+    if requirements:
+        for proposal in analysis['proposals']:
+            experiment = proposal.get('experiment', {})
+            if (set(experiment) != set(requirements['experiment_fields'])
+                    or not all(isinstance(v, str) and v.strip() for v in experiment.values())
+                    or not set(requirements['required_evidence_ids']) <= set(proposal['evidence'])):
+                raise ValueError('analysis lacks a falsifiable experiment or required incumbent evidence; no coding call')
     _, code_usages = invoke(executable, workspace, schema, args.output,
         'Read request.json, AGENTS.md and analysis.json. Implement only the justified hypotheses '
         'as minimal complete patches. Preserve their evidence IDs and explain any implementation limits. '

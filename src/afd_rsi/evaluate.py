@@ -6,12 +6,16 @@ from statistics import median
 from .contracts import positive
 
 
-def evaluate(plan: dict, observations: list[dict]) -> dict:
+def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
+    if level not in ("full", "operator"):
+        raise ValueError("unknown validation level")
     reasons, incomplete, failed = [], False, False
     samples = {"baseline": [], "candidate": []}
     quality, service_quality = set(), set()
     service_metrics, profiles = {}, set()
     for observation in observations:
+        if level == "operator" and observation["phase"] in ("service", "profile"):
+            continue
         if observation["status"] != "valid":
             incomplete = True
             reasons.append(observation.get("reason", observation["status"]))
@@ -33,10 +37,10 @@ def evaluate(plan: dict, observations: list[dict]) -> dict:
     if quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both correctness results required")
-    if "service" in plan and service_quality != {"baseline", "candidate"}:
+    if level == "full" and "service" in plan and service_quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both configured service gates required")
-    if plan.get("native", {}).get("profile", False) and "candidate" not in profiles:
+    if level == "full" and plan.get("native", {}).get("profile", False) and "candidate" not in profiles:
         incomplete = True
         reasons.append("qualified candidate profile required")
     if any(len(values) != plan["repetitions"] for values in samples.values()):
@@ -54,11 +58,15 @@ def evaluate(plan: dict, observations: list[dict]) -> dict:
             failed = True
             reasons.append("positive gain meeting the frozen threshold required")
     result = {"verdict": "FAIL" if failed else "INCONCLUSIVE" if incomplete else "PASS",
+            "validation_level": level,
             "backend": plan["backend"], "scope": plan["scope"], "unit": plan["unit"],
             "gain_pct": gain, "samples": samples, "reasons": reasons,
             "claim": "synthetic controller fixture only" if plan["backend"] == "cpu-synthetic"
             else "limited to configured native and service gates; not production qualification" if "service" in plan
             else "limited to the supplied benchmark and validators; not service qualification"}
+    if level == "operator":
+        result["claim"] = ("synthetic controller fixture only; service deferred" if plan["backend"] == "cpu-synthetic"
+                           else "native operator numerical and timing screen only; service deferred; not promotable")
     if service_metrics:
         result["service_metrics"] = service_metrics
         result["service_metric_policy"] = "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric."

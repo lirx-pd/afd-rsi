@@ -20,7 +20,9 @@ For one round, use deep mode. Strategy changes only proposal guidance: allowed
 paths, published interfaces, numerical/service gates, gain threshold and fresh
 confirmation requirements remain unchanged. Depth is not a line-count target.
 
-Within each tested source/artifact version start the A/F service once, then run
+Under operator-first, only independently confirmed native winners enter final
+service qualification; ordinary screens and the initial baseline start no service.
+Within each final tested source/artifact version start the A/F service once, then run
 smoke, GSM8K30 and the performance matrix. Settle between suites and points,
 outside measured requests. Monitor service liveness during suite settling;
 cancellation interrupts settling and still cleans up owned processes. Do not

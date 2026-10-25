@@ -189,6 +189,10 @@ def test_agent_request_contains_profile_service_metrics_and_local_strategy(tmp_p
     assert current['facts']['pipeline']['ffn_ranks'][0]['selected_cores'] == [{'core': 48}]
     assert historical['facts']['pipeline']['ffn_ranks'] == [{'summed_core_cycles': {'2': 100}}]
     assert 'selected_cores' in read_json(trial)['profiling']['pipeline']['ffn_ranks'][0]
+    plan['validation'] = 'operator-first'
+    staged = search.request_context(run, plan, best, [record], 6)
+    assert staged['proposal_requirements']['required_evidence_ids'] == ['baseline', 'profile-incumbent']
+    assert any(e['id'] == 'profile-incumbent' for e in staged['evidence'])
 
 
 def test_prefill_comparison_is_reported_without_changing_primary_acceptance():

@@ -1,6 +1,7 @@
 # Edit source, allocated device IDs, model path and network settings before prepare.
 name = "A3 MegaMoe eager campaign"
 backend = "ascend"
+validation = "operator-first"
 source = "../../afd-plugin"
 workload_id = "a3-w4a8-serialized-7case-v1"
 scope = "synthetic-weight-eager-transaction-suite-mean"

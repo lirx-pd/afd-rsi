@@ -22,7 +22,7 @@ this task; no global skill or online lookup is needed.
 - [search and recovery](../../knowledge/measurement/search.md)
 - [one-command orchestration](../../knowledge/measurement/orchestration.md)
 
-Confirm effective runner/executor/native dispatch before editing. Keep Attention routing/shared/final weighting and FFN DR/GMM/CS ownership. Preserve quantization and protocol in the first campaign. Freeze workload and gates, read relevant history, propose a falsifiable minimal patch, then use independent evaluation. Output hypothesis, patch and evidence-bound experience; never label synthetic checks as NPU proof.
+Confirm effective runner/executor/native dispatch before editing. Keep Attention routing/shared/final weighting and FFN DR/GMM/CS ownership. Preserve quantization and protocol in the first campaign. Freeze workload and gates, read relevant history and measured waits, state a mechanism, prediction, falsification and risks. Use native numerical/timing screening before expensive final service qualification. Output hypothesis, patch and evidence-bound experience; never label synthetic checks as NPU proof.
 
 Use the campaign snapshot and actual target facts. Missing evidence remains
 unknown. Foundation and evaluator updates are maintenance work, outside the

@@ -29,6 +29,11 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 复用，生产服务与普通计时使用未打点产物。内部周期不是 Cube PMU 利用率。
 通用 benchmark 遵守 [结果合同](docs/result-contract.md)。
 
+Ascend 配方默认先做算子数值和配对性能筛选，再独立复测；只有两轮原生收益都达标，
+才运行最终 E2E 精度/性能矩阵和候选 profiling。初始基线只做原生资格与一次 profile。
+提案必须给出测量证据、改动机制、预测、否定条件和风险。可用 `compare --operator-only`
+手动只测算子，结果不能替代最终晋升资格。详见 [分层验证](docs/staged-validation.md)。
+
 ## 一条命令启动优化
 
 ```bash

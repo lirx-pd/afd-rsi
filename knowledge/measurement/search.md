@@ -6,11 +6,15 @@ accepts them. Never edit validators, gates, the original checkout or this
 knowledge snapshot to make a candidate pass. Codex runs in read-only mode with a
 structured JSON response; the existing CLI login stays on the proposer host.
 
-Qualify the baseline before a model call. A candidate must pass correctness,
-every configured real service gate, and all paired native measurements. A PASS
-is only a screen: repeat the whole comparison in a fresh attempt against the
-same incumbent. Only two matching PASS results can replace best. A failed,
-missing, timed-out or incompatible observation cannot promote a candidate.
+Qualify the baseline before a model call. With validation=operator-first, qualify
+native numerics and timing and collect the incumbent profile once; initial
+baseline qualification does not claim model/service correctness. Screen a patch
+with native correctness and paired timing only. In a fresh confirmation repeat
+the same native gates first. Only if both rounds meet the frozen native gain
+threshold run every configured service gate and the final candidate profile.
+Two matching native PASS results plus full final qualification can replace best.
+A numerical, timing or final service failure cannot promote a candidate. Ordinary
+full recipes retain the previous full-validation order. Old snapshots are immutable.
 HTTP inference success cannot replace cleanup evidence. A frozen service policy may
 set require_clean_shutdown=false to defer errors classified by the E2E runner as
 shutdown-only. Preserve the failed raw lifecycle summary and explicitly record
@@ -50,3 +54,12 @@ not override that score. Do not describe an unselected proposal as an experiment
 
 Unified background execution and deep-to-incremental strategy are specified in
 [orchestration](orchestration.md). The controller still owns all acceptance.
+
+Under operator-first, proposals require experiment.bottleneck, mechanism,
+prediction, falsification and risk. Cite baseline measurements and the incumbent
+profile when supplied. Explain the source dependency and an observable change;
+stop when evidence is insufficient. A coherent overlap change must identify the
+communication/computation stages, ownership, waits and lifetimes being changed.
+No profile duration alone proves physical overlap. Preserve this experiment in
+history so a failed prediction affects the next direction, not just the patch.
+The controller validates structure and evidence IDs, not the truth of a hypothesis.

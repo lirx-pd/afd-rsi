@@ -14,7 +14,6 @@ from pathlib import Path
 
 from . import campaign, skills
 from .evidence import digest, read_json, write_json
-from .evaluate import evaluate
 from .runner import execute
 from .workspace import copy_source, inventory
 
@@ -26,7 +25,7 @@ def identity(value):
 def fingerprint(plan):
     keys = ('source_snapshot', 'foundation_hash', 'controller_hash', 'backend', 'workload_id',
             'scope', 'unit', 'metric', 'ranks', 'primary_rank', 'repetitions', 'min_gain_pct',
-            'commands', 'artifacts', 'allowed_files', 'native', 'service')
+            'commands', 'artifacts', 'allowed_files', 'native', 'service', 'validation')
     return identity({key: plan.get(key) for key in keys})
 
 
@@ -36,7 +35,7 @@ def verified_verdict(run, name, root):
         raise ValueError('best candidate points to an unfinished attempt')
     observations = campaign.audit_attempt(run, attempt, root)
     verdict = read_json(attempt / 'verdict.json')
-    if evaluate(campaign.load(run, root), observations) != verdict:
+    if campaign.evaluate_attempt(campaign.load(run, root), attempt, observations) != verdict:
         raise ValueError('candidate verdict inconsistent with evidence')
     return verdict
 
@@ -61,7 +60,10 @@ def best_candidate(run, root):
             verdict = verified_verdict(run, record['attempt'], root)
             attempt = run / 'attempts' / record['attempt']
             sources = read_json(attempt / 'attempt.lock.json')['sources']
+            expected_level = ('operator' if stage == 'screen' and campaign.load(run, root).get('validation') == 'operator-first'
+                              else 'full')
             if (verdict['verdict'] != 'PASS' or digest(attempt / 'verdict.json') != record['hash']
+                    or verdict['validation_level'] != expected_level
                     or sources['candidate']['hash'] != best['source_hash']
                     or sources['baseline']['hash'] != best['parent_hash']):
                 raise ValueError('best candidate lacks matching screen and confirmation evidence')
@@ -113,7 +115,8 @@ def request_context(run, plan, best, records, number):
                 'source_hash': best['source_hash'], **item['profiling']}})
     for index, record in enumerate(records):
         evidence.append({'id': f'history-{index}', 'facts': {
-            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis')}})
+            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment')
+            if key in record}})
     for index, record in enumerate(records[-2:]):
         for name in record['evidence']:
             if name.endswith('/observation.json') and (run / name).is_file():
@@ -161,6 +164,17 @@ def request_context(run, plan, best, records, number):
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
                    'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
+    if plan.get('validation') == 'operator-first':
+        context['proposal_requirements'] = {
+            'experiment_fields': ['bottleneck', 'mechanism', 'prediction', 'falsification', 'risk'],
+            'required_evidence_ids': ['baseline'] + (['profile-incumbent'] if any(
+                item['id'] == 'profile-incumbent' for item in evidence) else []),
+        }
+        context['instructions'] += (' Each proposal needs an experiment: measured bottleneck, source-backed mechanism, '
+            'observable prediction, falsification criterion and numerical/synchronization risks. '
+            'Cite baseline and the incumbent profile when supplied. Reject speculative parameter guessing. '
+            'The controller screens native numerics and paired timing first; only independently repeated winners '
+            'reach expensive E2E accuracy/performance and candidate profiling. Stop if evidence is insufficient.')
     limit = plan['search']['max_context_bytes']
     # Match write_json's actual artifact size, including indentation and the newline.
     def size():
@@ -168,8 +182,13 @@ def request_context(run, plan, best, records, number):
 
     while size() > limit // 2 and len(context['evidence']) > 1:
         # Keep the incumbent profile ahead of older history when even facts exceed the budget.
-        index = next((i for i, item in enumerate(context['evidence'])
-                      if item['id'].startswith('history-')), len(context['evidence']) - 1)
+        required = context.get('proposal_requirements', {}).get('required_evidence_ids', ['baseline'])
+        index = next((i for i, item in enumerate(context['evidence']) if item['id'].startswith('history-')), None)
+        if index is None:
+            index = next((i for i in reversed(range(len(context['evidence'])))
+                          if context['evidence'][i]['id'] not in required), None)
+        if index is None:
+            break
         del context['evidence'][index]
     files = inventory(source)['files']
     allowed = sorted(name for name in files
@@ -236,11 +255,11 @@ def propose(request: Path, output: Path, root: Path):
     response = output / 'proposal.json'
     if response.stat().st_size > context['max_response_bytes']:
         raise ValueError('Codex response exceeds the frozen request bound')
-    validate_proposal(read_json(response), {item['id'] for item in context['evidence']})
+    validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
     return response
 
 
-def validate_proposal(value, evidence_ids):
+def validate_proposal(value, evidence_ids, requirements=None):
     if not isinstance(value, dict) or set(value) != {'stop', 'reason', 'proposals'}:
         raise ValueError('invalid agent response keys')
     if type(value['stop']) is not bool or not isinstance(value['reason'], str) or not value['reason'].strip():
@@ -249,7 +268,8 @@ def validate_proposal(value, evidence_ids):
     if not isinstance(proposals, list) or len(proposals) > 3 or (not value['stop'] and not proposals) or (value['stop'] and proposals):
         raise ValueError('provide one to three proposals, or stop with no proposals')
     for proposal in proposals:
-        if not isinstance(proposal, dict) or set(proposal) != {'hypothesis', 'category', 'evidence', 'priority', 'patch'}:
+        keys = {'hypothesis', 'category', 'evidence', 'priority', 'patch'} | ({'experiment'} if requirements else set())
+        if not isinstance(proposal, dict) or set(proposal) != keys:
             raise ValueError('invalid proposal keys')
         if not all(isinstance(proposal[key], str) and proposal[key].strip() for key in ('hypothesis', 'category', 'patch')):
             raise ValueError('proposal requires hypothesis, category and patch')
@@ -258,6 +278,13 @@ def validate_proposal(value, evidence_ids):
         if (not isinstance(proposal['evidence'], list) or not proposal['evidence']
                 or not all(isinstance(item, str) and item in evidence_ids for item in proposal['evidence'])):
             raise ValueError('proposal must cite existing evidence IDs')
+        if requirements:
+            experiment = proposal['experiment']
+            if (not isinstance(experiment, dict) or set(experiment) != set(requirements['experiment_fields'])
+                    or not all(isinstance(v, str) and v.strip() for v in experiment.values())):
+                raise ValueError('proposal requires a complete falsifiable experiment')
+            if not set(requirements['required_evidence_ids']) <= set(proposal['evidence']):
+                raise ValueError('proposal must cite the incumbent measurement and profile evidence')
     return value
 
 
@@ -286,9 +313,10 @@ def _start_attempt(run, root, state, record, stage, round_dir=None):
         write_json(target, record if round_dir is not None else state)
     attempt = run / 'attempts' / record[stage]
     if not attempt.exists():
+        level = ('operator' if stage == 'screen' and campaign.load(run, root).get('validation') == 'operator-first' else 'full')
         campaign._new_attempt(run, root, 'baseline' if stage == 'baseline' else 'comparison',
                               name=record[stage], candidate_source=None if round_dir is None else round_dir / 'source',
-                              baseline_source=None if round_dir is None else run / record['parent']['source'])
+                              baseline_source=None if round_dir is None else run / record['parent']['source'], level=level)
     if read_json(attempt / 'progress.json')['status'] != 'completed':
         campaign._continue(run, attempt, root)
     return attempt
@@ -320,6 +348,8 @@ def _lesson(run, plan, round_dir, record):
               'patch_hash': identity(proposal.get('patch', '').strip()), 'category': proposal.get('category', 'agent-protocol'),
               'hypothesis': proposal.get('hypothesis', ''), 'decision': record['decision'],
               'reason': record['reason'], 'evidence': evidence}
+    if 'experiment' in proposal:
+        lesson['experiment'] = proposal['experiment']
     destination = run / 'search/experience' / f'{round_dir.name}.json'
     write_json(destination, {**lesson, 'record_hash': identity(lesson)})
 
@@ -419,7 +449,7 @@ def search(run: Path, root: Path, *, external=False):
                 try:
                     if response.stat().st_size > settings['max_context_bytes'] * 2:
                         raise ValueError('agent response exceeds context bound')
-                    value = validate_proposal(read_json(response), {item['id'] for item in context['evidence']})
+                    value = validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
                     if not state['external_agent']:
                         receipt = read_json(round_dir / 'agent/process.json')
                         if receipt['status'] != 'completed' or not receipt['cleanup_complete']:
@@ -506,7 +536,8 @@ def search_report(run, root):
              f'Backend: {plan["backend"]}; scope: {plan["scope"]}; unit: {plan["unit"]}', '',
              f'Require clean service shutdown: {plan.get("service", {}).get("require_clean_shutdown", True)}; raw lifecycle results are retained.', '',
              f'Best source: {best["source_hash"] if best else "none: baseline unqualified"}', '',
-             'Promotion requires separate screen and confirmation attempts, including every configured service gate.', '',
+             'Promotion requires a native screen and a fresh confirmation with every configured final service gate. '
+             'Operator-only PASS is not service qualification.', '',
              '| Round | Decision | Evidence |', '| --- | --- | --- |']
     for name in state['rounds']:
         path = run / 'search/rounds' / name / 'state.json'

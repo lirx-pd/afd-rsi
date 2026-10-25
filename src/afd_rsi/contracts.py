@@ -18,12 +18,14 @@ def load_recipe(path: Path) -> dict:
     allowed = {"name", "backend", "source", "workload_id", "scope", "unit", "metric",
                "ranks", "primary_rank", "repetitions", "timeout_seconds", "budget_seconds",
                "min_gain_pct", "allowed_files", "artifacts", "commands"}
-    optional = {"service", "search", "native", "health"}
+    optional = {"service", "search", "native", "health", "validation"}
     if not allowed <= set(config) or set(config) - allowed - optional:
         raise ValueError(f"recipe keys missing/unknown: {sorted(allowed - set(config) | (set(config) - allowed - optional))}")
     for key in ("name", "workload_id", "scope", "unit", "metric"):
         if not isinstance(config[key], str) or not config[key].strip():
             raise ValueError(f"invalid {key}")
+    if config.get("validation", "full") not in ("full", "operator-first"):
+        raise ValueError("validation must be full or operator-first")
     if config["backend"] not in ("cpu-synthetic", "ascend"):
         raise ValueError("backend must be cpu-synthetic or ascend")
     source = (path.resolve().parent / config["source"]).resolve(strict=True)
