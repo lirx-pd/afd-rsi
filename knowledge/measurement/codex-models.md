@@ -26,3 +26,14 @@ not individual internal CLI stages. Each built-in dispatch makes at most two
 model calls (one when analysis stops), within the same frozen timeout/deadline.
 Reserve no extra dispatch on resume. Preserve interrupted evidence and use a
 new campaign for this changed adapter; never edit an existing frozen provider.
+
+One campaign uses one persisted Codex thread across analysis, coding and later
+rounds. Capture the exact thread ID from thread.started and use exec resume with
+that ID; never select --last, fork or --ephemeral. Model/effort overrides still
+apply to each turn. Each CLI process exits after its response; ordinary Python
+polling waits for experiments without an active model turn. The current request
+supersedes older evidence/source even though the conversation retains history.
+Store thread ownership, a stable read-only workspace, per-turn JSONL, schemas,
+outputs and command receipts on the proposer host. A missing or changed thread,
+cross-campaign reuse or interrupted initial capture fails visibly without a new
+conversation or implicit retry. Keep the existing frozen dispatch/deadline limits.

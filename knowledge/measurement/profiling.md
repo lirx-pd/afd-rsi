@@ -72,3 +72,10 @@ Its first-16-tile probe is separate from this driver. Check actual target layout
 clock assumptions and diagnostic support before reusing a probe. A positive finite
 CANN duration can still underflow beyond the capture envelope; preserve invalid
 rows and apply the frozen failure policy rather than deleting evidence to pass.
+
+Diagnostic overlays support the legacy prepare pipeline and the expert-packed
+PrepareTile/validated-entry pipeline. Check every insertion anchor and its exact
+count before writing either diagnostic file. Missing anchors are unsupported
+source, not permission to emit partial instrumentation. Entry and validation
+intervals must pair in the kernel entry scope; never match the helper's layerId.
+Retain diagnostic compiler stdout/stderr and process receipts in result archives.

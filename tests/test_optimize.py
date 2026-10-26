@@ -23,12 +23,15 @@ from pathlib import Path
 root=Path(sys.argv[sys.argv.index('--cd')+1])
 request=json.loads((root/'request.json').read_text())
 assert request['strategy']['mode']=='deep'
+assert '--ephemeral' not in sys.argv
+if 'resume' in sys.argv: assert sys.argv[sys.argv.index('resume')+1]=='12345678-1234-4234-8234-123456789abc'
 schema=json.loads(Path(sys.argv[sys.argv.index('--output-schema')+1]).read_text())
 code='patch' in schema['properties']['proposals']['items']['properties']
 assert sys.argv[sys.argv.index('--model')+1]==('gpt-6.1-sol' if code else 'gpt-6-astra')
 p={{'hypothesis':'synthetic fixture faster','category':'latency','priority':3,'evidence':['baseline']}}
 if code: p['patch']={(ROOT/'examples/faster.patch').read_text()!r}
 Path(sys.argv[sys.argv.index('--output-last-message')+1]).write_text(json.dumps({{'stop':False,'reason':'fixture only','proposals':[p]}}))
+print(json.dumps({{'type':'thread.started','thread_id':'12345678-1234-4234-8234-123456789abc'}}))
 print(json.dumps({{'type':'turn.completed','usage':{{'input_tokens':1,'output_tokens':1}}}}))
 ''')
     script.chmod(0o755)
@@ -60,6 +63,9 @@ def test_detached_local_round_confirms_and_downloads(tmp_path, monkeypatch):
         old=ex.invoke('status',str(state['phase']))
         assert ex.invoke('launch',str(state['phase']))==old
         assert (job/'results.tar.gz').exists()
+        assert read_json(job/'codex-session/session.json')['thread_id']=='12345678-1234-4234-8234-123456789abc'
+        command=read_json(job/'proposals/1/agent/codex-events.command.json')
+        assert command[command.index('resume')+1]=='12345678-1234-4234-8234-123456789abc'
         # Reconcile a terminal controller in a new phase without repeating a proposal.
         ex.invoke('launch', str(state['phase']+1))
         deadline=time.monotonic()+30
@@ -170,3 +176,17 @@ def test_partial_bootstrap_reuses_sealed_archive(tmp_path):
     (job/'payload.tar.gz').write_bytes(b'corrupted')
     with pytest.raises(ValueError,match='sealed payload changed'):
         optimize.stage(job,config,executor)
+
+
+def test_results_include_diagnostic_compiler_logs_without_build_sources(tmp_path):
+    import tarfile
+    build = tmp_path / 'campaign/attempts/a/baseline/profile/p/diagnostic-build'
+    (build / 'build').mkdir(parents=True)
+    (build / 'build/stderr.log').write_text("error: undeclared validation")
+    (build / 'source').mkdir()
+    (build / 'source/secret.o').write_bytes(b'large binary')
+    optimize.pack_results(tmp_path)
+    with tarfile.open(tmp_path / 'results.tar.gz') as tar:
+        names = tar.getnames()
+        assert str((build / 'build/stderr.log').relative_to(tmp_path)) in names
+        assert not any(name.endswith('secret.o') for name in names)

@@ -62,7 +62,7 @@ def build(source: Path, output: Path, timeout: float):
                       "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM_AFD_PLUGIN": f"0.0.0+rsi.{snapshot['hash'][:12]}"})
     write_json(output / "build.json", result)
     if result["status"] != "completed" or not result["cleanup_complete"]:
-        raise RuntimeError("isolated build failed; inspect build logs")
+        raise RuntimeError(f"isolated build failed; inspect {output / 'build/stderr.log'}")
     verify_source(target, snapshot)
     write_json(output / "artifacts.json", artifact_identity(target))
     return target

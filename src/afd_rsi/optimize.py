@@ -39,7 +39,7 @@ def event(job, status, **fields):
     detail = '/'.join(str(x) for x in (step.get('side'), step.get('phase'), service.get('stage')) if x)
     print(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {status} "
           f"round={state.get('active') or '-'} calls={state.get('calls', 0)} "
-          f"{detail} {value.get('error', '')}", flush=True)
+          f"{detail} {state.get('status', '')} {value.get('error', '') or state.get('reason', '')}", flush=True)
 
 
 def snapshot(root, target):
@@ -237,6 +237,11 @@ def pack_results(base):
             dirs[:] = [d for d in dirs if d not in {'build', 'source', 'staging', 'workspaces',
                        'diagnostic-build', 'diagnostic-input', '__pycache__', 'kernel_meta'}]
             files.extend(Path(current) / n for n in names if n != '.controller.lock')
+    # Retain compiler failures without shipping source trees and build binaries.
+    for pattern in ('attempts/*/build/*/native/build', 'attempts/*/*/profile/*/diagnostic-build/build'):
+        for directory in (base / 'campaign').glob(pattern):
+            files.extend(directory / name for name in ('stdout.log', 'stderr.log', 'process.json')
+                         if (directory / name).is_file())
     manifest = {str(p.relative_to(base)): digest(p) for p in files}
     write_json(base / 'results.manifest.json', manifest)
     with tarfile.open(base / 'results.tar.gz', 'w:gz') as tar:
@@ -379,7 +384,7 @@ def worker(job):
                 else:
                     # This finite process exits before any device experiment starts.
                     from .search import propose
-                    propose(request, proposal_dir, job / 'controller')
+                    propose(request, proposal_dir, job / 'controller', session_dir=job / 'codex-session')
                 executor.send(proposal_dir / 'proposal.json', executor.base + '/campaign/' + pending['response'])
                 phase += 1
                 event(job, 'submitted', phase=phase, progress=status)

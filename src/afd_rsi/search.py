@@ -239,7 +239,7 @@ def request_context(run, plan, best, records, number):
     return context
 
 
-def propose(request: Path, output: Path, root: Path):
+def propose(request: Path, output: Path, root: Path, session_dir: Path = None):
     """Run only the proposer on an authenticated host; no target checkout is required."""
     skills.validate(root)
     context = read_json(request)
@@ -251,7 +251,8 @@ def propose(request: Path, output: Path, root: Path):
         raise ValueError('campaign budget exhausted before proposal')
     process = execute([sys.executable, str(driver), '--request', str(request),
                        '--output', str(output / 'proposal.json')], request.parent, output,
-                      min(context['agent_timeout_seconds'], remaining), {})
+                      min(context['agent_timeout_seconds'], remaining),
+                      {'AFD_RSI_CODEX_SESSION_DIR': str((session_dir or output / 'codex-session').resolve())})
     if process['status'] != 'completed' or not process['cleanup_complete']:
         raise ValueError('Codex proposal failed; inspect proposer logs and receipt')
     response = output / 'proposal.json'
@@ -445,7 +446,8 @@ def search(run: Path, root: Path, *, external=False):
                         argv = [part.replace(marker, replacement) for part in argv]
                     remaining = plan['expires_at'] - time.time()
                     if remaining > 0:
-                        process = execute(argv, round_dir, round_dir / 'agent', min(settings['agent_timeout_seconds'], remaining), {})
+                        process = execute(argv, round_dir, round_dir / 'agent', min(settings['agent_timeout_seconds'], remaining),
+                                          {'AFD_RSI_CODEX_SESSION_DIR': str(run / 'search/codex-session')})
                         record['agent_process'] = process
                         write_json(path, record)
                 try:

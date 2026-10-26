@@ -9,7 +9,8 @@ login; credentials are never shipped. Core acceptance has no platform imports.
 Codex analysis and patch generation are finite proposal processes. After they
 exit, the worker submits the proposal and launches the execution-host controller
 in a detached process. Poll with ordinary timed process/file operations, default
-60 seconds, never an idle model conversation. Report phase changes concisely;
+60 seconds, never an idle model turn. Persist one campaign conversation and resume its exact
+thread ID for the next proposal; CLI processes exit between turns. Report phase changes concisely;
 preserve detailed events, command receipts, request hashes and model usage.
 Starting a job returns immediately after the controller snapshot is ready.
 

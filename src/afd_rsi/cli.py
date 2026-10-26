@@ -58,6 +58,7 @@ def main(argv=None) -> int:
     proposer = commands.add_parser("propose")
     proposer.add_argument("request", type=Path)
     proposer.add_argument("--output", type=Path, required=True)
+    proposer.add_argument("--session-dir", type=Path, help="reuse this campaign's Codex conversation on the proposer host")
     patch = commands.add_parser("patch")
     patch.add_argument("run", type=Path)
     patch.add_argument("patch", type=Path)
@@ -96,7 +97,7 @@ def main(argv=None) -> int:
                 print(campaign.resume(run, root))
         elif args.action == "propose":
             from .search import propose
-            print(propose(args.request.resolve(strict=True), args.output.resolve(), root))
+            print(propose(args.request.resolve(strict=True), args.output.resolve(), root, session_dir=args.session_dir))
         elif args.action == "report":
             from .search import search_report
             run = args.run.resolve()

@@ -7,6 +7,12 @@ TRACE_STRIDE = 16640
 TRACE_MAGIC = 0x4d4f455452414345
 
 
+def replace_checked(source, old, new, count=1):
+    if source.count(old) != count:
+        raise ValueError(f'unsupported MegaMoe diagnostic source: expected {count} occurrences of {old!r}')
+    return source.replace(old, new)
+
+
 def instrument(repo):
     p = Path('csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel')
     trace_class=r'''
@@ -53,37 +59,86 @@ def instrument(repo):
         mutable uint32_t count_ = 0;
     };
     '''
-    original=(repo/p/'afd_mega_moe_pipeline.h').read_text()
-    s=original.replace('class PipelineFlags {',trace_class+'\nclass PipelineFlags {',1)
-    s=s.replace('PipelineFlags(GM_ADDR base) : base_(base) {}','PipelineFlags(GM_ADDR base, GM_ADDR tail) : trace(tail), base_(base) {}')
-    s=s.replace('public:\n    __aicore__ explicit PipelineFlags','public:\n    PhaseTrace trace;\n    __aicore__ explicit PipelineFlags',1)
-    s=s.replace('        WaitAt(Address(stage, 0), sequence);','        const auto start = trace.Begin(8 + stage, sequence);\n        WaitAt(Address(stage, 0), sequence);\n        trace.End(8 + stage, sequence, start);',1)
-    s=s.replace('        if ASCEND_IS_AIC {\n            Fence<HardEvent::FIX_S>();','        const auto drain = trace.Begin(15 + stage, sequence);\n        if ASCEND_IS_AIC {\n            Fence<HardEvent::FIX_S>();',1)
-    s=s.replace('        // Leaders publish after their members;', '        trace.End(15 + stage, sequence, drain);\n        const auto publish = trace.Begin(22 + stage, sequence);\n        // Leaders publish after their members;',1)
-    s=s.replace('    }\nprivate:\n    __aicore__ GM_ADDR Address','        trace.End(22 + stage, sequence, publish);\n    }\nprivate:\n    __aicore__ GM_ADDR Address',1)
-    s=s.replace('        transport.Receive(next);','        const auto rx = flags.trace.Begin(RECEIVED, next.sequence);\n        transport.Receive(next);\n        flags.trace.End(RECEIVED, next.sequence, rx);')
-    s=s.replace('        transport.Send(tile);','        const auto tx = flags.trace.Begin(SENT, tile.sequence);\n        transport.Send(tile);\n        flags.trace.End(SENT, tile.sequence, tx);')
-    s=s.replace('    transport.Finish();','    const auto finish = flags.trace.Begin(32, 0);\n    transport.Finish();\n    flags.trace.End(32, 0, finish);')
-    # Starts after the dependency wait; the existing arrival fence is a separate record.
-    s=s.replace('    flags.Wait(first ? PRE1 : PRE2, tile.sequence);','    flags.Wait(first ? PRE1 : PRE2, tile.sequence);\n    const auto compute = flags.trace.Begin(first ? G1 : G2, tile.sequence);',1)
-    s=s.replace('    flags.Arrive(first ? G1 : G2,','    flags.trace.End(first ? G1 : G2, tile.sequence, compute);\n    flags.Arrive(first ? G1 : G2,',1)
-    s=s.replace('    if (first) flags.Wait(RECEIVED, tile.sequence);','    if (first) flags.Wait(RECEIVED, tile.sequence);\n    const auto prep = flags.trace.Begin(first ? PRE1 : PRE2, tile.sequence);',1)
-    s=s.replace('    flags.Arrive(first ? PRE1 : PRE2,','    flags.trace.End(first ? PRE1 : PRE2, tile.sequence, prep);\n    flags.Arrive(first ? PRE1 : PRE2,',1)
-    s=s.replace('        InvalidateScalarInputs(slot + w.tileCounts);','        const auto activation = flags.trace.Begin(7, tile.sequence);\n        InvalidateScalarInputs(slot + w.tileCounts);',1)
-    s=s.replace('        // PRE2 reads the same row partition','        flags.trace.End(7, tile.sequence, activation);\n        // PRE2 reads the same row partition',1)
-    s=s.replace('        OutputTile(slot,','        const auto output = flags.trace.Begin(OUTPUT, tile.sequence);\n        OutputTile(slot,',1)
-    s=s.replace('        flags.Arrive(OUTPUT,','        flags.trace.End(OUTPUT, tile.sequence, output);\n        flags.Arrive(OUTPUT,',1)
-    assert s.count('flags.trace.Begin(RECEIVED, next.sequence)')==2
-    cpp=(repo/p/'afd_mega_moe_ffn.cpp').read_text()
-    cpp=cpp.replace('PipelineFlags flags(scratch + w.flags);','PipelineFlags flags(scratch + w.flags, scratch + w.bytes);\n        const auto entry = flags.trace.Begin(29, 0);')
-    cpp=cpp.replace('                rx.Process(false);','                const auto traceDrStart = flags.trace.Begin(30, 0);\n                rx.Process(false);\n                flags.trace.End(30, 0, traceDrStart);')
-    cpp=cpp.replace('        const auto layerId =','        flags.trace.End(29, 0, entry);\n        const auto validation = flags.trace.Begin(31, 0);\n        const auto layerId =',1)
-    cpp=cpp.replace('        TileCursor cursor(', '        flags.trace.End(31, 0, validation);\n        TileCursor cursor(',1)
-    cpp=cpp.replace('        SyncAll<false>();\n        WriteCompletion(completion, 0, pipe);','        const auto exit = flags.trace.Begin(33, 0);\n        SyncAll<false>();\n        flags.trace.End(33, 0, exit);\n        flags.trace.Finish();\n        WriteCompletion(completion, 0, pipe);')
-    assert cpp.count('flags.trace.Finish()')==1
-
-    if s == original or 'flags.trace.Finish()' not in cpp:
-        raise ValueError('unsupported MegaMoe diagnostic source')
+    original = (repo/p/'afd_mega_moe_pipeline.h').read_text()
+    cpp = (repo/p/'afd_mega_moe_ffn.cpp').read_text()
+    packed = 'const auto layer = ReadControl(scratch + w.validation, 0);' in cpp
+    s = replace_checked(original, 'class PipelineFlags {', trace_class+'\nclass PipelineFlags {')
+    s = replace_checked(s, 'PipelineFlags(GM_ADDR base) : base_(base) {}',
+                        'PipelineFlags(GM_ADDR base, GM_ADDR tail) : trace(tail), base_(base) {}')
+    s = replace_checked(s, 'public:\n    __aicore__ explicit PipelineFlags',
+                        'public:\n    PhaseTrace trace;\n    __aicore__ explicit PipelineFlags')
+    s = replace_checked(s, '        WaitAt(Address(stage, 0), sequence);',
+                        '        const auto start = trace.Begin(8 + stage, sequence);\n'
+                        '        WaitAt(Address(stage, 0), sequence);\n'
+                        '        trace.End(8 + stage, sequence, start);')
+    s = replace_checked(s, '        if ASCEND_IS_AIC {\n            Fence<HardEvent::FIX_S>();',
+                        '        const auto drain = trace.Begin(15 + stage, sequence);\n'
+                        '        if ASCEND_IS_AIC {\n            Fence<HardEvent::FIX_S>();')
+    s = replace_checked(s, '        // Leaders publish after their members;',
+                        '        trace.End(15 + stage, sequence, drain);\n'
+                        '        const auto publish = trace.Begin(22 + stage, sequence);\n'
+                        '        // Leaders publish after their members;')
+    s = replace_checked(s, '    }\nprivate:\n    __aicore__ GM_ADDR Address',
+                        '        trace.End(22 + stage, sequence, publish);\n'
+                        '    }\nprivate:\n    __aicore__ GM_ADDR Address')
+    s = replace_checked(s, '        transport.Receive(next);',
+                        '        const auto rx = flags.trace.Begin(RECEIVED, next.sequence);\n'
+                        '        transport.Receive(next);\n'
+                        '        flags.trace.End(RECEIVED, next.sequence, rx);', 2)
+    s = replace_checked(s, '        transport.Send(tile);',
+                        '        const auto tx = flags.trace.Begin(SENT, tile.sequence);\n'
+                        '        transport.Send(tile);\n        flags.trace.End(SENT, tile.sequence, tx);')
+    s = replace_checked(s, '    transport.Finish();',
+                        '    const auto finish = flags.trace.Begin(32, 0);\n'
+                        '    transport.Finish();\n    flags.trace.End(32, 0, finish);')
+    s = replace_checked(s, '    flags.Wait(first ? PRE1 : PRE2, tile.sequence);',
+                        '    flags.Wait(first ? PRE1 : PRE2, tile.sequence);\n'
+                        '    const auto compute = flags.trace.Begin(first ? G1 : G2, tile.sequence);')
+    s = replace_checked(s, '    flags.Arrive(first ? G1 : G2,',
+                        '    flags.trace.End(first ? G1 : G2, tile.sequence, compute);\n'
+                        '    flags.Arrive(first ? G1 : G2,')
+    wait = '    flags.Wait(RECEIVED, tile.sequence);' if packed else '    if (first) flags.Wait(RECEIVED, tile.sequence);'
+    stage = 'PRE1' if packed else 'first ? PRE1 : PRE2'
+    s = replace_checked(s, wait, wait+f'\n    const auto prep = flags.trace.Begin({stage}, tile.sequence);')
+    s = replace_checked(s, f'    flags.Arrive({stage},',
+                        f'    flags.trace.End({stage}, tile.sequence, prep);\n    flags.Arrive({stage},')
+    s = replace_checked(s, '        InvalidateScalarInputs(slot + w.tileCounts);',
+                        '        const auto activation = flags.trace.Begin(7, tile.sequence);\n'
+                        '        InvalidateScalarInputs(slot + w.tileCounts);')
+    activation_end = ('        // The rounded INT8 activation' if packed else '        // PRE2 reads the same row partition')
+    s = replace_checked(s, activation_end,
+                        '        flags.trace.End(7, tile.sequence, activation);\n'+activation_end)
+    s = replace_checked(s, '        OutputTile(slot,',
+                        '        const auto output = flags.trace.Begin(OUTPUT, tile.sequence);\n        OutputTile(slot,')
+    s = replace_checked(s, '        flags.Arrive(OUTPUT,',
+                        '        flags.trace.End(OUTPUT, tile.sequence, output);\n        flags.Arrive(OUTPUT,')
+    cpp = replace_checked(cpp, 'PipelineFlags flags(scratch + w.flags);',
+                          'PipelineFlags flags(scratch + w.flags, scratch + w.bytes);\n'
+                          '        const auto entry = flags.trace.Begin(29, 0);')
+    cpp = replace_checked(cpp, '                rx.Process(false);',
+                          '                const auto traceDrStart = flags.trace.Begin(30, 0);\n'
+                          '                rx.Process(false);\n                flags.trace.End(30, 0, traceDrStart);')
+    if packed:
+        cpp = replace_checked(cpp, '                const auto result = ValidateTransaction(',
+                              '                const auto validation = flags.trace.Begin(31, 0);\n'
+                              '                const auto result = ValidateTransaction(')
+        cpp = replace_checked(cpp, '                StoreControl(scratch + w.validation, 0, result);',
+                              '                flags.trace.End(31, 0, validation);\n'
+                              '                StoreControl(scratch + w.validation, 0, result);')
+        entry_end = '        const auto layer = ReadControl(scratch + w.validation, 0);'
+        cpp = replace_checked(cpp, entry_end, '        flags.trace.End(29, 0, entry);\n'+entry_end)
+    else:
+        cpp = replace_checked(cpp, '        const auto layerId =',
+                              '        flags.trace.End(29, 0, entry);\n'
+                              '        const auto validation = flags.trace.Begin(31, 0);\n'
+                              '        const auto layerId =')
+        cpp = replace_checked(cpp, '        TileCursor cursor(',
+                              '        flags.trace.End(31, 0, validation);\n        TileCursor cursor(')
+    cpp = replace_checked(cpp, '        SyncAll<false>();\n        WriteCompletion(completion, 0, pipe);',
+                          '        const auto exit = flags.trace.Begin(33, 0);\n        SyncAll<false>();\n'
+                          '        flags.trace.End(33, 0, exit);\n        flags.trace.Finish();\n'
+                          '        WriteCompletion(completion, 0, pipe);')
+    # Validate every anchor before writing either diagnostic file.
     (repo/p/'afd_mega_moe_pipeline.h').write_text(s)
     (repo/p/'afd_mega_moe_ffn.cpp').write_text(
         '#define AFD_TRACE_NATIVE 0\n#define AFD_TRACE_SPARSE 0\n' + cpp)

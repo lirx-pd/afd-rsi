@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-26",
+  "task": "afd-mrv2-async",
+  "original_job": "runs/pipeline-20261025-191954",
+  "original_status": "baseline_failed",
+  "original_calls": 0,
+  "root_cause": "unchecked diagnostic overlay missed changed expert-packed entry/prepare anchors",
+  "controller_hash": "79ea091ed42575056be20e643d55640728eef4ee4dba3cb42b743ff72250cf42",
+  "foundation_manifest_sha256": "432855dfda02aea458efcb3b04143867c8b9a2ab060cc6c05a18e69a764c5059",
+  "local_regression": {
+    "passed": 160,
+    "skipped": 2,
+    "seconds": 527.67
+  },
+  "final_overlay_session_tests": {
+    "passed": 8
+  },
+  "real_codex": {
+    "cli": "0.164.0",
+    "thread_id": "01a1759f-b885-7ac3-bea9-01cfdefdf7a5",
+    "models": [
+      "gpt-6.1-sol/medium",
+      "gpt-6-astra/xhigh",
+      "gpt-6.1-sol/xhigh"
+    ],
+    "same_context_verified": true
+  },
+  "artifacts": "../results/afd-rsi-repair-20261026",
+  "hardware_validation": {
+    "status": "passed",
+    "scope": "maintenance profiling on original failed campaign frozen source/artifacts; no optimization/E2E",
+    "health_devices": [
+      0,
+      1,
+      2
+    ],
+    "exit_code": 0,
+    "ffn_ranks": [
+      1,
+      2
+    ],
+    "workload_cases": 7,
+    "transactions_per_rank": {
+      "rank-1": 8,
+      "rank-2": 7
+    },
+    "trace_cores": 72,
+    "metadata_validation_core": 0,
+    "archive_sha256": "9c43258bd2105f63f0a21ed4e7687222c825ba932144896ddab2f788fba99ff3",
+    "archive_files": 88
+  }
+}

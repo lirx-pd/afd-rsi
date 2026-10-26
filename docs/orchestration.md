@@ -14,7 +14,8 @@ prepare/search/propose/resume/export 入口继续可用。无需在 Codex 对话
    仅状态变化时输出；完整事件保存在 events.jsonl。
 5. 需要提案时下载并校验请求 SHA，在提案机调用已有登录的 Codex CLI。Astra xhigh
    分析、Sol 6.1 xhigh 写补丁；有限的 CLI 调用结束后，提交补丁并启动执行端验证。
-   设备测试期间只有普通进程轮询，不保留模型会话，不消耗模型轮次等待。
+   同一任务保存一个 thread ID，分析、编码和后续轮次均恢复该对话。每次调用结束后退出 CLI；
+   设备测试期间只有普通进程轮询，不消耗模型轮次等待。
 6. 框架双 PASS 才替换 best。结束后自动导出、打包和下载，核对归档及文件哈希。
    本地 results/ 包含 best-export 和实验记录；真实源码不自动修改。
 
@@ -56,3 +57,17 @@ workdir 为执行端持久化父目录，自动创建唯一 rsi-ID 子目录；J
 可避免同一阶段重复提交。不要删除 JOB、源码快照或远端 campaign 来重置预算。
 需要保持提案机运行；本功能不是系统服务，也不提供跨 boot 自动恢复或调度容灾。
 后台任务不自动停止 iTASK 或杀死其他作业。CPU 合成验证只验证编排，不是 NPU 证据。
+
+## Codex 对话保留
+
+新任务的 `JOB/codex-session/session.json` 保存 thread ID 和 campaign 归属，
+`workspace/` 是稳定的只读提案工作目录。首次 `codex exec` 建立会话，随后
+`codex exec resume THREAD_ID` 恢复同一对话；分析仍用 Astra xhigh，编码仍用 Sol xhigh。
+每轮的 schema、analysis.json、命令、事件、stderr 和用量保存在对应提案目录。
+当轮 request.json 是当前源码/证据的依据，不能因为保留历史而引用过期 ID。
+
+直接 search 运行时，会话位于 campaign 的 `search/codex-session/`。
+手工文件交换时使用 `propose REQUEST --output OUT --session-dir SESSION_DIR`，
+同一任务的各轮指定同一目录；不同 campaign 禁止共享。
+恢复失败、thread ID 改变或初次启动中断都明确失败，不自动新建对话或退还调用额度。
+已冻结旧任务继续使用原适配器；本次修复须新建任务，不改写旧快照。

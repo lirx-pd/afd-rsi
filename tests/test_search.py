@@ -320,6 +320,7 @@ def test_codex_adapter_routes_models_and_constrains_evidence(tmp_path, monkeypat
         'if scenario == "bad_experiment": proposal["experiment"]["falsification"]=""\n'
         'if not analysis: proposal["patch"]="test diff"\n'
         'Path(sys.argv[sys.argv.index("--output-last-message")+1]).write_text(json.dumps({"stop":stop,"reason":"done","proposals":[] if stop else [proposal]}))\n'
+        'print(json.dumps({"type":"thread.started","thread_id":"12345678-1234-4234-8234-123456789abc"}))\n'
         'print(json.dumps({"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":3}}))\n')
     executable.chmod(0o755)
     monkeypatch.setenv('PATH', str(executable.parent) + os.pathsep + os.environ['PATH'])
