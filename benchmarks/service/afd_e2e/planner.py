@@ -229,7 +229,7 @@ def _service_command(
             )
         )
     native_dbo = case.dbo or (case.comm == "async" and case.moe_ubatching)
-    if "long-decode" in case.performance.scenarios and role == "attention":
+    if any("long-decode" in name for name in case.performance.scenarios) and role == "attention":
         command.extend(("--stream-interval", "1"))
     if native_dbo and (case.comm != "async" or role == "attention"):
         if case.dbo:

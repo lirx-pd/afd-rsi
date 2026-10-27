@@ -120,7 +120,7 @@ def parser() -> argparse.ArgumentParser:
             "--perf-mode", choices=("matrix", "mixed", "both"), default="both"
         )
         sub.add_argument("--perf-scenarios", default="matrix",
-                         help="Comma-separated matrix,fixed-dp-prefill,long-decode; one service startup")
+                         help="Comma-separated matrix,fixed-dp-prefill,long-decode,mixed-prefill,heavy-prefill,native-long-decode; one service startup")
         sub.add_argument("--perf-dp-input-lens", help="Prefill input tokens per Attention DP; default 16384,512,...")
         sub.add_argument("--perf-decode-context", type=int, default=32768)
         sub.add_argument("--perf-decode-tokens", type=int, default=512)

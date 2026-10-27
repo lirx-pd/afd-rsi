@@ -34,13 +34,13 @@ Ascend 配方默认先做算子数值和配对性能筛选，再独立复测；�
 提案必须给出测量证据、改动机制、预测、否定条件和风险。可用 `compare --operator-only`
 手动只测算子，结果不能替代最终晋升资格。详见 [分层验证](docs/staged-validation.md)。
 
-专项配方 `recipes/ascend_pipeline_scenarios.toml` 新增固定 DP 不均衡 prefill 和
-长上下文 decode TPOT，同一次服务启动完成，详见 [专项服务指标](docs/service-scenarios.md)。
+专项配方 `recipes/ascend_pipeline_scenarios.toml` 只测试原生路由的 32K→512 六并发
+decode、16K/512 混合 prefill 和 64K 重载 prefill，同一次服务启动完成，详见 [专项服务指标](docs/service-scenarios.md)。
 
 ## 一条命令启动优化
 
 ```bash
-PYTHONPATH=src python3 -m afd_rsi optimize recipes/ascend_graph.toml --executor itask --task YOUR_TASK --workdir /absolute/persistent/workdir --setup-script /usr/local/Ascend/cann-9.1.0/set_env.sh --output runs/optimization-001
+PYTHONPATH=src python3 -m afd_rsi optimize recipes/ascend_pipeline_scenarios.toml --executor itask --task YOUR_TASK --workdir /absolute/persistent/workdir --setup-script /usr/local/Ascend/cann-9.1.0/set_env.sh --output runs/optimization-001
 ```
 
 先按现场配置 recipe 中的目标源码、设备、权重、离线数据集与网络。框架会启动已有
@@ -58,7 +58,9 @@ PYTHONPATH=src python3 -m afd_rsi optimize resume runs/optimization-001
 简要进度在 `worker.log`，完整状态与事件在 `status.json` / `events.jsonl`；结束后
 自动下载并校验 `results.tar.gz`，导出最佳补丁但不自动修改真实源码。默认轮询 60 秒，
 可用 `--poll-seconds` 设置。任务不会自动停止或删除。一次服务启动内完成 GSM8K
-与默认 9 点 prefill 矩阵，套件间隔 5 秒、点间隔 3 秒；等待不计入性能样本。
+与配方选择的性能场景；`ascend_pipeline_scenarios.toml` 只测原生路由的六并发
+32K→512 decode、16K/512 混合 prefill 和 128 请求的 64K 重载 prefill，
+不跑小 prefill 矩阵。套件间隔 5 秒、点间隔 3 秒；等待不计入性能样本。
 前约 2/3 轮允许较深的协调优化，后期收敛为小改动；全部验收门槛保持不变。
 详细行为、恢复限制见 [统一后台入口](docs/orchestration.md)。
 

@@ -186,6 +186,9 @@ def report_text(summary: dict) -> str:
                 ))
         for scenario in performance.get('scenarios', []):
             lines.append(f"Scenario {scenario['id']}: {scenario['status']}")
+            if scenario.get('configuration', {}).get('routing') == 'native':
+                lines.append(f"- Native routing: aggregate TTFT {scenario.get('ttft_ms')}; workload groups {scenario.get('per_workload_group')}")
+                lines.append(f"- Actual DP counters: {scenario.get('counters')}; requests/s {scenario.get('requests_per_s')}; input tokens/s {scenario.get('input_tokens_per_s')}")
             for dp in scenario.get('per_dp', []):
                 lines.append(f"  DP{dp['dp_rank']} input={dp['input_tokens']} TTFT p50={dp['ttft_ms']['p50']:.3f} ms")
             if 'common_window_tpot_ms' in scenario:

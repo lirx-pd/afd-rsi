@@ -270,3 +270,149 @@ def test_audit_uses_the_frozen_scenario_validator(modules, tmp_path):
     with pytest.raises(ValueError, match='selected frozen validator'):
         service_metrics(summary, config, run_dir=tmp_path, foundation=frozen)
     assert service_metrics(summary, config, run_dir=tmp_path)['scenarios']
+
+
+def native_case(modules):
+    import tomllib
+    recipe = tomllib.loads((ROOT / 'recipes/ascend_pipeline_scenarios.toml').read_text())
+    return modules[0].from_args(modules[5]().parse_args(['plan', '--repo', '/fixture', *recipe['service']['args']]))
+
+
+def native_records(contract, warmup=False):
+    from afd_e2e.scenario_contract import request_counts
+    result = []
+    output = contract['warmup_output_tokens' if warmup else 'output_tokens']
+    for group, count in enumerate(request_counts(contract, warmup)):
+        for index in range(count):
+            record = dict(workload_group=group, index=index, phase='warmup' if warmup else 'measured',
+                          input_tokens=contract['input_lens'][group], input_target=contract['input_lens'][group],
+                          output_tokens=output, output_target=output, status='passed', headers={}, ttft_ms=100,
+                          sent_at=0.01 * (index * 3 + group), finished_at=200 + index)
+            if output > 1:
+                record.update(token_times=[1 + i * .25 for i in range(output)], tpot_ms=250, stream_chunks=output)
+            result.append(record)
+    return result
+
+
+def test_native_recipe_contains_only_three_measured_targets(modules):
+    case = native_case(modules)
+    plan = modules[4].describe(case)
+    assert plan['performance_points'] == []
+    contracts = case.performance.scenario_settings
+    assert list(contracts) == ['native-long-decode', 'mixed-prefill', 'heavy-prefill']
+    assert contracts['native-long-decode']['input_lens'] == [32768] * 3
+    assert contracts['native-long-decode']['request_counts'] == [2, 2, 2]
+    assert contracts['mixed-prefill']['request_counts'] == [8, 8, 8]
+    assert contracts['mixed-prefill']['input_lens'] == [16384, 512, 512]
+    assert sum(contracts['heavy-prefill']['request_counts']) == 128
+    assert contracts['heavy-prefill']['input_lens'] == [65536] * 3
+    assert case.max_model_len >= 65537
+    assert '--stream-interval' in plan['services'][0]['command']
+    for contract in contracts.values():
+        assert contract['routing'] == 'native'
+
+
+@pytest.mark.parametrize('name', ['native-long-decode', 'mixed-prefill', 'heavy-prefill'])
+def test_native_reduction_matches_archived_service_counters(modules, name):
+    api = modules[1]
+    contract = native_case(modules).performance.scenario_settings[name]
+    snapshots = json.loads((ROOT / 'tests/fixtures/native_scenario_counters.json').read_text())[name]
+    measured = native_records(contract)
+    result = api.summarize(name, contract, measured, snapshots['before'], snapshots['after'])
+    assert 'per_dp' not in result and result['requests'] == sum(contract['request_counts'])
+    assert sum(r['requests'] for r in result['counters']) == len(measured)
+    api.counter_delta(snapshots['before_warmup'], snapshots['before'], contract, warmup=True)
+    assert result['requests_per_s'] > 0
+    measured[0]['headers'] = {'X-data-parallel-rank': '0'}
+    with pytest.raises(ValueError, match='request failed'):
+        api.summarize(name, contract, measured, snapshots['before'], snapshots['after'])
+
+
+def test_native_counter_reset_preemption_and_bad_mix_rejected(modules):
+    api = modules[1]
+    contract = native_case(modules).performance.scenario_settings['mixed-prefill']
+    snapshots = json.loads((ROOT / 'tests/fixtures/native_scenario_counters.json').read_text())['mixed-prefill']
+    before = snapshots['before']
+    for after in (before, snapshots['after'].replace('vllm:num_preemptions_total', 'vllm:missing')):
+        with pytest.raises(ValueError):
+            api.counter_delta(before, after, contract)
+
+
+def test_native_six_concurrent_requests_do_not_pin_dp(modules, monkeypatch):
+    import io
+    scenario = modules[2]
+    contract = native_case(modules).performance.scenario_settings['native-long-decode']
+    active = peak = 0
+
+    async def stream(client, url, body, record, headers):
+        nonlocal active, peak
+        assert headers == {} and 'dp_rank' not in record
+        assert body['max_tokens'] == 512 and len(body['prompt']) == 32768
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0)
+        record.update(status='passed', input_tokens=32768, output_tokens=512, ttft_ms=100)
+        active -= 1
+
+    monkeypatch.setattr(scenario, 'stream_request', stream)
+    result = asyncio.run(scenario.requests(None, 'http://fixture', 'model', [1,2], 'native-long-decode',
+                                          contract, io.StringIO(), 10, warmup=False))
+    assert len(result) == peak == 6
+
+
+def test_native_raw_evidence_and_throughput_comparison_direction(modules, tmp_path):
+    from afd_rsi.evaluate import evaluate
+    case = native_case(modules)
+    configuration = json.loads(json.dumps(case.to_dict()))
+    snapshots = json.loads((ROOT / 'tests/fixtures/native_scenario_counters.json').read_text())
+    performance = dict(status='passed', configuration=configuration['performance'], points=[], scenarios=[])
+    for name, contract in configuration['performance']['scenario_settings'].items():
+        folder = tmp_path / 'performance/scenarios' / name
+        folder.mkdir(parents=True)
+        warm, measured = native_records(contract, True), native_records(contract)
+        (folder / 'requests.jsonl').write_text('\n'.join(json.dumps(r) for r in warm + measured) + '\n')
+        before = snapshots[name]
+        for file, key in [('before-warmup.prom', 'before_warmup'), ('before.prom', 'before'), ('after.prom', 'after')]:
+            (folder / file).write_text(before[key])
+        performance['scenarios'].append(modules[1].summarize(name, contract, measured, before['before'], before['after']))
+    summary = {'performance': performance}
+    configuration['tests'] = ['perf']
+    metrics = service_metrics(summary, configuration, run_dir=tmp_path)
+    faster = copy.deepcopy(metrics)
+    for scenario in faster['scenarios']:
+        scenario['requests_per_s'] *= 2
+    observations = [dict(side=side, phase=phase, status='valid', checks_passed=True, value=value,
+                         service_metrics=copy.deepcopy(metric))
+                    for side, value, metric in [('baseline', 10, metrics), ('candidate', 8, faster)]
+                    for phase in ('correctness', 'service', 'benchmark')]
+    plan = dict(backend='ascend', scope='native', unit='us', repetitions=1, min_gain_pct=2, service={})
+    result = evaluate(plan, observations)
+    rates = [r for r in result['service_scenario_comparison'] if r['metric'] == 'requests_per_s']
+    assert len(rates) == 3 and all(r['gain_pct'] == 100 for r in rates)
+    summary['performance']['scenarios'][0]['requests_per_s'] = 1
+    with pytest.raises(ValueError, match='raw requests'):
+        service_metrics(summary, configuration, run_dir=tmp_path)
+
+
+def test_native_heavy_schedules_all_128_at_qps3_without_affinity(modules, monkeypatch):
+    import io
+    scenario = modules[2]
+    contract = native_case(modules).performance.scenario_settings['heavy-prefill']
+    now = 0.0
+    sleeps = []
+
+    async def sleep(seconds):
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    async def stream(client, url, body, record, headers):
+        assert headers == {} and len(body['prompt']) == 65536 and body['max_tokens'] == 1
+        record.update(status='passed', input_tokens=65536, output_tokens=1, ttft_ms=100)
+
+    monkeypatch.setattr(scenario.time, 'perf_counter', lambda: now)
+    monkeypatch.setattr(scenario.asyncio, 'sleep', sleep)
+    monkeypatch.setattr(scenario, 'stream_request', stream)
+    records = asyncio.run(scenario.requests(None, 'http://fixture', 'model', [1], 'heavy-prefill', contract,
+                                           io.StringIO(), 100, warmup=False))
+    assert len(records) == 128 and sum(sleeps) == pytest.approx(127 / 3)

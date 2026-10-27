@@ -1,0 +1,32 @@
+{
+  "source_revision": "5030e9d",
+  "scope": "external experiment workload definitions; not an RSI promotion or reusable measured baseline",
+  "plan_sha256": "0cd33d9dc1aa4e0f8534be022ef7e0619857571821b4ba7fdcd62475a1178840",
+  "counter_fixture_sha256": "c66ed44a0de25cd1915788eaa4f5f5b001f6089a2784d3ae2acf58fb25a19a56",
+  "routing": "native; client workload groups do not identify actual DP ranks",
+  "targets": {
+    "decode": {
+      "input": 32768,
+      "output": 512,
+      "concurrency": 6,
+      "warmups": 6,
+      "warmup_output": 32
+    },
+    "mixed_prefill": {
+      "heavy_inputs": 8,
+      "heavy_length": 16384,
+      "light_inputs": 16,
+      "light_length": 512,
+      "output": 1,
+      "qps": 3,
+      "warmups": 3
+    },
+    "heavy_prefill": {
+      "input": 65536,
+      "output": 1,
+      "requests": 128,
+      "qps": 3,
+      "warmups": 3
+    }
+  }
+}

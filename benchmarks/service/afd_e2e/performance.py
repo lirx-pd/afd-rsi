@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .reporting import write_json
 from .routing import routes
-from .scenario_contract import distribution
+from .scenario_contract import distribution, request_counts
 
 SEED = 42
 METRICS = ("ttft_ms", "tpot_ms", "e2e_ms", "client_queue_ms", "scheduler_lag_ms")
@@ -332,7 +332,7 @@ async def evaluate(config: dict, run_dir: Path) -> dict:
     try:
         capacity = max(settings["concurrencies"])
         for contract in settings.get("scenario_settings", {}).values():
-            capacity = max(capacity, contract['dp'] * contract['requests_per_dp'])
+            capacity = max(capacity, sum(request_counts(contract)))
         async with httpx.AsyncClient(
             timeout=config["request_timeout"],
             trust_env=False,

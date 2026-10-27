@@ -4,13 +4,13 @@ import math
 import re
 import statistics
 
-NAMES = {'matrix', 'fixed-dp-prefill', 'long-decode'}
+NAMES = {'matrix', 'fixed-dp-prefill', 'long-decode', 'mixed-prefill', 'heavy-prefill', 'native-long-decode'}
 COUNTERS = ('prompt_tokens_total', 'generation_tokens_total', 'num_preemptions_total')
 
 
 def scenario_settings(args, selected, dp):
     if not selected or len(set(selected)) != len(selected) or not set(selected) <= NAMES:
-        raise ValueError('perf-scenarios requires unique matrix,fixed-dp-prefill,long-decode names')
+        raise ValueError('perf-scenarios requires unique supported scenario names')
     if set(selected) == {'matrix'}:
         if args.perf_dp_input_lens:
             raise ValueError('perf-dp-input-lens requires fixed-dp-prefill')
@@ -31,7 +31,27 @@ def scenario_settings(args, selected, dp):
             output_tokens=args.perf_decode_tokens, requests_per_dp=2, warmup_per_dp=2,
             warmup_output_tokens=32, rps=None, dp=dp, window_trim_seconds=1.0,
             min_window_tokens=128)
+    for name in selected:
+        if name not in {'mixed-prefill', 'heavy-prefill', 'native-long-decode'}:
+            continue
+        if dp != 3:
+            raise ValueError('native service targets require Attention DP3/TP4 and FFN EP4')
+        inputs, counts, output, warm_output, rate = {
+            'mixed-prefill': ([16384, 512, 512], [8, 8, 8], 1, 1, 3),
+            'heavy-prefill': ([65536] * 3, [43, 43, 42], 1, 1, 3),
+            'native-long-decode': ([32768] * 3, [2, 2, 2], 512, 32, None),
+        }[name]
+        result[name] = dict(routing='native', input_lens=inputs, request_counts=counts,
+                            warmup_counts=[2 if output > 1 else 1] * 3,
+                            output_tokens=output, warmup_output_tokens=warm_output,
+                            rps=rate, dp=dp, window_trim_seconds=1.0, min_window_tokens=128)
     return result
+
+
+def request_counts(contract, warmup=False):
+    if contract.get('routing') == 'native':
+        return contract['warmup_counts' if warmup else 'request_counts']
+    return [contract['warmup_per_dp' if warmup else 'requests_per_dp']] * contract['dp']
 
 
 def distribution(values):
@@ -65,8 +85,29 @@ def counters(text, dp):
 
 def counter_delta(before, after, contract, *, warmup=False):
     old, new = counters(before, contract['dp']), counters(after, contract['dp'])
-    count = contract['warmup_per_dp' if warmup else 'requests_per_dp']
+    counts = request_counts(contract, warmup)
     output = contract['warmup_output_tokens' if warmup else 'output_tokens']
+    if contract.get('routing') == 'native':
+        result = []
+        for dp in range(contract['dp']):
+            delta = {key: new[key][dp] - old[key][dp] for key in COUNTERS}
+            if any(value < 0 for value in delta.values()) or delta['num_preemptions_total']:
+                raise ValueError('native scenario counters reset or preemptions occurred')
+            completed = delta['generation_tokens_total'] / output
+            if not completed.is_integer():
+                raise ValueError('native scenario generation count mismatch')
+            low, high = min(contract['input_lens']), max(contract['input_lens'])
+            prompt = delta['prompt_tokens_total']
+            if not low * completed <= prompt <= high * completed or (
+                    high == low and prompt != low * completed) or (
+                    high != low and (prompt - low * completed) % (high - low)):
+                raise ValueError('native scenario per-engine input mix mismatch')
+            result.append(dict(dp_rank=dp, requests=int(completed), **delta))
+        if (sum(row['prompt_tokens_total'] for row in result) != sum(n * length for n, length in zip(counts, contract['input_lens']))
+                or sum(row['generation_tokens_total'] for row in result) != sum(counts) * output):
+            raise ValueError('native scenario total counters differ from workload')
+        return result
+    count = counts[0]
     result = []
     for dp, length in enumerate(contract['input_lens']):
         delta = {key: new[key][dp] - old[key][dp] for key in COUNTERS}
@@ -78,13 +119,15 @@ def counter_delta(before, after, contract, *, warmup=False):
 
 
 def verify_requests(records, contract, *, warmup=False):
-    count = contract['warmup_per_dp' if warmup else 'requests_per_dp']
+    counts = request_counts(contract, warmup)
+    key = 'workload_group' if contract.get('routing') == 'native' else 'dp_rank'
     output = contract['warmup_output_tokens' if warmup else 'output_tokens']
-    if len(records) != contract['dp'] * count:
+    if len(records) != sum(counts):
         raise ValueError('scenario request count mismatch')
     per_dp = []
     for dp, length in enumerate(contract['input_lens']):
-        group = [r for r in records if type(r.get('dp_rank')) is int and r['dp_rank'] == dp]
+        count = counts[dp]
+        group = [r for r in records if type(r.get(key)) is int and r[key] == dp]
         if len(group) != count or {r.get('index') for r in group} != set(range(count)):
             raise ValueError('scenario DP request identities are missing or duplicated')
         for record in group:
@@ -92,12 +135,12 @@ def verify_requests(records, contract, *, warmup=False):
                     or record.get('status') != 'passed' or record.get('input_tokens') != length
                     or record.get('output_tokens') != output or record.get('input_target') != length
                     or record.get('output_target') != output
-                    or record.get('headers') != {'X-data-parallel-rank': str(dp)}):
+                    or record.get('headers') != ({} if key == 'workload_group' else {'X-data-parallel-rank': str(dp)})):
                 raise ValueError('scenario request failed or differs from fixed DP contract')
             value = record.get('ttft_ms')
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError('scenario TTFT must be finite and positive')
-        per_dp.append(dict(dp_rank=dp, requests=count, input_tokens=length, output_tokens=output,
+        per_dp.append(dict({key: dp}, requests=count, input_tokens=length, output_tokens=output,
                            ttft_ms=distribution([r['ttft_ms'] for r in group])))
     return per_dp
 
@@ -123,13 +166,27 @@ def common_window(records, contract):
 
 
 def summarize(name, contract, records, before, after):
-    records = sorted(records, key=lambda r: (r['dp_rank'], r['index']))
+    group_key = 'workload_group' if contract.get('routing') == 'native' else 'dp_rank'
+    records = sorted(records, key=lambda r: (r[group_key], r['index']))
     per_dp = verify_requests(records, contract)
     delta = counter_delta(before, after, contract)
     result = dict(id=name, status='passed', configuration=contract, requests=len(records),
-                  per_dp=per_dp, counters=delta,
+                  counters=delta,
                   scope='client HTTP/SSE timings on fixed Attention DPs; not native kernel time')
-    if name == 'long-decode':
+    result['per_workload_group' if group_key == 'workload_group' else 'per_dp'] = per_dp
+    result['ttft_ms'] = distribution([r['ttft_ms'] for r in records])
+    if group_key == 'workload_group':
+        result['scope'] = 'native DP routing; workload groups are not actual DP ranks; client HTTP/SSE timings'
+        for record in records:
+            start, end = record.get('sent_at'), record.get('finished_at')
+            if (any(type(value) not in (int, float) or not math.isfinite(value) for value in (start, end))
+                    or end <= start):
+                raise ValueError('native scenario needs valid request lifetime timestamps')
+        elapsed = max(r['finished_at'] for r in records) - min(r['sent_at'] for r in records)
+        result.update(duration_seconds=elapsed, requests_per_s=len(records) / elapsed,
+                      input_tokens_per_s=sum(r['input_tokens'] for r in records) / elapsed)
+
+    if 'long-decode' in name:
         window, tpot = common_window(records, contract)
         request_values = []
         for record in records:
@@ -140,5 +197,6 @@ def summarize(name, contract, records, before, after):
             if record.get('stream_chunks') != contract['output_tokens'] or not math.isclose(value, expected, rel_tol=1e-9):
                 raise ValueError('decode request TPOT or event count differs from token timestamps')
             request_values.append(value)
-        result.update(window=window, common_window_tpot_ms=tpot, request_tpot_ms=distribution(request_values))
+        result.update(window=window, common_window_tpot_ms=tpot, request_tpot_ms=distribution(request_values),
+                      common_window_output_tokens_per_s=sum(window['tokens_per_request']) / (window['end'] - window['start']))
     return result

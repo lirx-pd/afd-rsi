@@ -36,6 +36,9 @@ workdir 为执行端持久化父目录，自动创建唯一 rsi-ID 子目录；J
 每个进入服务验收的候选/基线的加载产物必须独立验证，不能跨版本复用旧服务。每次启动的服务
 同时用于 smoke、30 条 GSM8K 和完整性能矩阵。默认 Ascend 配方为 prefill 输入
 128/512/2048，输出 1，并发 1/4/8，共 9 点。可用已有参数扩展输入/输出、并发和 RPS。
+当前 MegaMoe 专用配方 `ascend_pipeline_scenarios.toml` 已改为原生路由的
+32K→512 六并发 decode、16K/512 混合 prefill 和 64K 重载 prefill；
+不运行上述小矩阵，详见 [性能场景](service-scenarios.md)。
 `--test-interval` 在套件之间等待，`--perf-point-interval` 在矩阵点之间等待，均支持
 零和有限非负秒数。套件等待会检查服务仍存活；取消可中断等待并触发原有清理。
 单点失败会保存错误并尽可能继续后续点；最终 perf 仍为失败，不绕过验收。

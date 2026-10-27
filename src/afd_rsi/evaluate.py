@@ -85,13 +85,20 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
                 if a['id'] != b['id'] or a['configuration'] != b['configuration']:
                     raise ValueError('service scenario comparison contract mismatch')
                 rows = [(f"dp{r['dp_rank']}_ttft_p50_ms", r['ttft_ms']['p50'], s['ttft_ms']['p50'])
-                        for r, s in zip(a['per_dp'], b['per_dp'], strict=True)]
-                if a['id'] == 'long-decode':
+                        for r, s in zip(a.get('per_dp', []), b.get('per_dp', []), strict=True)]
+                if a['configuration'].get('routing') == 'native':
+                    rows.extend((f'ttft_{stat}_ms', a['ttft_ms'][stat], b['ttft_ms'][stat]) for stat in ('mean', 'p50', 'p90'))
+                    rows.extend((f'group{r["workload_group"]}_ttft_p50_ms', r['ttft_ms']['p50'], s['ttft_ms']['p50'])
+                                for r, s in zip(a['per_workload_group'], b['per_workload_group'], strict=True))
+                    rows.extend((key, a[key], b[key]) for key in ('requests_per_s', 'input_tokens_per_s',
+                                'common_window_output_tokens_per_s') if key in a)
+                if 'long-decode' in a['id']:
                     rows.extend((key + '_p50', a[key]['p50'], b[key]['p50'])
                                 for key in ('common_window_tpot_ms', 'request_tpot_ms'))
                 for metric, old, new in rows:
                     comparisons.append(dict(scenario=a['id'], metric=metric, baseline=old, candidate=new,
-                        gain_pct=(1 - new / old) * 100, claim='auxiliary fixed-DP HTTP/SSE metric; not native kernel time'))
+                        gain_pct=((new / old - 1) if metric.endswith('_per_s') else (1 - new / old)) * 100,
+                        claim='auxiliary service HTTP/SSE metric; not native kernel time'))
             if comparisons:
                 result['service_scenario_comparison'] = comparisons
     return result

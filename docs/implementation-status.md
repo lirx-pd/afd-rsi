@@ -98,3 +98,8 @@ GSM8K 27/30、候选补测 28/30，小 prefill 均 8/8，原生两侧数值与 p
 单服务复用、原始计数器/SSE 归约审计、对照报告及 Agent goal 完整串联。原生主指标不变。
 最终 iTASK CPU 协议测试 26 项通过；不是模型/NPU 性能实测，见
 [专项指标验证](validation/service-scenarios-20261025.md)。
+
+- 当前 pipeline-scenarios 配方仅运行原生路由的长 decode（32K→512、6 并发）、
+  混合 prefill（8×16K＋16×512、QPS3）、64K 重载 prefill（128 请求、QPS3）；
+  小 prefill 矩阵及临时 16K 重载点已从该配方移除。负载分组与实际 DP 分布分开审计；
+  吞吐、公共窗口 TPOT 和 TTFT 均进入比较及 Agent 上下文。原生晋升规则不变。

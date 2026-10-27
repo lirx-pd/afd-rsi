@@ -1,3 +1,32 @@
+# Current native-routing service targets
+
+The pipeline-scenarios recipe selects exactly native-long-decode, mixed-prefill
+and heavy-prefill. Small prefill matrices and the superseded 16K burst point are
+not selected. The [embedded workload record](native-service-targets.json) captures
+the completed external experiment specifications and provenance. Shapes, request
+mix and offered rate are reproduced; historical prompt text and measured gains
+are not imported as a new RSI baseline. Token prompts use this harness's fixed seed.
+
+- native-long-decode: six simultaneous 32768-input/512-output requests; six warmups
+  with 32 output tokens. Require one-token SSE events and a common decode window.
+- mixed-prefill: 24 requests, eight 16384 inputs and sixteen 512 inputs, output 1,
+  QPS3, three unmeasured shape-matched warmups.
+- heavy-prefill: 128 requests, each 65536 input and 1 output token, QPS3, three
+  warmups. No small client concurrency cap: allow up to 128 outstanding requests.
+
+All three use native routing without DP affinity headers. Client workload groups
+are not actual DP ranks. Require complete per-engine prompt/generation counters,
+nonnegative increments, exact aggregate usage, feasible per-engine token mixes
+and zero preemptions; report actual routing distribution. Archive raw requests,
+warmup and measured counter snapshots. Acceptance recomputes summaries with the
+frozen validator. Retain failures instead of silently shortening input or workload.
+Common-window TPOT and output tokens/s, aggregate/group prefill TTFT and input
+throughput enter reports and Agent context. Higher throughput means improvement;
+lower latency means improvement. Native screening/promotion gates remain unchanged.
+
+The historical fixed-DP protocols remain available explicitly and are described
+below; their results are not directly comparable to native-routing experiments.
+
 # Fixed-DP prefill and long-context decode
 
 These are optional final service performance scenarios. Keep native operator
