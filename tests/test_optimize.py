@@ -190,3 +190,94 @@ def test_results_include_diagnostic_compiler_logs_without_build_sources(tmp_path
         names = tar.getnames()
         assert str((build / 'build/stderr.log').relative_to(tmp_path)) in names
         assert not any(name.endswith('secret.o') for name in names)
+
+
+@pytest.mark.parametrize('client_status', ['completed', 'timeout', 'failed'])
+def test_task_start_preserves_receipt_and_reconciles_ready_pod(tmp_path, monkeypatch, client_status):
+    calls = []
+    ex = optimize.Executor(dict(executor='itask', task='task', workdir='/work', id='abc', python='python3',
+                               setup_script=None), tmp_path)
+    def execute(argv, cwd, output, timeout, env):
+        assert argv == ['itask-guian', 'start', 'task'] and timeout == 1800
+        write_json(output / 'process.json', dict(status=client_status, cleanup_complete=True))
+        (output / 'stdout.log').write_text('migration completed after 180 seconds')
+        return dict(status=client_status, cleanup_complete=True)
+    monkeypatch.setattr(optimize, 'execute', execute)
+    monkeypatch.setattr(ex, 'command', lambda argv, **kwargs: calls.append((argv, kwargs)) or '')
+    ex.start_task()
+    assert len(calls) == 1 and calls[0][0][-1] == 'true'
+    assert calls[0][1]['timeout'] == 30
+    receipt = next((tmp_path / 'task-start').glob('*/readiness.json'))
+    assert read_json(receipt) == {'ready': True, 'start_status': client_status}
+
+
+def test_task_start_does_not_retry_when_readiness_is_unknown(tmp_path, monkeypatch):
+    ex = optimize.Executor(dict(executor='itask', task='task', workdir='/work', id='abc', python='python3',
+                               setup_script=None), tmp_path)
+    monkeypatch.setattr(optimize, 'execute', lambda *args: dict(status='timeout', cleanup_complete=True))
+    def failure(*args, **kwargs):
+        raise RuntimeError('Pod not Ready')
+    monkeypatch.setattr(ex, 'command', failure)
+    with pytest.raises(RuntimeError, match='不要重复提交启动'):
+        ex.start_task()
+
+
+def test_worker_lifetime_lock_detects_unrecorded_exit(tmp_path):
+    import fcntl
+    from afd_rsi.runner import host_identity
+    write_json(tmp_path / 'worker.json', dict(host_identity=host_identity(), tag='fixture', pid=123))
+    value = dict(status='running', updated_at=0, progress={'state': {'calls': 0}})
+    with (tmp_path / '.worker.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        assert optimize.worker_running(tmp_path, value) is True
+        assert not optimize.describe_status(value, True)['stop_follow']
+    assert optimize.worker_running(tmp_path, value) is False
+    view = optimize.describe_status(value, False)
+    assert view['stop_follow'] and view['exit_code'] == 2 and '异常退出' in view['label']
+
+
+@pytest.mark.parametrize('status,search,best,code,label', [
+    ('error', '', None, 1, '失败'),
+    ('finished', 'baseline_failed', None, 1, '失败'),
+    ('finished', 'budget_exhausted', None, 0, '未获得'),
+    ('finished', 'agent_stopped', {'confirmation': {'attempt': 'fresh'}}, 0, '有独立确认'),
+])
+def test_human_status_distinguishes_terminal_results(status, search, best, code, label):
+    value = dict(status=status, progress=dict(state=dict(status=search), best=best))
+    view = optimize.describe_status(value, False)
+    assert view['stop_follow'] and view['exit_code'] == code and label in view['label']
+
+
+def test_status_json_and_human_error_have_nonzero_exit(tmp_path, capsys):
+    write_json(tmp_path / 'status.json', dict(status='error', error="itask-guian start timed out after 180 seconds"))
+    assert optimize.main(['status', str(tmp_path)]) == 1
+    text = capsys.readouterr().out
+    assert '失败' in text and 'iTASK 启动/迁移' in text and '180 seconds' in text
+    assert optimize.main(['status', str(tmp_path), '--json']) == 1
+    assert json.loads(capsys.readouterr().out)['monitor']['exit_code'] == 1
+
+
+def test_follow_detaches_without_stopping_worker(tmp_path, monkeypatch, capsys):
+    write_json(tmp_path / 'status.json', dict(status='running', updated_at=time.time(), heartbeat_at=time.time()))
+    write_json(tmp_path / 'job.json', dict(poll_seconds=1))
+    monkeypatch.setattr(optimize, 'worker_running', lambda *args: True)
+    def interrupt(_):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(optimize.time, 'sleep', interrupt)
+    assert optimize.watch(tmp_path, follow=True) == 130
+    assert '未向后台' in capsys.readouterr().out
+
+
+def test_unknown_host_is_not_reported_as_dead_worker(tmp_path):
+    write_json(tmp_path / 'worker.json', dict(host_identity={'host': 'foreign', 'boot': 'foreign'}, tag='x'))
+    value = dict(status='running', updated_at=0)
+    assert optimize.worker_running(tmp_path, value) is None
+    assert '状态未知' in optimize.describe_status(value, None)['label']
+
+
+def test_baseline_failure_waits_for_result_collection_and_old_activity_is_ignored():
+    value = dict(status='running', activity='collect', progress={'state': {'status': 'baseline_failed'}})
+    assert not optimize.describe_status(value)['stop_follow']
+    assert optimize.describe_status(value)['stage'] == '下载并校验结果'
+    value.update(activity='resume', progress={'step': {'side': 'baseline', 'phase': 'build'}})
+    assert '构建算子' in optimize.describe_status(value)['stage']

@@ -39,3 +39,18 @@ failure is not proof that the remote experiment stopped. Keep remote data and
 inspect receipts before recovery. Downloaded archives and their file hashes are
 checked before reporting completion. Oversized transfers fail visibly and leave
 raw evidence on the execution host. Task shutdown/deletion is never automatic.
+
+
+The status viewer distinguishes a live worker, an unrecorded worker exit, unknown
+host/boot, baseline failure, normal termination without improvement and a confirmed
+winner. A completed controller is not necessarily a successful optimization.
+Check the worker lifetime lock on its original host/boot; PID namespaces must not
+turn an invisible PID into a false death report. Successful polls update heartbeat
+without inventing device progress. Preserve JSON state with a separate monitor
+assessment; never rewrite old receipts or auto-retry based only on a stale label.
+
+Platform start has a 30-minute owned-process bound and independent full logs.
+After client completion/timeout reconcile Pod readiness with the official CLI
+before deploying; a 180-second client timeout cannot establish migration failure.
+Do not blindly resubmit start, reset storage, change tasks or relax device gates.
+CLI follow is an ordinary observer: Ctrl-C detaches it, not the background worker.

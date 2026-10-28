@@ -55,6 +55,8 @@ PYTHONPATH=src python3 -m afd_rsi optimize status runs/optimization-001 --follow
 PYTHONPATH=src python3 -m afd_rsi optimize resume runs/optimization-001
 ```
 
+启动命令末尾可加 `--follow` 持续查看中文进度，Ctrl-C 只退出查看。
+`optimize status JOB` 区分存活、异常退出、失败与完成；`--json` 输出结构化详情。
 简要进度在 `worker.log`，完整状态与事件在 `status.json` / `events.jsonl`；结束后
 自动下载并校验 `results.tar.gz`，导出最佳补丁但不自动修改真实源码。默认轮询 60 秒，
 可用 `--poll-seconds` 设置。任务不会自动停止或删除。一次服务启动内完成 GSM8K

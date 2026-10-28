@@ -23,23 +23,119 @@ from .workspace import copy_source, inventory
 
 MARKER = 'AFD_RSI_STATUS:'
 TERMINAL = {'finished', 'error'}
+ACTIVITIES = {'auth': '检查 iTASK 登录/权限', 'snapshot': '封存源码和框架', 'task_start': '等待 iTASK 启动/迁移（最多 30 分钟）',
+              'upload': '上传并部署框架', 'collect': '下载并校验结果', 'resume': '恢复后台任务'}
+PHASES = {'build': '构建算子', 'correctness': '算子精度验证', 'benchmark': '算子性能比较',
+          'profile': '采集 profiling 和内部打点', 'service': '模型服务验收',
+          'screening': '候选初筛', 'confirming': '独立复测', 'awaiting_agent': '等待 Agent 提案'}
+
+
+def describe_status(value, worker_alive=True):
+    progress = value.get('progress') or {}
+    state = progress.get('state', {})
+    step = progress.get('step') or {}
+    status = value['status']
+    stage = (ACTIVITIES.get(value.get('activity'))
+             if status in ('queued', 'preparing', 'error') or value.get('activity') == 'collect' else None)
+    if not stage and status == 'error' and 'itask-guian' in value.get('error', '') and 'start' in value['error']:
+        stage = 'iTASK 启动/迁移'
+    if not stage:
+        stage = ('Agent 分析证据并生成补丁' if status == 'proposing' else
+                 '候选已提交，等待执行端' if status == 'submitted' else
+                 '等待 worker 接管' if status == 'queued' else
+                 PHASES.get(step.get('phase'), PHASES.get(progress.get('round_phase'), '等待执行端状态')))
+        if step.get('side') and status not in ('proposing', 'submitted'):
+            stage = ('基线 / ' if step['side'] == 'baseline' else '候选 / ') + stage
+        service = step.get('service') or {}
+        if service.get('stage'):
+            stage += ' / ' + str(service['stage'])
+        if progress.get('round_phase') in ('screening', 'confirming'):
+            stage = PHASES[progress['round_phase']] + ' / ' + stage
+    reason = value.get('error') or state.get('reason', '')
+    code, done = 0, False
+    if status == 'error' or (status == 'finished' and state.get('status') == 'baseline_failed'):
+        label, code, done = '失败：框架已停止推进', 1, True
+    elif status == 'finished':
+        best = progress.get('best') or {}
+        label = '已完成：有独立确认的优化候选' if best.get('confirmation') else '已结束：未获得独立确认的改进'
+        done = True
+    elif worker_alive is False:
+        label, code, done = '异常退出：后台 worker 已消失', 2, True
+        reason = '保存状态尚未结束，但 worker 已退出；远端实验是否仍在运行需要核对，勿重复提交。'
+    elif worker_alive is None:
+        label, code, done = '状态未知：无法核验本机 worker', 2, True
+        reason = '请在原提案机和同一次系统启动中查看；当前不能确认后台是否存活。'
+    else:
+        label = '已提交：等待 worker 启动' if status == 'queued' else '运行中：后台 worker 存活'
+    return dict(label=label, stage=stage, reason=reason, stop_follow=done, exit_code=code,
+                round=state.get('active'), rounds=len(state.get('rounds', [])), calls=state.get('calls', 0))
+
+
+def worker_running(job, value):
+    receipt = job / 'worker.json'
+    if not receipt.exists():
+        return True if time.time() - value.get('updated_at', 0) < 5 else None
+    record = read_json(receipt)
+    if record.get('host_identity') != host_identity():
+        return None
+    # The worker holds this lock for its entire lifetime, even across PID namespaces.
+    path = job / '.worker.lock'
+    if not path.exists():
+        return True if time.time() - value.get('updated_at', 0) < 5 else False
+    try:
+        with path.open('r') as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return True
+        return value['status'] == 'queued' and time.time() - value.get('updated_at', 0) < 5
+    except OSError:
+        return None
+
+
+def status_text(value, job, view):
+    stamp = max(value.get('heartbeat_at', 0), value.get('updated_at', 0)) or time.time()
+    age = max(0, time.time() - stamp)
+    lines = [f"[{view['label']}] {job.name}", f"阶段：{view['stage']}",
+             f"轮次：{view['round'] or '-'}（已发起 {view['rounds']} 轮）；Agent 调用：{view['calls']} 次",
+             f"最近状态/执行端回执：{age:.0f} 秒前（存活不等于设备健康或实验有进展）"]
+    if view['reason']:
+        lines.append('原因：' + str(view['reason']))
+    lines.append(f'日志：{job / "worker.log"}')
+    if value.get('startup_log') and value.get('activity') == 'task_start':
+        lines.append(f'iTASK 启动日志：{value["startup_log"]}/stdout.log、stderr.log')
+    if value['status'] == 'finished':
+        lines.append(f'结果：{job / "results"}')
+    return '\n'.join(lines)
+
+
+def watch(job, *, follow=False, json_output=False):
+    try:
+        while True:
+            value = read_json(job / 'status.json')
+            view = describe_status(value, worker_running(job, value))
+            print(json.dumps({**value, 'monitor': view}, ensure_ascii=False, indent=2) if json_output
+                  else status_text(value, job, view), flush=True)
+            if not follow or view['stop_follow']:
+                return view['exit_code']
+            time.sleep(read_json(job / 'job.json')['poll_seconds'])
+    except KeyboardInterrupt:
+        print('已停止查看；未向后台 worker 或远端实验发送停止信号。', flush=True)
+        return 130
 
 
 def event(job, status, **fields):
-    value = {**(read_json(job / 'status.json') if (job / 'status.json').exists() else {}),
-             **fields, 'status': status, 'updated_at': time.time()}
+    previous = read_json(job / 'status.json') if (job / 'status.json').exists() else {}
+    value = {**previous, 'activity': previous.get('activity', '') if status == 'error' else '',
+             **fields, 'status': status, 'updated_at': time.time(), 'heartbeat_at': time.time()}
     write_json(job / 'status.json', value)
     line = json.dumps(value, ensure_ascii=False)
     with (job / 'events.jsonl').open('a') as handle:
         handle.write(line + '\n')
-    progress = value.get('progress', {})
-    state = progress.get('state', {})
-    step = progress.get('step') or {}
-    service = step.get('service') or {}
-    detail = '/'.join(str(x) for x in (step.get('side'), step.get('phase'), service.get('stage')) if x)
+    view = describe_status(value)
     print(f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())} {status} "
-          f"round={state.get('active') or '-'} calls={state.get('calls', 0)} "
-          f"{detail} {state.get('status', '')} {value.get('error', '') or state.get('reason', '')}", flush=True)
+          f"[{view['label']}] {view['stage']} round={view['round'] or '-'} calls={view['calls']} "
+          f"{view['reason']}", flush=True)
 
 
 def snapshot(root, target):
@@ -95,6 +191,7 @@ def _spawn(job):
             raise ValueError('resume requires the original proposer host and boot')
         if owned_alive(old['tag']):
             raise ValueError('optimization worker or its owned children are still running')
+        event(job, 'queued', activity='resume', error='', progress={})
     tag = uuid.uuid4().hex
     with (job / 'worker.log').open('ab') as log:
         child = subprocess.Popen([sys.executable, '-m', 'afd_rsi.optimize', '_worker', str(job)],
@@ -112,11 +209,25 @@ class Executor:
                      else str(job / 'execution'))
         self.env = {**os.environ, 'ITASK_DISABLE_AUTO_UPDATE': '1'}
 
-    def command(self, argv, **kwargs):
-        result = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=180, **kwargs)
+    def command(self, argv, *, timeout=180, **kwargs):
+        result = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=timeout, **kwargs)
         if result.returncode:
             raise RuntimeError(f'command failed: {shlex.join(argv[:4])}\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}')
         return result.stdout
+
+    def start_task(self):
+        logs = self.job / 'task-start' / uuid.uuid4().hex[:12]
+        event(self.job, 'preparing', activity='task_start', startup_log=str(logs))
+        result = execute(['itask-guian', 'start', self.config['task']], self.job, logs, 1800, self.env)
+        if not result['cleanup_complete']:
+            raise RuntimeError(f'iTASK 启动客户端未完成清理；远端状态未知，请检查 {logs}')
+        # A timed-out client does not prove that the remote migration failed.
+        try:
+            self.command(['itask-guian', 'exec', self.config['task'], '--tty=false', '--stdin=false', '--', 'true'], timeout=30)
+        except (RuntimeError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(f'iTASK 启动状态 {result["status"]}，Pod 尚未确认可执行；不要重复提交启动。'
+                               f'请核对任务状态及 {logs}/stdout.log、stderr.log：{error}') from error
+        write_json(logs / 'readiness.json', {'ready': True, 'start_status': result['status']})
 
     def python(self, code, *args):
         setup = ('source ' + shlex.quote(self.config['setup_script']) + ' && ') if self.config['setup_script'] else ''
@@ -150,7 +261,7 @@ def stage(job, config, executor):
     state = job / 'staged.json'
     if state.exists():
         return
-    event(job, 'preparing', phase=0)
+    event(job, 'preparing', phase=0, activity='snapshot')
     source = job / 'payload/source'
     source_lock = job / 'source.json'
     if source_lock.exists():
@@ -176,8 +287,10 @@ def stage(job, config, executor):
     if archive.stat().st_size >= 95_000_000:
         raise ValueError('payload exceeds supported iTASK cp size; reduce target checkout before starting')
     if executor.remote:
+        event(job, 'preparing', activity='auth')
         executor.command(['itask-guian', 'auth', 'status'])
-        executor.command(['itask-guian', 'start', config['task']])
+        executor.start_task()
+    event(job, 'preparing', phase=0, activity='upload')
     # mkdir is exclusive: interrupted/ambiguous bootstrap is not silently overwritten.
     executor.python('from pathlib import Path; import sys,json; b=Path(sys.argv[1]); b.mkdir(parents=True,exist_ok=True); marker=b/"bootstrap.json"; expected={"id":sys.argv[2],"sha256":sys.argv[3]}; assert (json.loads(marker.read_text())==expected if marker.exists() else not any(b.iterdir())), "foreign or changed bootstrap"; marker.write_text(json.dumps(expected))', executor.base, config['id'], digest(archive))
     executor.send(archive, executor.base + '/payload.tar.gz')
@@ -330,6 +443,8 @@ def worker(job):
                 if signature != previous:
                     event(job, 'running', phase=phase, execution=executor.base, progress=status)
                     previous = signature
+                else:
+                    write_json(job / 'status.json', {**read_json(job / 'status.json'), 'heartbeat_at': time.time()})
                 if status.get('lost_driver'):
                     if config['retry_remote']:
                         config['retry_remote'] = False
@@ -350,6 +465,7 @@ def worker(job):
                         continue
                     raise RuntimeError(status['exit'].get('error', 'execution failed'))
                 if status['state'].get('status') != 'running':
+                    event(job, 'running', phase=phase, activity='collect', progress=status)
                     executor.fetch(executor.base + '/results.tar.gz', job / 'results.tar.gz')
                     if digest(job / 'results.tar.gz') != status['exit']['results_sha256']:
                         raise ValueError('downloaded result archive changed')
@@ -407,25 +523,17 @@ def main(argv=None, root=None):
         reader = argparse.ArgumentParser(prog='afd-rsi optimize ' + action)
         reader.add_argument('job', type=Path)
         reader.add_argument('--follow', action='store_true')
+        reader.add_argument('--json', action='store_true', help='Print raw state plus monitoring assessment')
         options = reader.parse_args(argv[1:])
         job = options.job.resolve()
         if action == 'resume' and read_json(job / 'status.json')['status'] != 'finished':
             if (job / 'worker.json').exists() and owned_alive(read_json(job / 'worker.json')['tag']):
-                print('Worker is already running')
-                return 0
+                return watch(job, follow=options.follow, json_output=options.json)
             config = read_json(job / 'job.json')
             config['retry_remote'] = True
             write_json(job / 'job.json', config)
             spawn(job)
-        previous = None
-        while True:
-            status = read_json(job / 'status.json')
-            if status != previous:
-                print(json.dumps(status, ensure_ascii=False, indent=2), flush=True)
-                previous = status
-            if not options.follow or status['status'] in TERMINAL:
-                return 0
-            time.sleep(read_json(job / 'job.json')['poll_seconds'])
+        return watch(job, follow=options.follow, json_output=options.json)
     parser = argparse.ArgumentParser(prog='afd-rsi optimize')
     parser.add_argument('recipe', type=Path)
     parser.add_argument('--executor', choices=('local', 'itask'), default='local')
@@ -435,11 +543,14 @@ def main(argv=None, root=None):
     parser.add_argument('--setup-script', help='Execution-host environment script, e.g. CANN set_env.sh')
     parser.add_argument('--poll-seconds', type=float, default=60)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--follow', action='store_true', help='Watch background progress; Ctrl-C only detaches the viewer')
     args = parser.parse_args(argv)
     root = root or Path(__file__).resolve().parents[2]
-    print(start(args, root))
-    print('Started in background; use afd-rsi optimize status <output>. Progress: <output>/worker.log')
-    return 0
+    job = start(args, root)
+    print(f'已提交后台任务：{job}\n尚不代表 iTASK 就绪或已开始优化。', flush=True)
+    print('持续查看：' + shlex.join(['env', f'PYTHONPATH={root / "src"}', sys.executable,
+                                   '-m', 'afd_rsi', 'optimize', 'status', str(job), '--follow']), flush=True)
+    return watch(job, follow=args.follow) if args.follow else 0
 
 
 if __name__ == '__main__':
