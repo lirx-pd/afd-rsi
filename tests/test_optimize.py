@@ -42,7 +42,7 @@ def test_detached_local_round_confirms_and_downloads(tmp_path, monkeypatch):
     fake_codex(tmp_path, monkeypatch)
     recipe = tmp_path / 'recipe.toml'
     recipe.write_text((ROOT/'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT/'examples/source'))
-        .replace('max_rounds = 3','max_rounds = 1').replace('max_calls = 3','max_calls = 1'))
+        .replace('max_rounds = 9','max_rounds = 1').replace('max_calls = 9','max_calls = 1'))
     job = tmp_path/'job'
     assert optimize.main([str(recipe),'--output',str(job),'--poll-seconds','0.1'], ROOT)==0
     assert read_json(job/'worker.json')['pid'] != os.getpid()
@@ -95,8 +95,14 @@ def test_strategy_changes_with_rounds(tmp_path):
     run=campaign.prepare(recipe,tmp_path/'run',ROOT)
     search.search(run,ROOT,external=True)
     plan=campaign.load(run,ROOT); best=read_json(run/'search/best.json')
+    # The deep/incremental boundary follows the frozen round budget, so read it
+    # from the plan instead of hardcoding a round number that a budget change
+    # would silently invalidate.
+    total=plan['search']['max_rounds']
+    deep_rounds=1 if total==1 else min(total-1,(2*total+2)//3)
     early=search.request_context(run,plan,best,[],1)
-    late=search.request_context(run,plan,best,[],3)
+    late=search.request_context(run,plan,best,[],deep_rounds+1)
+    assert deep_rounds+1<=total, 'the fixture budget must reserve an incremental round'
     assert early['strategy']['mode']=='deep'
     assert late['strategy']['mode']=='incremental'
     assert early['allowed_files']==late['allowed_files']==plan['allowed_files']

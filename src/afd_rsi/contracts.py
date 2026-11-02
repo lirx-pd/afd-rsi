@@ -4,6 +4,8 @@ import math
 import tomllib
 from pathlib import Path
 
+from .router import DEFAULT_WEIGHTS
+
 
 def positive(value, label, *, integer=False, zero=False):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
@@ -109,7 +111,8 @@ def load_recipe(path: Path) -> dict:
     if "search" in config:
         search = config["search"]
         required = {"agent_command", "max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
-        if not required <= set(search) or set(search) - required - {'goal'}:
+        optional = {'goal', 'router', 'explore_max_fraction', 'info_floor', 'margin', 'features'}
+        if not required <= set(search) or set(search) - required - optional:
             raise ValueError("invalid search settings")
         if 'goal' in search and (not isinstance(search['goal'], str) or not search['goal'].strip()):
             raise ValueError('search goal must be a nonempty string')
@@ -126,6 +129,7 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("search context budget must be at least 4096 bytes")
         if config["backend"] == "ascend" and "health" not in config:
             raise ValueError("Ascend search requires a device health command")
+        routing(search)
     if "health" in config:
         if set(config["health"]) != {"command", "timeout_seconds"}:
             raise ValueError("invalid health settings")
@@ -135,6 +139,28 @@ def load_recipe(path: Path) -> dict:
         if len(command) < 2 or command[0] != "{python}" or not command[1].startswith("{foundation}/benchmarks/") or ".." in Path(command[1]).parts:
             raise ValueError("health must use a frozen repository benchmark Python driver")
     return config
+
+
+def routing(search: dict):
+    """Validate and default the direction-router settings of a search recipe."""
+    if search.get("router", "auto") not in ("auto", "off"):
+        raise ValueError("router must be auto or off")
+    search["router"] = search.get("router", "auto")
+    for key, default in (("explore_max_fraction", 0.25), ("info_floor", 0.0), ("margin", 0.02)):
+        value = search.setdefault(key, default)
+        positive(value, f"search {key}", zero=True)
+        if value > 1:
+            raise ValueError(f"search {key} must stay within [0, 1]")
+    features = search.setdefault("features", {})
+    if not isinstance(features, dict) or set(features) - {"weights"}:
+        raise ValueError("search features must only define weights")
+    weights = features.setdefault("weights", dict(DEFAULT_WEIGHTS))
+    if not isinstance(weights, dict) or set(weights) != set(DEFAULT_WEIGHTS):
+        raise ValueError(f"search feature weights must name {sorted(DEFAULT_WEIGHTS)}")
+    for name, value in weights.items():
+        positive(value, f"feature weight {name}")
+    # The frozen copy keeps tomllib's insertion order out of the plan digest.
+    features["weights"] = {name: float(weights[name]) for name in sorted(DEFAULT_WEIGHTS)}
 
 
 def argv_list(value, label):

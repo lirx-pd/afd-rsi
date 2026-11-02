@@ -46,8 +46,21 @@ require_clean_shutdown = false
 
 [search]
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
-max_rounds = 3
-max_calls = 3
+max_rounds = 9
+max_calls = 9
 agent_timeout_seconds = 1200
 max_context_bytes = 524288
 experience_dirs = []
+
+# Direction routing: category abilities are estimated from measured gain, not raw
+# trial counts. Exploration stays off (info_floor = 0) until a campaign has
+# enough rounds for the estimate to mean anything.
+router = "auto"
+info_floor = 0.0
+margin = 0.02
+explore_max_fraction = 0.25
+
+[search.features]
+# Frozen difficulty weights (CAKE Eq.1 ordering): tiling, scheduling, blocking,
+# reduction, dtype spread, data movement, fusion breadth, cube intensity.
+weights = { T = 0.51, S = 0.78, B = 0.59, R = 0.70, D = 0.44, M = 0.61, F = 0.64, C = 0.98 }

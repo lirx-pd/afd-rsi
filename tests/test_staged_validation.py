@@ -19,7 +19,7 @@ def staged(tmp_path, monkeypatch):
     recipe = tmp_path / 'recipe.toml'
     text = (ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source'))
     text = text.replace('backend = "cpu-synthetic"', 'backend = "cpu-synthetic"\nvalidation = "operator-first"')
-    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 3', 'max_rounds = 1')
+    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 1')
     text += '\n[service]\nrepo = "."\nargs = ["--test", "smoke"]\ntimeout_seconds = 10\ncleanup_seconds = 1\n'
     recipe.write_text(text)
     calls = []

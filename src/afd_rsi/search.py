@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import campaign, skills
 from .evidence import digest, read_json, write_json
+from .router import Ledger, Router, normalized_score
 from .runner import execute
 from .workspace import copy_source, inventory
 
@@ -26,7 +27,17 @@ def fingerprint(plan):
     keys = ('source_snapshot', 'foundation_hash', 'controller_hash', 'backend', 'workload_id',
             'scope', 'unit', 'metric', 'ranks', 'primary_rank', 'repetitions', 'min_gain_pct',
             'commands', 'artifacts', 'allowed_files', 'native', 'service', 'validation')
-    return identity({key: plan.get(key) for key in keys})
+    payload = {key: plan.get(key) for key in keys}
+    # Router settings decide how directions are ranked, so declaring different
+    # ones must invalidate cross-campaign experience reuse. Campaigns frozen
+    # before routing existed keep their original fingerprint byte for byte, so
+    # their recorded experience stays readable.
+    routing = {key: plan['search'][key]
+               for key in ('router', 'features', 'info_floor', 'margin', 'explore_max_fraction')
+               if key in plan['search']}
+    if routing:
+        payload['routing'] = routing
+    return identity(payload)
 
 
 def verified_verdict(run, name, root):
@@ -93,7 +104,7 @@ def load_experiences(run, plan):
     return list({identity(record): record for record in records}.values())
 
 
-def request_context(run, plan, best, records, number):
+def request_context(run, plan, best, records, number, router=None):
     source = run / best['source']
     evidence = [{'id': 'baseline', 'facts': {'source_hash': best['source_hash'],
                   'qualification': best['confirmation'] or best['baseline'], 'backend': plan['backend']}}]
@@ -166,6 +177,16 @@ def request_context(run, plan, best, records, number):
                    'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
     if plan['search'].get('goal'):
         context['objective']['goal'] = plan['search']['goal']
+    if router is not None and router.enabled:
+        # Exploration is a request, never a forced choice: the controller cannot
+        # author patches, so an untested family is named for the model to weigh.
+        directive = router.directive()
+        context['routing'] = directive or {'preferred_category': None,
+            'reason': 'every known change family already has evidence under this foundation'}
+        if directive:
+            context['instructions'] += (f" routing.preferred_category = {directive['preferred_category']!r} has no "
+                'evidence under this foundation; weigh it against your default, and do not follow it if the '
+                'evidence points elsewhere. Name the change family in each proposal category.')
     if plan.get('validation') == 'operator-first':
         context['proposal_requirements'] = {
             'experiment_fields': ['bottleneck', 'mechanism', 'prediction', 'falsification', 'risk'],
@@ -291,18 +312,37 @@ def validate_proposal(value, evidence_ids, requirements=None):
     return value
 
 
-def select_proposal(proposals, records, parent):
+def route_proposals(proposals, records, parent, router=None):
+    """Return ``(selected proposal or None, routing decision or None)``.
+
+    Without a router this is the historical rule, unchanged: deduplicate against
+    patches already tried from this parent, then rank by
+    ``priority + category promotions - category failures``. With a router the
+    categories themselves are ordered by estimated ability and priority only
+    breaks ties inside a category, so a family is no longer punished for
+    difficulty or rewarded for being tried first.
+    """
     seen = {record['patch_hash'] for record in records if record['parent_hash'] == parent}
-    ranked = []
-    for index, proposal in enumerate(proposals):
-        patch_hash = identity(proposal['patch'].strip())
-        if patch_hash in seen:
-            continue
-        successes = sum(r['decision'] == 'promoted' for r in records if r['category'] == proposal['category'])
-        failures = sum(r['decision'] in ('rejected', 'invalid_patch') for r in records if r['category'] == proposal['category'])
-        score = proposal['priority'] + successes - failures
-        ranked.append((score, -index, proposal))
-    return max(ranked, key=lambda item: item[:2])[2] if ranked else None
+    fresh = {index: proposal for index, proposal in enumerate(proposals)
+             if identity(proposal['patch'].strip()) not in seen}
+    if not fresh:
+        return None, None
+    if router is None or not router.enabled:
+        ranked = []
+        for index, proposal in fresh.items():
+            successes = sum(r['decision'] == 'promoted' for r in records if r['category'] == proposal['category'])
+            failures = sum(r['decision'] in ('rejected', 'invalid_patch') for r in records if r['category'] == proposal['category'])
+            ranked.append((proposal['priority'] + successes - failures, -index, proposal))
+        return max(ranked, key=lambda item: item[:2])[2], None
+    items = [{'category': proposal['category'], 'index': index,
+              'priority': proposal['priority'], 'features': router.features(proposal['patch'])}
+             for index, proposal in fresh.items()]
+    decision = router.rank(items)
+    return fresh[decision['index']], decision
+
+
+def select_proposal(proposals, records, parent, router=None):
+    return route_proposals(proposals, records, parent, router)[0]
 
 
 def _save_state(run, state):
@@ -357,6 +397,43 @@ def _lesson(run, plan, round_dir, record):
     write_json(destination, {**lesson, 'record_hash': identity(lesson)})
 
 
+def _record_ledger(run, plan, round_dir, record, ledger, router):
+    """Append one evaluated direction to the routing ledger.
+
+    Only candidates that actually reached a verdict are recorded, so a duplicate
+    or protocol failure never enters the ability estimate. The score is the
+    measured gain mapped onto (0, 1), not the PASS flag, so a hard direction that
+    pays off is not permanently outranked by an easy one.
+    """
+    proposal = record.get('selected') or {}
+    if not proposal or record.get('decision') not in ('promoted', 'rejected'):
+        return
+    # A crash between the lesson and the state save replays this round; the
+    # ledger is append-only, so the replay must not add a second row.
+    if any(row.get('round') == round_dir.name for row in ledger.rows):
+        return
+    verdict = None
+    stage_used = None
+    for stage in ('confirmation', 'screen'):
+        attempt = record.get(stage)
+        if not attempt:
+            continue
+        path = run / 'attempts' / attempt / 'verdict.json'
+        if path.is_file():
+            verdict = read_json(path)
+            stage_used = stage
+            if verdict.get('gain_pct') is not None:
+                break
+    if verdict is None:
+        return
+    ledger.add(category=proposal.get('category', 'agent-protocol'),
+               features=router.features(proposal['patch']),
+               score=normalized_score(verdict, plan['min_gain_pct']),
+               decision=record['decision'], foundation_hash=plan['foundation_hash'],
+               round_name=round_dir.name, gain_pct=verdict.get('gain_pct'),
+               stage=stage_used)
+
+
 def search(run: Path, root: Path, *, external=False):
     run = run.resolve()
     with campaign.exclusive(run, recovery=True):
@@ -386,6 +463,8 @@ def search(run: Path, root: Path, *, external=False):
                        'source_hash': plan['source_snapshot']['hash'], 'baseline': baseline.name,
                        'baseline_hash': digest(baseline / 'baseline.json'), 'confirmation': None})
         settings = plan['search']
+        ledger = Ledger(run / 'search/ledger.jsonl').load()
+        router = Router(settings, ledger, foundation_hash=plan['foundation_hash'])
         while state['status'] == 'running':
             best = best_candidate(run, root)
             records = load_experiences(run, plan)
@@ -407,7 +486,7 @@ def search(run: Path, root: Path, *, external=False):
             round_dir.mkdir(parents=True, exist_ok=True)
             path = round_dir / 'state.json'
             if not path.exists():
-                context = request_context(run, plan, best, records, len(state['rounds']))
+                context = request_context(run, plan, best, records, len(state['rounds']), router)
                 write_json(round_dir / 'request.json', context)
                 record = {'phase': 'request', 'parent': best, 'request_hash': digest(round_dir / 'request.json')}
                 write_json(path, record)
@@ -463,7 +542,10 @@ def search(run: Path, root: Path, *, external=False):
                         record.update(phase='decided', decision='stopped', reason=value['reason'])
                         state.update(status='agent_stopped', reason=value['reason'])
                     else:
-                        selected = select_proposal(value['proposals'], records, record['parent']['source_hash'])
+                        selected, decision = route_proposals(
+                            value['proposals'], records, record['parent']['source_hash'], router)
+                        if decision is not None:
+                            write_json(round_dir / 'routing.json', decision)
                         if selected is None:
                             record.update(phase='decided', decision='duplicate', reason='Every proposal was already tested against this parent.')
                         else:
@@ -519,6 +601,7 @@ def search(run: Path, root: Path, *, external=False):
                     write_json(path, record)
             if record['phase'] == 'decided':
                 _lesson(run, plan, round_dir, record)
+                _record_ledger(run, plan, round_dir, record, ledger, router)
                 if record['decision'] == 'stopped':
                     state.update(status='agent_stopped', reason=record['reason'])
                 state['active'] = None
@@ -529,6 +612,16 @@ def search(run: Path, root: Path, *, external=False):
                     campaign.recover(run, root)
         (run / 'search/pending.json').unlink(missing_ok=True)
         return search_report(run, root)
+
+
+def _routing_summary(run, plan):
+    """One honest line about the direction router; no estimate is called a result."""
+    ledger = Ledger(run / 'search/ledger.jsonl').load()
+    router = Router(plan['search'], ledger, foundation_hash=plan['foundation_hash'])
+    if not router.enabled:
+        return 'Direction routing: off (frozen category counts only).'
+    return (f'Direction routing: {router.kind()} ability over {len(ledger.rows)} evaluated '
+            f'direction(s); scores order proposals only and never substitute for the two-PASS promotion gate.')
 
 
 def search_report(run, root):
@@ -542,6 +635,7 @@ def search_report(run, root):
              f'Best source: {best["source_hash"] if best else "none: baseline unqualified"}', '',
              'Promotion requires a native screen and a fresh confirmation with every configured final service gate. '
              'Operator-only PASS is not service qualification.', '',
+             _routing_summary(run, plan), '',
              '| Round | Decision | Evidence |', '| --- | --- | --- |']
     for name in state['rounds']:
         path = run / 'search/rounds' / name / 'state.json'

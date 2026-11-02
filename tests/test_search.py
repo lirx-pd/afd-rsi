@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def run(tmp_path):
     recipe = tmp_path / 'search.toml'
     text = (ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source'))
-    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 3', 'max_rounds = 2').replace('max_calls = 3', 'max_calls = 2')
+    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 2').replace('max_calls = 9', 'max_calls = 2')
     recipe.write_text(text)
     return campaign.prepare(recipe, tmp_path / 'run', ROOT)
 
