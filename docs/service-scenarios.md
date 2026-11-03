@@ -2,8 +2,13 @@
 
 专用配方 `recipes/ascend_pipeline_scenarios.toml` 已纳入统一 `optimize` 流程，
 核心仍先做算子数值/性能筛选与独立复测，通过后才启动最终服务。现有 eager/graph
-配方默认测试行为不变；新配方使用 Attention DP3/TP4 eager + DBO、FFN EP4 FULL。
+配方默认测试行为不变；新配方使用 Attention DP3/TP4 eager、FFN EP4 FULL。
 当前专用配方只保留以下三项，删除小 prefill 矩阵和之前的 16K 重载点。
+
+三个配方一律 `--dbo off`（也不带 DBO 专用 attention 参数）。DBO 会把 Attention
+和 FFN 的工作重叠起来，FFN 侧的改进会被重叠吸收掉，在事务时间里看不出来；验证
+MegaMoe 是否有收益时必须关掉它，否则 DBO 的掩盖效果会遮住 Mega 的收益。
+同理 `--moe-ubatching off`：两者都会改变通算重叠结构，不能与 FFN 收益混在一起解释。
 
 | 场景 | 冻结负载 | 指标 |
 | --- | --- | --- |

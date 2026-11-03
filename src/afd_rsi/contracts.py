@@ -38,6 +38,16 @@ def agent_driver(command) -> str:
     return relative
 
 
+def dbo_enabled(args) -> bool:
+    """Whether service args ask for native DBO, in either spelling."""
+    for index, argument in enumerate(args):
+        if argument == "--dbo":
+            return index + 1 < len(args) and args[index + 1].strip().lower() == "on"
+        if argument.startswith("--dbo="):
+            return argument.split("=", 1)[1].strip().lower() == "on"
+    return False
+
+
 def stage_models(search: dict):
     """Validate and default the per-stage proposer models."""
     if "models" not in search:
@@ -163,6 +173,14 @@ def load_recipe(path: Path) -> dict:
                 execution = argument.split("=", 1)[1]
         if execution not in ("eager", "graph"):
             raise ValueError("invalid service execution")
+        # A campaign here decides whether MegaMoe actually earns its keep. DBO
+        # overlaps Attention with FFN work, so an FFN-side improvement is absorbed
+        # by the overlap instead of appearing in the measured transaction; it is
+        # refused rather than silently flattening every result.
+        if dbo_enabled(service["args"]):
+            raise ValueError(
+                "service args must keep --dbo off: DBO overlaps Attention with FFN and "
+                "masks the measured gain; validate benefit without it")
         if "native" in config and execution != config["native"].get("execution", "eager"):
             raise ValueError("native and service execution must match")
         for key in ("timeout_seconds", "cleanup_seconds"):
