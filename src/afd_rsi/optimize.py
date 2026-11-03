@@ -237,17 +237,66 @@ class Executor:
             argv = ['itask-guian', 'exec', self.config['task'], '--tty=false', '--stdin=false', '--', *argv]
         return self.command(argv)
 
+    def stream(self, argv, *, source=None, sink=None, timeout=1800):
+        """One transfer whose bytes travel on stdio instead of the CLI staging.
+
+        Some installed itask variants drop the file with `mv --no-copy`, which
+        this coreutils lacks; streaming keeps the transfer atomic enough for our
+        own sha256 check without depending on that flag.
+        """
+        receipt = self.job / 'transfers' / uuid.uuid4().hex[:12]
+        receipt.mkdir(parents=True, exist_ok=True)
+        stdin = source.open('rb') if source else subprocess.DEVNULL
+        stdout = sink.open('wb') if sink else subprocess.PIPE
+        try:
+            result = subprocess.run(argv, env=self.env, stdin=stdin,
+                                    stdout=stdout, stderr=subprocess.PIPE, timeout=timeout)
+        finally:
+            if source:
+                stdin.close()
+            if sink:
+                stdout.close()
+        stderr = result.stderr.decode('utf-8', 'replace')[-2000:]
+        write_json(receipt / 'receipt.json', {
+            'argv': argv, 'exit_code': result.returncode,
+            'bytes': Path(source).stat().st_size if source else None,
+            'sha256': digest(source) if source else None, 'stderr': stderr})
+        if result.returncode:
+            raise RuntimeError(f'transfer failed: {shlex.join(argv[:4])}\n{stderr}')
+        return receipt
+
     def send(self, source, destination):
-        if self.remote:
-            self.command(['itask-guian', 'cp', str(source), self.config['task'] + ':' + str(destination)])
-        else:
+        if not self.remote:
             shutil.copyfile(source, destination)
+            return
+        try:
+            self.command(['itask-guian', 'cp', str(source), self.config['task'] + ':' + str(destination)])
+        except RuntimeError as error:
+            if '--no-copy' not in str(error):
+                raise
+            # Fall back to a stdio transfer, then prove the bytes arrived.
+            command = f'mkdir -p {shlex.quote(str(Path(destination).parent))} && cat > {shlex.quote(str(destination))}'
+            self.stream(['itask-guian', 'exec', self.config['task'], '--tty=false', '--stdin=true',
+                         '--', 'bash', '-c', command], source=source)
+            remote = self.command(['itask-guian', 'exec', self.config['task'], '--tty=false',
+                                   '--stdin=false', '--', 'sha256sum', str(destination)]).split()[0]
+            if remote != digest(source):
+                raise RuntimeError('streamed upload hash mismatch')
 
     def fetch(self, source, destination):
-        if self.remote:
-            self.command(['itask-guian', 'cp', self.config['task'] + ':' + str(source), str(destination)])
-        else:
+        if not self.remote:
             shutil.copyfile(source, destination)
+            return
+        try:
+            self.command(['itask-guian', 'cp', self.config['task'] + ':' + str(source), str(destination)])
+        except RuntimeError as error:
+            if '--no-copy' not in str(error):
+                raise
+            Path(destination).parent.mkdir(parents=True, exist_ok=True)
+            self.stream(['itask-guian', 'exec', self.config['task'], '--tty=false', '--stdin=false',
+                         '--', 'cat', str(source)], sink=Path(destination))
+            if not Path(destination).is_file() or Path(destination).stat().st_size == 0:
+                raise RuntimeError('streamed download produced no bytes')
 
     def invoke(self, action, *args):
         text = self.python('from afd_rsi.optimize import remote_action; import sys; remote_action(*sys.argv[1:])', action, self.base, *args)

@@ -1,6 +1,7 @@
 """Frozen real Ascend build/rank-result adapter for the campaign contract."""
 
 import os
+import socket
 import statistics
 import sys
 from pathlib import Path
@@ -12,6 +13,15 @@ from afd_rsi.runner import execute
 from afd_rsi.workspace import copy_source, inventory
 
 plan = read_json(Path(os.environ["AFD_RSI_PLAN"]))
+
+
+def _free_port() -> int:
+    """A loopback port the rendezvous can bind without colliding with the runtime."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 build_dir = Path(os.environ["AFD_RSI_BUILD_DIR"])
 source = Path.cwd()
 if sys.argv[1] == "build":
@@ -27,7 +37,12 @@ assert expected == artifact_identity(repo)
 settings = plan["native"]
 output = Path(os.environ["AFD_RSI_RESULT"]).parent
 reference = Path(os.environ["AFD_RSI_ATTEMPT"]) / "reference"
+# One node, one rendezvous, on loopback. torchrun resolves the container
+# hostname by default, and inside an iTASK Pod that name is the node FQDN, which
+# is not always resolvable from the container; binding the store to loopback
+# removes that dependency without changing rank layout or device usage.
 args = [sys.executable, "-m", "torch.distributed.run", "--standalone",
+        "--master-addr", "127.0.0.1", "--master-port", str(_free_port()),
         f"--nproc-per-node={plan['ranks']}", str(Path(__file__).with_name("eager_fixture.py")),
         "--boundary", "--tile-boundary", "--random-weights", "--routed-scale", "2.5",
         "--hidden-size", str(settings["hidden"]), "--intermediate-size", str(settings["intermediate"]),
