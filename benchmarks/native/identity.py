@@ -5,6 +5,11 @@ import os
 import sys
 from pathlib import Path
 
+CUSTOM_KERNEL_ROOT = "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93"
+# The FFN-side pull kernel plus the comm kernel it pairs with: one transaction
+# touches both, so both device binaries belong to the measured identity.
+MEGA_KERNELS = ("afd_mega_moe_pull_native", "afd_mega_moe_comm")
+
 
 def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
@@ -37,8 +42,11 @@ def loaded_identity():
         raise RuntimeError("actual AFD import is outside measured source")
     mapped, other = mapped_api_paths(root, Path("/proc/self/maps").read_text())
     files = {str(p.relative_to(root)): sha(p) for p in (package, binding, *sorted(mapped))}
-    kernel_dir = root / "afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn"
-    kernels = {str(p.relative_to(root)): sha(p) for p in sorted(kernel_dir.glob("*")) if p.suffix in (".o", ".json")}
+    kernels = {}
+    for name in MEGA_KERNELS:
+        kernel_dir = root / CUSTOM_KERNEL_ROOT / name
+        kernels.update({str(p.relative_to(root)): sha(p) for p in sorted(kernel_dir.glob("*"))
+                        if p.suffix in (".o", ".json")})
     if not kernels:
         raise RuntimeError("MegaMoe kernel build artifacts missing")
     return {"files": files, "kernel_artifacts": kernels, "pid": os.getpid(),

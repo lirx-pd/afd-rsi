@@ -65,26 +65,34 @@ if settings.get("execution", "eager") == "graph":
 if sys.argv[1] == "profile":
     argv += ["--profile-dir", str(output / "traces")]
     # Diagnostic overlay is built and tested separately; timed artifacts stay immutable.
-    from pipeline_trace import instrument
-    diagnostic_input = output / 'diagnostic-input'
-    copy_source(source, diagnostic_input, inventory(source))
-    instrument(diagnostic_input)
-    diagnostic_repo = build(diagnostic_input, output / 'diagnostic-build', float(os.environ['AFD_RSI_TIMEOUT']))
-    diagnostic_expected = artifact_identity(diagnostic_repo)
-    diagnostic_argv = args + ['--mega-moe', '--reference-outputs', str(reference),
-                             '--pipeline-trace-dir', str(output / 'traces/pipeline')]
-    process = execute(diagnostic_argv, diagnostic_repo, output / 'pipeline-process',
-                      float(os.environ['AFD_RSI_TIMEOUT']), runtime_env(diagnostic_repo, settings['devices']))
-    if process['status'] != 'completed' or not process['cleanup_complete']:
-        raise RuntimeError('pipeline diagnostic failed; inspect pipeline-process')
-    fixture_result(output / 'pipeline-process/stdout.log', plan['ranks'], diagnostic_expected,
-                   True, settings['attn_ranks'], 0)
-    assert artifact_identity(diagnostic_repo) == diagnostic_expected
-    verify_source(diagnostic_repo, read_json(output / 'diagnostic-build/source.lock.json'))
-    write_json(output / 'traces/pipeline/identity.json', {
-        'production_source_hash': lock['hash'], 'diagnostic_artifacts': diagnostic_expected,
-        'diagnostic_source_hash': read_json(output / 'diagnostic-build/source.lock.json')['hash'],
-        'mode': 'eager diagnostic only; production timing artifacts unchanged'})
+    # It only exists for the fused FFN kernel, so a pull-native checkout records the
+    # skip instead of failing a round over an unavailable diagnostic.
+    from pipeline_trace import instrument, supported
+    if not supported(source):
+        write_json(output / 'traces/pipeline-unsupported.json', {
+            'reason': 'per-stage overlay targets the fused afd_mega_moe_ffn kernel; '
+                      'this checkout uses the pull-native FFN kernel',
+            'production_profile': 'unaffected; kernel_details.csv evidence still applies'})
+    else:
+        diagnostic_input = output / 'diagnostic-input'
+        copy_source(source, diagnostic_input, inventory(source))
+        instrument(diagnostic_input)
+        diagnostic_repo = build(diagnostic_input, output / 'diagnostic-build', float(os.environ['AFD_RSI_TIMEOUT']))
+        diagnostic_expected = artifact_identity(diagnostic_repo)
+        diagnostic_argv = args + ['--mega-moe', '--reference-outputs', str(reference),
+                                 '--pipeline-trace-dir', str(output / 'traces/pipeline')]
+        process = execute(diagnostic_argv, diagnostic_repo, output / 'pipeline-process',
+                          float(os.environ['AFD_RSI_TIMEOUT']), runtime_env(diagnostic_repo, settings['devices']))
+        if process['status'] != 'completed' or not process['cleanup_complete']:
+            raise RuntimeError('pipeline diagnostic failed; inspect pipeline-process')
+        fixture_result(output / 'pipeline-process/stdout.log', plan['ranks'], diagnostic_expected,
+                       True, settings['attn_ranks'], 0)
+        assert artifact_identity(diagnostic_repo) == diagnostic_expected
+        verify_source(diagnostic_repo, read_json(output / 'diagnostic-build/source.lock.json'))
+        write_json(output / 'traces/pipeline/identity.json', {
+            'production_source_hash': lock['hash'], 'diagnostic_artifacts': diagnostic_expected,
+            'diagnostic_source_hash': read_json(output / 'diagnostic-build/source.lock.json')['hash'],
+            'mode': 'eager diagnostic only; production timing artifacts unchanged'})
 
 native = launch("transaction", argv, mega=True, repeats=settings["repeats"] if measured else 0)
 assert all(digest(Path(name)) == value for name, value in reference_files.items())

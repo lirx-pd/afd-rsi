@@ -151,6 +151,8 @@ def main():
         parser.error("invalid expert/repeat bounds")
     if (args.full_graph or args.mega_moe) and not args.reference_outputs:
         parser.error("MegaMoE requires saved matching layered eager outputs")
+    # Newer builds select the pull-native Mega path from connector extra config;
+    # older ones read this environment variable, which is harmless when unused.
     os.environ["AFD_ASYNC_CAM_MEGA_MOE"] = "1" if args.mega_moe else "0"
     faulthandler.dump_traceback_later(60)
     os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
@@ -190,6 +192,7 @@ def main():
                     "dynamicQuant": 1,
                     "attn_ranks_per_dp": 1,
                     "hccl_buffer_size": 64,
+                    "ffn_mega_moe": args.mega_moe,
                 },
             }
         },
@@ -271,18 +274,26 @@ def main():
             def align(n):
                 return (n + 511) // 512 * 512
 
-            # Tiled MegaMoe places metadata first; the original layout follows X/scales.
-            batch_offset = 0 if hasattr(mega, "completion") else align(capacity * HIDDEN) + align(capacity * 4)
-            batch_bytes = (5 + 1 + EXPERTS) * 8
-            count_offset = batch_offset + align(batch_bytes)
-            mega_state = SimpleNamespace(
-                token_nums_rankid_layeridx=mega.scratch[
-                    batch_offset : batch_offset + batch_bytes
-                ].view(torch.int64),
-                group_list=mega.scratch[count_offset : count_offset + EXPERTS * 8].view(
-                    torch.int64
-                ),
-            )
+            # The executor owns the workspace layout: newer ones expose the
+            # metadata views directly (metadata first, counts after alignment),
+            # older fused ones keep the historical X/scales-first layout.
+            if hasattr(mega, "batch_info"):
+                mega_state = SimpleNamespace(
+                    token_nums_rankid_layeridx=mega.batch_info,
+                    group_list=mega.group_list,
+                )
+            else:
+                batch_offset = align(capacity * HIDDEN) + align(capacity * 4)
+                batch_bytes = (5 + 1 + EXPERTS) * 8
+                count_offset = batch_offset + align(batch_bytes)
+                mega_state = SimpleNamespace(
+                    token_nums_rankid_layeridx=mega.scratch[
+                        batch_offset : batch_offset + batch_bytes
+                    ].view(torch.int64),
+                    group_list=mega.scratch[count_offset : count_offset + EXPERTS * 8].view(
+                        torch.int64
+                    ),
+                )
         if args.full_graph:
             assert runner.effective_mode == "full"
             assert runner._graph_capture_count == (2 if getattr(runner, "_batch_graph", None) is not None else 1)

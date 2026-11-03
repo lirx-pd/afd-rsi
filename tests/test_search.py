@@ -356,7 +356,7 @@ def test_native_manifest_cannot_hide_changed_physical_artifacts(tmp_path):
     repo = build / 'native/source'
     vendor = repo / 'afd_plugin/_cann_ops_custom/vendors/afd-plugin'
     api = vendor / 'op_api/lib/libcust_opapi.so'
-    kernel = vendor / 'op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn/kernel.o'
+    kernel = vendor / 'op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_pull_native/kernel.o'
     for path in (repo / 'afd_plugin/__init__.py', repo / 'afd_plugin/_C_ascend.so', api, kernel):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'unit-test opaque artifact')

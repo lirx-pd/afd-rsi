@@ -25,7 +25,7 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
                     "--model-path", str(tmp_path / "weights"), "--device", ",".join(map(str, range(16))),
                     "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on",
                     "--moe-ubatching", "off", "--execution", execution, "--dbo", "off",
-                    "--serve-env", "AFD_ASYNC_CAM_MEGA_MOE=1", "--test", "smoke",
+                    "--ffn-mega-moe", "on", "--test", "smoke",
                     "--nic", "lo", "--afd-host", "127.0.0.1")
     assert result.returncode == 0, result.stderr
     plan = json.loads(result.stdout)
@@ -39,7 +39,6 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     assert services["ffn"]["environment"]["VLLM_PLUGINS"] == "ascend,afd"
     assert services["ffn"]["environment"]["VLLM_USE_V2_MODEL_RUNNER"] == "1"
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_LAYERED_GMM"] == "1"
-    assert services["ffn"]["environment"]["AFD_ASYNC_CAM_MEGA_MOE"] == "1"
     for service in services.values():
         command = service["command"]
         assert command[command.index('--data-parallel-rpc-port') + 1] == str(19282 + int(service['role'] == 'ffn'))
@@ -50,14 +49,16 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
             assert compilation['cudagraph_capture_sizes']
         additional = json.loads(command[command.index("--additional-config") + 1])
         extra = additional["afd"]["connector_extra_config"]
-        assert set(extra) == {"hccl_buffer_size", "dynamicQuant", "attn_ranks_per_dp"}
+        assert set(extra) == {"hccl_buffer_size", "dynamicQuant", "attn_ranks_per_dp", "ffn_mega_moe"}
         assert extra["dynamicQuant"] == 1 and extra["attn_ranks_per_dp"] == 4
+        # The Mega switch lives in the connector config now, not in the environment.
+        assert extra["ffn_mega_moe"] is True
         assert command[command.index("--max-model-len") + 1] == "32768"
     assert all(service["command"][:2] == ["vllm", "serve"] for service in services.values())
     text = json.dumps(plan)
     assert "serve" in text
     assert "ascend,afd" in text
-    assert "AFD_ASYNC_CAM_MEGA_MOE" in text
+    assert "ffn_mega_moe" in text
     assert "AFD_ASYNC_CAM_LAYERED_GMM" in text
     assert "v4-flash" in text
 

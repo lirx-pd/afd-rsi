@@ -10,6 +10,11 @@ import statistics
 import sys
 from pathlib import Path
 
+# The FFN-side pull kernel plus the comm kernel it pairs with. The profiler may
+# label either one, and older builds fused both into AfdMegaMoeFFN.
+MEGA_KERNELS = ("afd_mega_moe_pull_native", "afd_mega_moe_comm")
+MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
+
 from . import skills
 from .evidence import digest, read_json, write_json
 from .runner import execute
@@ -28,8 +33,10 @@ def artifact_identity(repo: Path) -> dict:
         raise ValueError("need exactly one in-place AFD native binding")
     vendor = repo / "afd_plugin/_cann_ops_custom/vendors/afd-plugin"
     files = [repo / "afd_plugin/__init__.py", *bindings, vendor / "op_api/lib/libcust_opapi.so"]
-    kernel_dir = vendor / "op_impl/ai_core/tbe/kernel/ascend910_93/afd_mega_moe_ffn"
-    kernels = [p for p in sorted(kernel_dir.glob("*")) if p.suffix in (".o", ".json")]
+    kernel_root = vendor / "op_impl/ai_core/tbe/kernel/ascend910_93"
+    # One Mega transaction is the pull/FFN kernel plus the comm kernel.
+    kernels = [p for name in MEGA_KERNELS for p in sorted((kernel_root / name).glob("*"))
+               if p.suffix in (".o", ".json")]
     if not any(p.suffix == ".o" for p in kernels):
         raise ValueError("MegaMoe device binary missing")
     return {"files": {str(p.relative_to(repo)): digest(p) for p in files},
@@ -136,12 +143,18 @@ def timing_summary(observations: list, pairs: int, attn_ranks: int,
     return comparisons
 
 
+def mega_task(name: str) -> bool:
+    """Whether a profiler task name belongs to the Mega transaction."""
+    normalized = name.lower().replace("_", "")
+    return any(stem in normalized for stem in MEGA_TASK_STEMS)
+
+
 def profile_evidence(directory: Path, ffn_ranks: int) -> list:
     evidence = []
     for path in sorted(directory.rglob("kernel_details.csv")):
         with path.open(newline="") as handle:
             names = [row.get("Name", "") for row in csv.DictReader(handle)]
-        matches = [name for name in names if "afdmegamoeffn" in name.lower().replace("_", "")]
+        matches = [name for name in names if mega_task(name)]
         if matches:
             evidence.append({"file": str(path.relative_to(directory)), "sha256": digest(path),
                              "mega_kernel_count": len(matches), "names": sorted(set(matches))})
@@ -167,7 +180,7 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
                 item = tasks.setdefault(row['Name'], {'name': row['Name'], 'count': 0, 'total_us': 0})
                 item['count'] += 1
                 item['total_us'] += duration
-        if not any('afdmegamoeffn' in name.lower().replace('_', '') for name in tasks):
+        if not any(mega_task(name) for name in tasks):
             raise ValueError(f'MegaMoe device tasks missing for FFN rank {rank}')
         total = sum(t['total_us'] for t in tasks.values())
         top = sorted(tasks.values(), key=lambda t: t['total_us'], reverse=True)[:10]

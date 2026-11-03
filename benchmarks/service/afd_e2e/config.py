@@ -159,6 +159,7 @@ class Case:
     dbo: bool
     layered_gmm: bool
     moe_ubatching: bool
+    ffn_mega_moe: bool
     devices: tuple[str, ...] | None
     limit: int
     test: str
@@ -245,6 +246,7 @@ class Case:
                 f"dbo-{int(self.dbo)}",
                 f"moe-{int(self.moe_ubatching)}",
                 f"layered-{int(self.layered_gmm)}",
+                f"megaffn-{int(self.ffn_mega_moe)}",
             )
         )
 
@@ -322,6 +324,7 @@ def from_args(args) -> Case:
         dbo=args.dbo == "on",
         layered_gmm=args.layered_gmm == "on",
         moe_ubatching=args.moe_ubatching == "on",
+        ffn_mega_moe=args.ffn_mega_moe == "on",
         devices=devices,
         limit=limit,
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
@@ -370,6 +373,10 @@ def from_args(args) -> Case:
 def validate(case: Case) -> None:
     if case.comm == "async" and case.moe_ubatching:
         raise ValueError("current AFD async connector has no async_moe_ubatching field; use --moe-ubatching off")
+    if case.ffn_mega_moe and case.comm != "async":
+        raise ValueError("--ffn-mega-moe is the async pull protocol; it needs --comm async")
+    if case.ffn_mega_moe and case.baseline:
+        raise ValueError("--ffn-mega-moe measures AFD splitting; the baseline does not use it")
     tests = case.tests
     if (
         "perf" in tests

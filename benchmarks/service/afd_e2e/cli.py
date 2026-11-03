@@ -69,6 +69,12 @@ def parser() -> argparse.ArgumentParser:
         )
         sub.add_argument("--layered-gmm", choices=("on", "off"), default="off")
         sub.add_argument(
+            "--ffn-mega-moe",
+            choices=("on", "off"),
+            default="off",
+            help="FFN pull-native Mega path (connector extra config ffn_mega_moe)",
+        )
+        sub.add_argument(
             "--moe-ubatching",
             choices=("on", "off"),
             help="Async CAM token splitting; current AFD adapter supports off only (default)",

@@ -49,7 +49,7 @@ ARGS=(--repo "$TARGET_REPO" --model v4-flash --model-path "$MODEL_PATH"
       --comm async --mrv mrv2 --layered-gmm on --moe-ubatching off
       --execution eager --dbo off
       --max-model-len 32768 --max-batched-tokens 32768 --max-seqs 16
-      --serve-env AFD_ASYNC_CAM_MEGA_MOE=1
+      --ffn-mega-moe on
       --python "$RUNTIME_PYTHON" --vllm-bin "$VLLM_BIN"
       --nic "$NIC" --afd-host "$AFD_HOST" --offline --test smoke
       --output runs/megamoe-service-smoke)
@@ -75,7 +75,10 @@ status、inference_status、shutdown_status、cleanup_status 和 test_results；
 明确的样本数/并发/长度/种子和冻结判据。工具支持 --test all,perf，一次启动后
 执行多个工作负载；它不把质量不达标当成服务崩溃，结果须逐项审核。
 
-与 layered 基线比较时显式设置 AFD_ASYNC_CAM_MEGA_MOE=0，其他参数和负载相同。
+与 layered 基线比较时用 `--ffn-mega-moe off`（默认），其他参数和负载相同。这个开关进入
+connector_extra_config 的 `ffn_mega_moe`，要求 `dynamicQuant=1` 且 `ffn_two_stream=false`；
+旧版 AFD 用的是 `AFD_ASYNC_CAM_MEGA_MOE` 环境变量和融合的 `afd_mega_moe_ffn` 内核，
+当前版本改为 `afd_mega_moe_pull_native` 搭配 `afd_mega_moe_comm`。
 每一侧均实际构建并配置自己的包/算子，使用全新服务进程和结果目录。当前没有
 自动 A/B 集成，不允许省略身份核验后直接宣称候选加速。
 

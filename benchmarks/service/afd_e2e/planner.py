@@ -139,6 +139,7 @@ def _additional_config(case: Case, role: str, address: str) -> dict:
                 {
                     "dynamicQuant": case.dynamic_quant,
                     "attn_ranks_per_dp": case.attention_tp,
+                    "ffn_mega_moe": case.ffn_mega_moe,
                 }
             )
         else:

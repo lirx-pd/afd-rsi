@@ -26,14 +26,19 @@ NPU health barrier. Do not spend a diagnostic rebuild on each unpromising patch.
 
 The child uses torch_npu.profiler on the same native seven-case workload and
 execution mode. Every FFN rank needs its own kernel_details.csv containing actual
-AfdMegaMoeFFN device tasks, with positive finite Duration(us). Archive raw traces,
+Mega device tasks, with positive finite Duration(us). Archive raw traces,
 process receipts, source/library identities and hashes. Keep profiler execution
 separate from ordinary benchmark samples; never compare profiled latencies as
 unprofiled gains.
 
+Which task proves the Mega path depends on the revision: newer sources run the
+pull-native FFN as `AfdMegaMoePullNative` together with `AfdMegaMoeComm`, older
+ones had one fused `AfdMegaMoeFFN` task. The controller accepts any of those
+names and rejects a profile that shows none.
+
 The controller summarizes count, total/mean device duration and top task shares
 per FFN rank. Summed task duration is not elapsed critical-path time or PMU busy
-time. A fused MegaMoe task does not expose its internal Cube/Vector/MTE/communication
+time. A fused Mega task does not expose its internal Cube/Vector/MTE/communication
 split. Sparse cases intentionally distribute unequal work; different rank totals
 alone do not establish imbalance. Kernel timing ranks investigation targets; the
 Agent must combine it with actual source/tiling to state a falsifiable hypothesis.

@@ -6,6 +6,20 @@ TRACE_CORES = 72
 TRACE_STRIDE = 16640
 TRACE_MAGIC = 0x4d4f455452414345
 
+# The overlay instruments the fused afd_mega_moe_ffn pipeline. Builds that moved
+# the FFN to the pull-native kernel have a different structure, so the anchor
+# patterns do not exist there; report that instead of instrumenting blindly.
+LEGACY_DIR = Path('csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel')
+LEGACY_HEADER = 'afd_mega_moe_pipeline.h'
+LEGACY_CPP = 'afd_mega_moe_ffn.cpp'
+PULL_DIR = Path('csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel')
+
+
+def supported(repo) -> bool:
+    """Whether this checkout still carries the fused pipeline the overlay patches."""
+    kernel = Path(repo) / LEGACY_DIR
+    return (kernel / LEGACY_HEADER).is_file() and (kernel / LEGACY_CPP).is_file()
+
 
 def replace_checked(source, old, new, count=1):
     if source.count(old) != count:
@@ -14,7 +28,12 @@ def replace_checked(source, old, new, count=1):
 
 
 def instrument(repo):
-    p = Path('csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel')
+    if not supported(repo):
+        raise ValueError(
+            'per-stage pipeline tracing instruments the fused afd_mega_moe_ffn kernel; '
+            'this checkout uses the pull-native FFN kernel, so no anchored trace exists. '
+            'Run the profile stage without --pipeline-trace-dir.')
+    p = LEGACY_DIR
     trace_class=r'''
     // Diagnostic contract: the caller owns 72 extended storage tails, 512 records/core.
     class PhaseTrace {
