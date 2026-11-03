@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
@@ -54,10 +55,50 @@ def runtime_env(repo: Path, devices: str) -> dict:
             "PYTHONDONTWRITEBYTECODE": "1"}
 
 
-def build(source: Path, output: Path, timeout: float):
+def toolchain_fingerprint() -> dict:
+    """Everything outside the source tree that a rebuild would pick up."""
+    from importlib import metadata
+    versions = {}
+    for name in ("torch", "torch-npu", "setuptools", "numpy"):
+        try:
+            versions[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            versions[name] = None
+    return {"python": sys.version.split()[0], "abiflags": getattr(sys, "abiflags", ""),
+            "packages": versions, "soc_version": "910c",
+            "cann": os.environ.get("ASCEND_HOME_PATH") or os.environ.get("ASCEND_OPP_PATH")}
+
+
+def build_key(snapshot: dict) -> str:
+    return hashlib.sha256(json.dumps(
+        {"source": snapshot["hash"], "toolchain": toolchain_fingerprint()},
+        sort_keys=True).encode()).hexdigest()
+
+
+def build(source: Path, output: Path, timeout: float, cache_root: Path | None = None):
+    """Build in an isolated copy, reusing a verified identical build when allowed.
+
+    A cache hit is never trusted: the cached tree is copied and its artifacts are
+    re-hashed against a fresh identity calculation, so a stale or corrupted entry
+    fails loudly instead of becoming evidence.
+    """
     if output.is_relative_to(source) or source.is_relative_to(output):
         raise ValueError("build output must be separate from input source")
     snapshot = inventory(source)
+    key = build_key(snapshot) if cache_root else None
+    cached = cache_root / key if key else None
+    if cached is not None and (cached / "artifacts.json").is_file():
+        shutil.copytree(cached, output, symlinks=False)
+        record = read_json(output / "cache.json")
+        if record.get("key") != key or record.get("source") != snapshot["hash"]:
+            raise ValueError("cached build does not match this source")
+        target = output / "source"
+        verify_source(target, snapshot)
+        if artifact_identity(target) != read_json(output / "artifacts.json"):
+            raise ValueError("cached build artifacts changed")
+        write_json(output / "build.json", {"status": "reused", "cache_key": key,
+                                          "reused_from": str(cached)})
+        return target
     output.mkdir(parents=True, exist_ok=False)
     target = output / "source"
     copy_source(source, target, snapshot)
@@ -67,11 +108,25 @@ def build(source: Path, output: Path, timeout: float):
                      {"SOC_VERSION": "910c", "MAX_JOBS": "8", "AFD_BUILD_JOBS": "8",
                       "AFD_BUILD_ASCEND_OPS": "1", "AFD_SKIP_ACLNN_BUILD": "0",
                       "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM_AFD_PLUGIN": f"0.0.0+rsi.{snapshot['hash'][:12]}"})
-    write_json(output / "build.json", result)
     if result["status"] != "completed" or not result["cleanup_complete"]:
+        write_json(output / "build.json", result)
         raise RuntimeError(f"isolated build failed; inspect {output / 'build/stderr.log'}")
     verify_source(target, snapshot)
-    write_json(output / "artifacts.json", artifact_identity(target))
+    artifacts = artifact_identity(target)
+    write_json(output / "artifacts.json", artifacts)
+    write_json(output / "build.json", result)
+    if cached is not None:
+        # Populate only after the hashes above are known to be good.
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        staging = cached.with_name(cached.name + ".tmp")
+        if staging.exists():
+            shutil.rmtree(staging)
+        shutil.copytree(output, staging, symlinks=False)
+        write_json(staging / "cache.json", {"key": key, "source": snapshot["hash"],
+                                            "toolchain": toolchain_fingerprint()})
+        if cached.exists():
+            shutil.rmtree(cached)
+        staging.rename(cached)
     return target
 
 

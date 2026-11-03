@@ -25,7 +25,10 @@ def _free_port() -> int:
 build_dir = Path(os.environ["AFD_RSI_BUILD_DIR"])
 source = Path.cwd()
 if sys.argv[1] == "build":
-    build(source, build_dir / "native", float(os.environ["AFD_RSI_TIMEOUT"]))
+    # A verified cache hit avoids a 20-minute rebuild of an unchanged checkout.
+    cache = os.environ.get("AFD_RSI_BUILD_CACHE") or None
+    build(source, build_dir / "native", float(os.environ["AFD_RSI_TIMEOUT"]),
+          cache_root=Path(cache) if cache else None)
     sys.exit(0)
 
 repo = build_dir / "native/source"

@@ -207,10 +207,21 @@ class Executor:
         self.remote = config['executor'] == 'itask'
         self.base = (str(Path(config['workdir']) / ('rsi-' + config['id'])) if self.remote
                      else str(job / 'execution'))
+        # Sibling of the job directories, so it outlives any single campaign.
+        self.cache = (str(Path(config['workdir']) / '.rsi-cache') if self.remote
+                      else str(job / 'cache'))
         self.env = {**os.environ, 'ITASK_DISABLE_AUTO_UPDATE': '1'}
 
     def command(self, argv, *, timeout=180, **kwargs):
-        result = subprocess.run(argv, env=self.env, capture_output=True, text=True, timeout=timeout, **kwargs)
+        try:
+            result = subprocess.run(argv, env=self.env, capture_output=True, text=True,
+                                    timeout=timeout, **kwargs)
+        except FileNotFoundError as error:
+            # The detached worker inherits its launcher's PATH, which a non-login
+            # shell may not include the CLI's install directory in.
+            raise RuntimeError(
+                f'{argv[0]} not found on PATH ({self.env.get("PATH", "")}); '
+                f'run from a login shell or export the CLI location before starting') from error
         if result.returncode:
             raise RuntimeError(f'command failed: {shlex.join(argv[:4])}\n{result.stdout[-2000:]}\n{result.stderr[-2000:]}')
         return result.stdout
@@ -231,7 +242,13 @@ class Executor:
 
     def python(self, code, *args):
         setup = ('source ' + shlex.quote(self.config['setup_script']) + ' && ') if self.config['setup_script'] else ''
-        command = setup + 'export PYTHONPATH=' + shlex.quote(self.base + '/controller/src') + '${PYTHONPATH:+:$PYTHONPATH}; exec ' + shlex.join([self.config['python'], '-c', code, *map(str, args)])
+        # Content-addressed caches shared by every campaign on this host. The
+        # build cache lets an unchanged checkout skip a full recompile; a hit is
+        # re-verified against source and artifact hashes before it is used.
+        exports = 'export AFD_RSI_BUILD_CACHE=' + shlex.quote(self.cache + '/build') + '; '
+        command = (setup + exports + 'export PYTHONPATH=' + shlex.quote(self.base + '/controller/src')
+                   + '${PYTHONPATH:+:$PYTHONPATH}; exec '
+                   + shlex.join([self.config['python'], '-c', code, *map(str, args)]))
         argv = ['bash', '-c', command]
         if self.remote:
             argv = ['itask-guian', 'exec', self.config['task'], '--tty=false', '--stdin=false', '--', *argv]
@@ -342,7 +359,25 @@ def stage(job, config, executor):
     event(job, 'preparing', phase=0, activity='upload')
     # mkdir is exclusive: interrupted/ambiguous bootstrap is not silently overwritten.
     executor.python('from pathlib import Path; import sys,json; b=Path(sys.argv[1]); b.mkdir(parents=True,exist_ok=True); marker=b/"bootstrap.json"; expected={"id":sys.argv[2],"sha256":sys.argv[3]}; assert (json.loads(marker.read_text())==expected if marker.exists() else not any(b.iterdir())), "foreign or changed bootstrap"; marker.write_text(json.dumps(expected))', executor.base, config['id'], digest(archive))
-    executor.send(archive, executor.base + '/payload.tar.gz')
+    if executor.remote:
+        # Same source, same bytes: reuse a stored payload instead of re-sending it.
+        stored = executor.cache + '/payloads/' + digest(archive)
+        cache_hit = executor.python(
+            'import hashlib,sys; from pathlib import Path; p=Path(sys.argv[1]); '
+            'print("hit" if p.is_file() and hashlib.sha256(p.read_bytes()).hexdigest()==sys.argv[2] else "miss")',
+            stored, digest(archive)).strip().endswith('hit')
+        if cache_hit:
+            executor.python('from pathlib import Path; import sys,shutil; '
+                            'shutil.copyfile(sys.argv[1], sys.argv[2])',
+                            stored, executor.base + '/payload.tar.gz')
+            event(job, 'preparing', phase=0, activity='upload', payload='reused')
+        else:
+            executor.send(archive, executor.base + '/payload.tar.gz')
+            executor.python('from pathlib import Path; import sys,shutil; p=Path(sys.argv[1]); '
+                            'p.parent.mkdir(parents=True,exist_ok=True); shutil.copyfile(sys.argv[2], p)',
+                            stored, executor.base + '/payload.tar.gz')
+    else:
+        executor.send(archive, executor.base + '/payload.tar.gz')
     executor.python('from pathlib import Path; import tarfile,hashlib,sys; b=Path(sys.argv[1]); assert not (b/"campaign").exists(); a=b/"payload.tar.gz"; assert hashlib.sha256(a.read_bytes()).hexdigest()==sys.argv[2]; t=tarfile.open(a); t.extractall(b,filter="data"); t.close()', executor.base, digest(archive))
     # Replace only the top-level source field; retain the user's commands and gates verbatim.
     import re

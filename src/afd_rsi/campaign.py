@@ -194,6 +194,10 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
             "AFD_RSI_WORKLOAD_ID": plan["workload_id"],
             "AFD_RSI_PLAN": str(run / "plan.lock.json"), "AFD_RSI_RUN": str(run),
             "AFD_RSI_ATTEMPT": str(attempt), "AFD_RSI_TIMEOUT": str(timeout),
+            # Shared, content-addressed build cache; a hit is re-verified against
+            # the source and artifact hashes before it can be used as evidence.
+            **({"AFD_RSI_BUILD_CACHE": os.environ["AFD_RSI_BUILD_CACHE"]}
+               if os.environ.get("AFD_RSI_BUILD_CACHE") else {}),
             "PYTHONDONTWRITEBYTECODE": "1",
             })
         observation["process"] = process
