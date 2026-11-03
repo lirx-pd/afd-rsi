@@ -58,7 +58,7 @@ def main(argv=None) -> int:
     proposer = commands.add_parser("propose")
     proposer.add_argument("request", type=Path)
     proposer.add_argument("--output", type=Path, required=True)
-    proposer.add_argument("--session-dir", type=Path, help="reuse this campaign's Codex conversation on the proposer host")
+    proposer.add_argument("--session-dir", type=Path, help="reuse this campaign's proposer session on the proposer host")
     patch = commands.add_parser("patch")
     patch.add_argument("run", type=Path)
     patch.add_argument("patch", type=Path)

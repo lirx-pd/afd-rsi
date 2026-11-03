@@ -6,6 +6,35 @@
 两轮都通过才做最终服务验收和候选 profile，完整资格通过后才替换 best。
 未设置该策略的 full 配方保留原顺序。报告不会把合成字段或 HTTP 指标当作算子计时。
 
+## 选择提案模型
+
+`[search].provider` 决定由哪个冻结适配器写补丁，`codex` 与 `deepseek` 现成可用：
+
+```toml
+[search]
+provider = "deepseek"
+
+[search.models]              # 可选；必须写在文件末尾的独立表
+analysis = "deepseek-v4.1-flash"
+code = "deepseek-v4.1-flash"
+```
+
+`[search.models]` 让两个阶段各自冻结：只写一个阶段时另一个取默认值，所以以后换了
+更擅长编码的模型，只需改 `code` 一行。声明后这两项进入经验指纹，环境变量不再覆盖
+已冻结的值（未声明的 campaign 仍可用环境变量临时试模型）。
+
+声明后适配器命令自动补成 `{foundation}/benchmarks/agents/<provider>_agent.py`；
+旧配方手写完整 `agent_command` 的写法继续有效，两者必须一致，否则 prepare 阶段
+直接报错。请求会记录所选适配器的相对路径与哈希，`propose` 与控制器都会复核，
+所以"换了模型却沿用旧请求"会失败而不是静默降级。声明 `provider` 的配方使用独立
+的经验指纹——不同模型的方向排序历史不会互相复用。
+
+DeepSeek 适配器只用标准库，不需要额外 SDK；认证走提案机的 `DEEPSEEK_API_KEY`，
+默认两个阶段都用 `deepseek-v4.1-flash`（`AFD_RSI_DEEPSEEK_MODEL` 可整体替换，
+便于使用带标签的模型 ID）。提案机可以是 Windows：适配器不依赖 POSIX，会话锁在
+两个平台都可用。换模型的唯一代价是 `max_calls` 语义不变、预算不变、验收门槛不变。
+细则见 [提案模型提供方](../knowledge/measurement/agent-providers.md)。
+
 ## 单机 Codex
 
 需要 Python 3.11+、Linux pidfd、已安装并登录的 Codex CLI。沿用 CLI 的 provider
@@ -21,7 +50,8 @@ stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数
 两次模型调用。外部文件交换采用相同流程。模型规则固化在仓库
 `knowledge/measurement/codex-models.md`。修改后的提案器用于新 campaign。
 Ascend 样例给每次提案 1200 秒和 524288 字节上下文；两步模型调用共享超时。
-priority=3 为优先、1 为备选，控制器按 priority 加类别晋升次数减失败次数取最大值。
+priority=3 为优先、1 为备选，控制器按方向路由的估计能力排序类别，同类别内才比较
+priority。
 
 使用仓库固定的 JSON
 schema 和只读模式；补丁由控制器进行 git-apply 和允许文件检查。

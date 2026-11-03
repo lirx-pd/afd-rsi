@@ -15,6 +15,64 @@ def positive(value, label, *, integer=False, zero=False):
     return value
 
 
+PROVIDERS = {"codex": "codex_agent.py", "deepseek": "deepseek_agent.py"}
+# Providers whose adapter takes the per-stage models from the frozen recipe.
+# The Codex adapter keeps this repository's fixed model policy instead.
+MODEL_POLICY_IN_ADAPTER = {"deepseek"}
+DEFAULT_STAGE_MODELS = {"analysis": "deepseek-v4.1-flash", "code": "deepseek-v4.1-flash"}
+STAGES = ("analysis", "code")
+AGENT_PREFIX = "{foundation}/benchmarks/agents/"
+
+
+def agent_driver(command) -> str:
+    """Relative path of the frozen proposer adapter a search command names."""
+    drivers = [part for part in command if part.startswith(AGENT_PREFIX)]
+    if len(drivers) != 1:
+        raise ValueError(
+            "agent command must name exactly one frozen benchmark/agents driver; "
+            "declare provider or point at {foundation}/benchmarks/agents/<name>_agent.py")
+    relative = drivers[0][len("{foundation}/"):]
+    if ".." in Path(relative).parts:
+        raise ValueError("agent driver escapes foundation")
+    return relative
+
+
+def stage_models(search: dict):
+    """Validate and default the per-stage proposer models."""
+    if "models" not in search:
+        return
+    models = search["models"]
+    if not isinstance(models, dict) or set(models) - set(STAGES) or not models:
+        raise ValueError(f"search models must name any of {list(STAGES)}")
+    for stage, name in models.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(f"search models.{stage} must be a nonempty string")
+    provider_name = search.get("provider")
+    if provider_name not in MODEL_POLICY_IN_ADAPTER:
+        raise ValueError(
+            "search models is only accepted for a provider whose recipe owns the model choice: "
+            + ", ".join(sorted(MODEL_POLICY_IN_ADAPTER)))
+    search["models"] = {stage: models.get(stage, DEFAULT_STAGE_MODELS[stage])
+                        for stage in STAGES}
+
+
+def provider(search: dict):
+    """Resolve and cross-check the proposer provider, defaulting the adapter argv."""
+    if "provider" in search and search["provider"] not in PROVIDERS:
+        raise ValueError(f"search provider must be one of {sorted(PROVIDERS)}")
+    driver = agent_driver(search["agent_command"]) if "agent_command" in search else None
+    if "provider" in search:
+        expected = f"{AGENT_PREFIX}{PROVIDERS[search['provider']]}"
+        if driver is None:
+            search["agent_command"] = ["{python}", expected, "--request", "{request}",
+                                       "--output", "{response}"]
+        elif driver != expected[len("{foundation}/"):]:
+            raise ValueError(f"agent command and provider={search['provider']} disagree")
+    elif driver is None:
+        raise ValueError("search requires agent_command or provider")
+    stage_models(search)
+
+
 def load_recipe(path: Path) -> dict:
     config = tomllib.loads(path.read_text())
     allowed = {"name", "backend", "source", "workload_id", "scope", "unit", "metric",
@@ -110,12 +168,14 @@ def load_recipe(path: Path) -> dict:
             positive(service[key], f"service {key}")
     if "search" in config:
         search = config["search"]
-        required = {"agent_command", "max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
-        optional = {'goal', 'router', 'explore_max_fraction', 'info_floor', 'margin', 'features'}
+        required = {"max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
+        optional = {'goal', 'router', 'explore_max_fraction', 'info_floor', 'margin', 'features',
+                    'provider', 'agent_command', 'models'}
         if not required <= set(search) or set(search) - required - optional:
             raise ValueError("invalid search settings")
         if 'goal' in search and (not isinstance(search['goal'], str) or not search['goal'].strip()):
             raise ValueError('search goal must be a nonempty string')
+        provider(search)
         argv_list(search["agent_command"], "agent command")
         for key in ("max_rounds", "max_calls", "max_context_bytes"):
             positive(search[key], key, integer=True)

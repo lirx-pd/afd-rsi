@@ -44,6 +44,9 @@ cleanup_seconds = 60
 require_clean_shutdown = false
 
 [search]
+# Proposer model: codex (default) or deepseek. Switching this one line selects the
+# frozen adapter; the controller still validates every proposal the same way.
+provider = "codex"
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
 max_rounds = 9
 max_calls = 9

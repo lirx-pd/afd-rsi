@@ -4,7 +4,7 @@
 `/proc`。控制程序没有运行时第三方依赖，不导入 torch 或 torch_npu。
 
 当前支持仓库内技能/知识闭包、冻结实验、隔离构建、正确性、真实服务验收、
-AB/BA、报告和补丁导出，以及 Codex 提案、受预算约束的自动搜索、独立复测晋升、
+AB/BA、报告和补丁导出，以及 Codex/DeepSeek 提案、受预算约束的自动搜索、独立复测晋升、
 历史经验选择和中断续跑。它不依赖其他 RSI 框架代码。
 
 8 个技能是为本机 A3 MegaMoe 重新整理的工作流，技术正文、参考头文件及完整
@@ -20,8 +20,10 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 支持独立 MegaMoe 基线/候选和自动 JSON/Markdown 报告，见 [原生实验](docs/eager-native.md)。FULL 使用 eager layered 参考，并检查实际捕获和 replay。
 本轮样例服务门槛按约定暂不考察正常关闭错误；原始失败仍归档，推理、身份和清理必须通过。
 
-自动搜索使用已有登录的 Codex CLI，也支持提案机和执行机通过文件交换，详见
-[自动搜索与续跑](docs/automatic-search.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
+自动搜索的提案模型可选：`[search].provider` 写 `codex`（默认，使用已登录的 Codex CLI）
+或 `deepseek`（提案机设置 `DEEPSEEK_API_KEY`，只用标准库）。两者都支持提案机和执行机
+通过文件交换，详见[自动搜索与续跑](docs/automatic-search.md)与
+[提案模型提供方](knowledge/measurement/agent-providers.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
 原生构建和 AFD E2E 服务接入同一个 campaign。默认验收 30 条 GSM8K，并记录
 128/512/2048 输入、1 输出 token、并发 1/4/8 的 prefill TTFT 矩阵；通过门槛后自动采集独立 profiling，
 把每个 FFN rank 的设备任务分析和历史结果交给 Agent 提出下一轮优化假设。固定控制器不耦合调度平台；统一 optimize 入口支持本机和可选 iTASK 执行器，不使用 SSH。

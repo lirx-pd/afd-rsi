@@ -45,6 +45,9 @@ cleanup_seconds = 60
 require_clean_shutdown = false
 
 [search]
+# Proposer model: codex (default) or deepseek. Switching this one line selects the
+# frozen adapter; the controller still validates every proposal the same way.
+provider = "codex"
 goal = "Optimize MegaMoe tile scheduling, expert packing, buffer ownership and communication/computation overlap for native-routing 32K-to-512 decode with six concurrent requests, mixed 16K/512 prefill, and 64K heavy prefill. Use common-window TPOT/output tokens per second and prefill TTFT/input tokens per second; preserve accuracy, quantization and graph contracts. Native synthetic gains do not establish model gains."
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
 max_rounds = 9

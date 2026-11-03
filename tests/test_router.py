@@ -201,7 +201,7 @@ def test_contracts_fill_router_defaults_into_the_frozen_plan(tmp_path):
         '[commands]\nbuild = ["{python}", "-c", "pass"]\n'
         'correctness = ["{python}", "{foundation}/benchmarks/x.py"]\n'
         'benchmark = ["{python}", "{foundation}/benchmarks/x.py"]\n'
-        '[search]\nagent_command = ["{python}", "-c", "pass"]\n'
+        '[search]\nprovider = "codex"\n'
         'max_rounds = 6\nmax_calls = 6\nagent_timeout_seconds = 10\n'
         'max_context_bytes = 8192\nexperience_dirs = []\n')
     config = contracts.load_recipe(recipe)
@@ -212,6 +212,7 @@ def test_contracts_fill_router_defaults_into_the_frozen_plan(tmp_path):
     assert search['explore_max_fraction'] == 0.25
     assert search['features']['weights'] == {name: float(WEIGHTS[name])
                                              for name in sorted(WEIGHTS)}
+    assert contracts.agent_driver(search['agent_command']) == 'benchmarks/agents/codex_agent.py'
 
 
 @pytest.mark.parametrize('block', [
@@ -232,7 +233,7 @@ def test_contracts_reject_invalid_router_settings(tmp_path, block):
             '[commands]\nbuild = ["{python}", "-c", "pass"]\n'
             'correctness = ["{python}", "{foundation}/benchmarks/x.py"]\n'
             'benchmark = ["{python}", "{foundation}/benchmarks/x.py"]\n'
-            '[search]\nagent_command = ["{python}", "-c", "pass"]\n'
+            '[search]\nprovider = "codex"\n'
             'max_rounds = 6\nmax_calls = 6\nagent_timeout_seconds = 10\n'
             'max_context_bytes = 8192\nexperience_dirs = []\n')
     recipe = tmp_path / 'recipe.toml'

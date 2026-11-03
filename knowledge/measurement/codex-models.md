@@ -1,5 +1,8 @@
 # Codex model policy
 
+This is the policy for the `codex` provider. For switching providers and the
+DeepSeek defaults, see [agent providers](agent-providers.md).
+
 Use the authenticated proposer host's existing Codex provider/login. Pin model
 and reasoning effort explicitly rather than inheriting a personal default:
 

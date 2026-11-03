@@ -13,10 +13,15 @@ import uuid
 from pathlib import Path
 
 from . import campaign, skills
+from .contracts import agent_driver
 from .evidence import digest, read_json, write_json
 from .router import Ledger, Router, normalized_score
 from .runner import execute
 from .workspace import copy_source, inventory
+
+# Pre-router campaigns and their in-flight requests carry no provider field; the
+# digest they recorded was always this adapter, so keep it as the fallback.
+DEFAULT_PROVIDER = 'benchmarks/agents/codex_agent.py'
 
 
 def identity(value):
@@ -37,6 +42,13 @@ def fingerprint(plan):
                if key in plan['search']}
     if routing:
         payload['routing'] = routing
+    # A declared provider is part of the method: directions ranked from one
+    # model's history must not be silently reused for another. Recipes that do
+    # not declare it keep their historical digest, so old experience still loads.
+    if 'provider' in plan['search']:
+        payload['provider'] = plan['search']['provider']
+    if 'models' in plan['search']:
+        payload['models'] = plan['search']['models']
     return identity(payload)
 
 
@@ -159,8 +171,10 @@ def request_context(run, plan, best, records, number, router=None):
             'Converge with localized changes to the current best. Prefer one bounded mechanism or tuning parameter; '
             'avoid new protocol, ABI or broad pipeline redesigns.'),
     }
+    provider = agent_driver(plan['search']['agent_command'])
     context = {'schema_version': 1, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
-               'provider_hash': digest(run / 'foundation/benchmarks/agents/codex_agent.py'),
+               'provider': provider,
+               'provider_hash': digest(run / 'foundation' / provider),
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],
                'max_response_bytes': plan['search']['max_context_bytes'] * 2,
                'source_hash': best['source_hash'], 'allowed_files': plan['allowed_files'],
@@ -175,6 +189,9 @@ def request_context(run, plan, best, records, number, router=None):
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
                    'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
+    if plan['search'].get('models'):
+        # Frozen per-stage models; an adapter that owns its policy ignores this.
+        context['models'] = plan['search']['models']
     if plan['search'].get('goal'):
         context['objective']['goal'] = plan['search']['goal']
     if router is not None and router.enabled:
@@ -260,12 +277,27 @@ def request_context(run, plan, best, records, number, router=None):
     return context
 
 
+def session_env(directory: Path) -> dict:
+    """Both adapters read their own session variable; the neutral one is shared.
+
+    The directory keeps its historical ``codex-session`` name so a campaign that
+    is mid-flight when the provider is introduced resumes the same conversation;
+    it now holds whichever provider the frozen recipe selected.
+    """
+    directory = directory.resolve()
+    return {'AFD_RSI_AGENT_SESSION_DIR': str(directory),
+            'AFD_RSI_CODEX_SESSION_DIR': str(directory)}
+
+
 def propose(request: Path, output: Path, root: Path, session_dir: Path = None):
     """Run only the proposer on an authenticated host; no target checkout is required."""
     skills.validate(root)
     context = read_json(request)
-    driver = root / 'benchmarks/agents/codex_agent.py'
-    if digest(driver) != context['provider_hash']:
+    # The request names the adapter it was frozen against; proposals from any
+    # other adapter would come from a different model and must not be accepted.
+    provider = context.get('provider', DEFAULT_PROVIDER)
+    driver = root / provider
+    if not driver.is_file() or digest(driver) != context['provider_hash']:
         raise ValueError('proposer differs from the frozen campaign adapter')
     remaining = context['deadline'] - time.time()
     if remaining <= 0:
@@ -273,12 +305,12 @@ def propose(request: Path, output: Path, root: Path, session_dir: Path = None):
     process = execute([sys.executable, str(driver), '--request', str(request),
                        '--output', str(output / 'proposal.json')], request.parent, output,
                       min(context['agent_timeout_seconds'], remaining),
-                      {'AFD_RSI_CODEX_SESSION_DIR': str((session_dir or output / 'codex-session').resolve())})
+                      session_env(session_dir or output / 'codex-session'))
     if process['status'] != 'completed' or not process['cleanup_complete']:
-        raise ValueError('Codex proposal failed; inspect proposer logs and receipt')
+        raise ValueError(f'{Path(provider).stem} proposal failed; inspect proposer logs and receipt')
     response = output / 'proposal.json'
     if response.stat().st_size > context['max_response_bytes']:
-        raise ValueError('Codex response exceeds the frozen request bound')
+        raise ValueError('proposer response exceeds the frozen request bound')
     validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
     return response
 
@@ -526,7 +558,7 @@ def search(run: Path, root: Path, *, external=False):
                     remaining = plan['expires_at'] - time.time()
                     if remaining > 0:
                         process = execute(argv, round_dir, round_dir / 'agent', min(settings['agent_timeout_seconds'], remaining),
-                                          {'AFD_RSI_CODEX_SESSION_DIR': str(run / 'search/codex-session')})
+                                          session_env(run / 'search/codex-session'))
                         record['agent_process'] = process
                         write_json(path, record)
                 try:

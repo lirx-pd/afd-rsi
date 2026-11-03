@@ -20,6 +20,9 @@ correctness = ["{python}", "{foundation}/benchmarks/fixtures/cpu_driver.py", "co
 benchmark = ["{python}", "{foundation}/benchmarks/fixtures/cpu_driver.py", "benchmark"]
 
 [search]
+# Proposer model: codex (default) or deepseek. Switching this one line selects the
+# frozen adapter; the controller still validates every proposal the same way.
+provider = "codex"
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
 max_rounds = 9
 max_calls = 9
@@ -39,3 +42,10 @@ explore_max_fraction = 0.25
 # Frozen difficulty weights (CAKE Eq.1 ordering): tiling, scheduling, blocking,
 # reduction, dtype spread, data movement, fusion breadth, cube intensity.
 weights = { T = 0.51, S = 0.78, B = 0.59, R = 0.70, D = 0.44, M = 0.61, F = 0.64, C = 0.98 }
+
+# DeepSeek only: per-stage proposer models, frozen into the plan and carried in the
+# request. Both default to deepseek-v4.1-flash; replace one line when a new model is
+# better at analysis or at coding. Uncomment as a separate table:
+# [search.models]
+# analysis = "deepseek-v4.1-flash"
+# code = "deepseek-v4.1-flash"
