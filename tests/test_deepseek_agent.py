@@ -5,8 +5,10 @@ these tests run on every host; the transport is substituted, never the network.
 """
 
 import importlib.util
+import io
 import json
 import sys
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -22,20 +24,31 @@ def adapter():
     return module
 
 
-class FakeTransport:
-    """Records requests and replays queued completions."""
+GATEWAY = 'http://gateway.test/v1'
+MODEL = 'DeepSeek-V4.1-Flash-1017'
 
-    def __init__(self, *contents):
+
+class FakeTransport:
+    """Records requests and replays queued completions or a model listing."""
+
+    def __init__(self, *contents, models=(MODEL,)):
         self.contents = list(contents)
+        self.models = list(models)
         self.payloads = []
         self.headers = []
+        self.urls = []
 
     def __call__(self, request, timeout=None):
-        self.payloads.append(json.loads(request.data.decode()))
+        self.urls.append(request.full_url)
         self.headers.append(dict(request.header_items()))
-        content = self.contents.pop(0)
-        body = json.dumps({'choices': [{'message': {'content': content}}],
-                           'usage': {'prompt_tokens': 7, 'completion_tokens': 3}}).encode()
+        if request.data is None:                       # GET /models
+            body = json.dumps({'object': 'list',
+                               'data': [{'id': name} for name in self.models]}).encode()
+        else:
+            self.payloads.append(json.loads(request.data.decode()))
+            content = self.contents.pop(0)
+            body = json.dumps({'choices': [{'message': {'content': content}}],
+                               'usage': {'prompt_tokens': 7, 'completion_tokens': 3}}).encode()
 
         class Response:
             def __enter__(self_inner):
@@ -86,6 +99,7 @@ def prepare(tmp_path, monkeypatch, *contents, **env):
     transport = FakeTransport(*contents)
     monkeypatch.setattr(module, 'urlopen', transport)
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     request = request_document(tmp_path)
@@ -104,7 +118,7 @@ def test_two_stage_proposal_and_usage_without_leaking_the_key(tmp_path, monkeypa
     turns = json.loads((output.parent / 'usage.json').read_text())['turns']
     assert [turn['stage'] for turn in turns] == ['analysis', 'code']
     # One model serves both stages by default; the split is about what is asked.
-    assert {turn['model'] for turn in turns} == {'deepseek-v4.1-flash'}
+    assert {turn['model'] for turn in turns} == {MODEL}
     assert turns[0]['prompt_tokens'] == 7 and turns[1]['completion_tokens'] == 3
     assert transport.payloads[0]['response_format'] == {'type': 'json_object'}
     assert transport.payloads[1]['temperature'] == 0
@@ -119,15 +133,15 @@ def test_model_selection_honours_shared_and_per_stage_overrides(tmp_path, monkey
     monkeypatch.delenv('AFD_RSI_DEEPSEEK_MODEL', raising=False)
     monkeypatch.delenv('AFD_RSI_DEEPSEEK_ANALYSIS_MODEL', raising=False)
     monkeypatch.delenv('AFD_RSI_DEEPSEEK_CODE_MODEL', raising=False)
-    assert module.model_for('analysis') == module.model_for('code') == 'deepseek-v4.1-flash'
-    monkeypatch.setenv('AFD_RSI_DEEPSEEK_MODEL', 'deepseek-v4.1-flash (1017)')
-    assert module.model_for('code') == 'deepseek-v4.1-flash (1017)'
+    assert module.model_for('analysis') == module.model_for('code') == MODEL
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_MODEL', 'gateway/other-flash')
+    assert module.model_for('code') == 'gateway/other-flash'
     monkeypatch.setenv('AFD_RSI_DEEPSEEK_CODE_MODEL', 'other-code')
-    assert module.model_for('code') == 'deepseek-v4.1-flash (1017)', \
+    assert module.model_for('code') == 'gateway/other-flash', \
         'the shared override outranks a stage override'
     monkeypatch.delenv('AFD_RSI_DEEPSEEK_MODEL')
     assert module.model_for('code') == 'other-code'
-    assert module.model_for('analysis') == 'deepseek-v4.1-flash'
+    assert module.model_for('analysis') == MODEL
 
 
 def test_json_mode_can_be_disabled_for_a_restrictive_gateway(tmp_path, monkeypatch):
@@ -149,11 +163,12 @@ def test_unsupported_parameter_is_dropped_once_and_recorded(tmp_path, monkeypatc
         payload = json.loads(request.data.decode())
         calls.append(payload)
         if len(calls) == 1:
-            raise RuntimeError('DeepSeek HTTP 400: {"error": "response_format is not supported"}')
+            raise RuntimeError('gateway HTTP 400: {"error": "response_format is not supported"}')
         return transport(request, timeout)
 
     monkeypatch.setattr(module, 'urlopen', failing_then_ok)
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
     args = type('Args', (), {'request': request_document(tmp_path),
                              'output': tmp_path / 'out/proposal.json',
                              'session_dir': tmp_path / 'session'})()
@@ -301,3 +316,114 @@ def test_extract_json_handles_prose_and_fences():
     assert module.extract_json('```\n{"stop": true}\n```') == {'stop': True}
     with pytest.raises(ValueError):
         module.extract_json('no object here')
+
+
+def probed(tmp_path, monkeypatch, *, key='sk-test-secret', base=GATEWAY, models=(MODEL,),
+           http_errors=(), contents=('ok', '{"ok": true}')):
+    """Run the preflight with a substituted transport; no network is touched."""
+    module = adapter()
+    transport = FakeTransport(*contents, models=models)
+    remaining = list(http_errors)
+
+    def wrapped(request, timeout=None):
+        if remaining:
+            code, body = remaining.pop(0)
+            raise urllib.error.HTTPError(request.full_url, code, 'error', {},
+                                         io.BytesIO(body.encode()))
+        return transport(request, timeout)
+
+    monkeypatch.setattr(module, 'urlopen', wrapped)
+    if key is None:
+        monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+    else:
+        monkeypatch.setenv('DEEPSEEK_API_KEY', key)
+    if base is None:
+        monkeypatch.delenv('AFD_RSI_DEEPSEEK_BASE_URL', raising=False)
+    else:
+        monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', base)
+    monkeypatch.delenv('AFD_RSI_DEEPSEEK_KEY_ENV', raising=False)
+    return module.probe()
+
+
+def test_preflight_passes_when_the_gateway_serves_the_model(tmp_path, monkeypatch):
+    steps, ok = probed(tmp_path, monkeypatch)
+    assert ok, steps
+    assert [item['step'] for item in steps] == ['configuration', 'endpoint', 'model',
+                                                'completion', 'json mode']
+    assert all(item['ok'] for item in steps)
+
+
+def test_preflight_names_the_missing_configuration_first(tmp_path, monkeypatch):
+    steps, ok = probed(tmp_path, monkeypatch, key=None)
+    assert not ok
+    assert steps[0]['step'] == 'configuration' and 'DEEPSEEK_API_KEY' in steps[0]['detail']
+    assert len(steps) == 1, 'no request is attempted without a credential'
+
+    steps, ok = probed(tmp_path, monkeypatch, base=None)
+    assert not ok and 'AFD_RSI_DEEPSEEK_BASE_URL' in steps[0]['detail']
+
+
+def test_preflight_accepts_a_renamed_credential_variable(tmp_path, monkeypatch):
+    module = adapter()
+    monkeypatch.setattr(module, 'urlopen', FakeTransport('ok', '{"ok": true}', models=(MODEL,)))
+    monkeypatch.delenv('DEEPSEEK_API_KEY', raising=False)
+    monkeypatch.setenv('CSI_API_KEY', 'sk-gateway-key')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_KEY_ENV', 'CSI_API_KEY')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    steps, ok = module.probe()
+    assert ok, steps
+    assert 'CSI_API_KEY' in steps[0]['detail'], 'the report says which variable was used'
+
+
+def test_preflight_reports_a_model_the_gateway_does_not_serve(tmp_path, monkeypatch):
+    steps, ok = probed(tmp_path, monkeypatch, models=('some-other-model',))
+    assert not ok
+    model = [item for item in steps if item['step'] == 'model'][0]
+    assert MODEL in model['detail'] and 'some-other-model' in model['detail']
+    assert 'AFD_RSI_DEEPSEEK_MODEL' in model['remedy']
+
+
+@pytest.mark.parametrize('code, hint', [
+    (401, 'refresh the credential'),
+    (404, 'AFD_RSI_DEEPSEEK_BASE_URL'),
+    (503, 'availability problem'),
+])
+def test_preflight_translates_gateway_status_into_one_action(tmp_path, monkeypatch, code, hint):
+    steps, ok = probed(tmp_path, monkeypatch, http_errors=[(code, '{"error":"nope"}')])
+    assert not ok
+    endpoint = [item for item in steps if item['step'] == 'endpoint'][0]
+    assert str(code) in endpoint['detail'] and hint in endpoint['remedy']
+
+
+def test_preflight_keeps_the_credential_out_of_its_report(tmp_path, monkeypatch):
+    # Gateways echo the presented token in auth errors; the report must not carry it.
+    steps, ok = probed(tmp_path, monkeypatch,
+                       http_errors=[(401, '{"error":"bad key sk-test-secret"}')])
+    assert not ok
+    text = json.dumps(steps)
+    assert 'sk-test-secret' not in text
+    assert 'sk-<redacted>' in text
+
+
+def test_preflight_reports_json_mode_separately_from_generation(tmp_path, monkeypatch):
+    module = adapter()
+    listing = FakeTransport('ok', '{"ok": true}', models=(MODEL,))
+
+    def wrapped(request, timeout=None):
+        if request.data is None:
+            return listing(request, timeout)
+        payload = json.loads(request.data.decode())
+        if 'response_format' in payload:
+            raise urllib.error.HTTPError(request.full_url, 400, 'error', {},
+                                         io.BytesIO(b'{"error":"response_format unsupported"}'))
+        return listing(request, timeout)
+
+    monkeypatch.setattr(module, 'urlopen', wrapped)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    steps, ok = module.probe()
+    json_step = [item for item in steps if item['step'] == 'json mode'][0]
+    assert not json_step['ok'] and 'AFD_RSI_DEEPSEEK_JSON_MODE=0' in json_step['remedy']
+    assert [item['step'] for item in steps if item['ok']][-1] == 'completion', \
+        'generation must be proven before JSON mode is blamed'
+    assert not ok, 'a partially working endpoint is still a failure'

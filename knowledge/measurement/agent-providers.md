@@ -27,8 +27,21 @@ provider = "codex"     # 默认；也可写 "deepseek"
 ## deepseek
 
 - 适配器：`benchmarks/agents/deepseek_agent.py`，仅用标准库，不需要额外安装包。
-- 认证：提案机环境变量 `DEEPSEEK_API_KEY`，不写入仓库、请求或 campaign。
-- 默认模型：`deepseek-v4.1-flash`，分析与编码两个阶段都用同一个模型；
+- 三个输入必须和发起提案的那台机器上既有的模型网关配置一致：网关根地址、
+  凭据变量、模型标识。适配器不内置任何一项——凭空给的默认值正是"调用一个
+  根本不服务该模型的地址"的来源。
+  - 网关根地址：`AFD_RSI_DEEPSEEK_BASE_URL`，含 API 前缀（如 `/v1`）。
+  - 凭据变量：`AFD_RSI_DEEPSEEK_KEY_ENV` 指定变量名（默认 `DEEPSEEK_API_KEY`），
+    值本身只存在提案机环境里，不写入仓库、请求或 campaign。
+  - 模型标识：`[search.models]` 或 `AFD_RSI_DEEPSEEK_MODEL`，默认
+    `DeepSeek-V4.1-Flash-1017`。
+- 先用 `python -m afd_rsi probe`（提案机不是 Linux 时用
+  `python benchmarks/agents/deepseek_agent.py --check`）验证。它按顺序报告：
+  配置是否齐全、网关是否可达、网关自己的模型清单里有没有该标识、能否真正生成、
+  JSON 输出是否被接受；第一个失败项直接给出该改哪一个变量。
+  `401` 是凭据问题，`404` 多为地址缺 API 前缀，`503` 是网关自身无健康上游——
+  属于可用性问题，不是配置问题。
+- 默认模型：`DeepSeek-V4.1-Flash-1017`，分析与编码两个阶段都用同一个模型；
   两阶段仍然分开，因为区分的是"只出假设"和"出补丁"的要求，不是模型。
 - 按阶段替换：配方里声明 `[search.models]` 后，两个阶段各自冻结，只写一个阶段时
   另一个取默认。以后有新模型时只替换它擅长的那个阶段：
@@ -38,7 +51,7 @@ provider = "codex"     # 默认；也可写 "deepseek"
   provider = "deepseek"
 
   [search.models]
-  analysis = "deepseek-v4.1-flash"
+  analysis = "DeepSeek-V4.1-Flash-1017"
   code = "以后的编码模型"
   ```
 
@@ -48,10 +61,10 @@ provider = "codex"     # 默认；也可写 "deepseek"
   只对没有声明 `[search.models]` 的 campaign 生效，避免环境悄悄改变已冻结的实验。
 - codex 的模型策略固定在本仓库（见 [codex models](codex-models.md)），
   不接受 `[search.models]`，声明即报错。
-- 接口地址由 `AFD_RSI_DEEPSEEK_BASE_URL` 指定，默认官方 API 域名。
 - 默认请求 JSON 输出与 temperature=0；网关不接受这些参数时，适配器会去掉它们
   重试一次并记录 `unsupported-parameters.json`，校验仍在本地进行。
   `AFD_RSI_DEEPSEEK_JSON_MODE=0` 可完全关闭。
+- 网关的报错正文可能回显提交的凭据，适配器在写入任何报告前先脱敏。
 - 无服务端会话：每轮把请求内联进提示，按 `AFD_RSI_DEEPSEEK_MAX_CHARS`
   （默认 200000 字符）裁剪；裁剪顺序是日志、知识正文、最长的源码文件、较旧证据，
   被删内容写进请求的 `context_truncation`，模型知道缺了什么。

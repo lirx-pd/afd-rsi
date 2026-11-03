@@ -100,7 +100,7 @@ def test_per_stage_models_are_frozen_with_defaults(tmp_path):
         tmp_path, 'provider = "deepseek"\n',
         '\n[search.models]\nanalysis = "new-analyst"\n'))
     assert config['search']['models'] == {'analysis': 'new-analyst',
-                                         'code': 'deepseek-v4.1-flash'}
+                                         'code': 'DeepSeek-V4.1-Flash-1017'}
 
 
 def test_per_stage_models_are_rejected_where_the_adapter_owns_the_policy(tmp_path):
@@ -128,10 +128,10 @@ def test_declared_models_change_the_experience_fingerprint():
     plain = search.fingerprint({'search': {'provider': 'deepseek'}, **base})
     analysis_swap = search.fingerprint(
         {'search': {'provider': 'deepseek',
-                    'models': {'analysis': 'new-analyst', 'code': 'deepseek-v4.1-flash'}}, **base})
+                    'models': {'analysis': 'new-analyst', 'code': 'DeepSeek-V4.1-Flash-1017'}}, **base})
     code_swap = search.fingerprint(
         {'search': {'provider': 'deepseek',
-                    'models': {'analysis': 'deepseek-v4.1-flash', 'code': 'new-coder'}}, **base})
+                    'models': {'analysis': 'DeepSeek-V4.1-Flash-1017', 'code': 'new-coder'}}, **base})
     assert len({plain, analysis_swap, code_swap}) == 3, \
         'a different model per stage is a different method'
 
@@ -146,7 +146,7 @@ def test_request_carries_the_frozen_stage_models(tmp_path):
     plan = campaign.load(run, ROOT)
     best = read_json(run / 'search/best.json')
     context = search.request_context(run, plan, best, [], 1)
-    assert context['models'] == {'analysis': 'new-analyst', 'code': 'deepseek-v4.1-flash'}
+    assert context['models'] == {'analysis': 'new-analyst', 'code': 'DeepSeek-V4.1-Flash-1017'}
 
 
 def test_request_without_declared_models_stays_unchanged(tmp_path):

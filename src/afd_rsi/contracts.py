@@ -19,7 +19,8 @@ PROVIDERS = {"codex": "codex_agent.py", "deepseek": "deepseek_agent.py"}
 # Providers whose adapter takes the per-stage models from the frozen recipe.
 # The Codex adapter keeps this repository's fixed model policy instead.
 MODEL_POLICY_IN_ADAPTER = {"deepseek"}
-DEFAULT_STAGE_MODELS = {"analysis": "deepseek-v4.1-flash", "code": "deepseek-v4.1-flash"}
+DEFAULT_STAGE_MODELS = {"analysis": "DeepSeek-V4.1-Flash-1017",
+                        "code": "DeepSeek-V4.1-Flash-1017"}
 STAGES = ("analysis", "code")
 AGENT_PREFIX = "{foundation}/benchmarks/agents/"
 

@@ -7,8 +7,22 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import campaign, skills
-from .contracts import load_recipe
+from . import skills
+from .contracts import PROVIDERS, load_recipe
+
+
+def probe_provider(name: str, output, root: Path) -> int:
+    """Run the frozen adapter's own preflight before any round is spent.
+
+    Deliberately avoids importing the campaign controller: the probe must run on
+    the proposer host, which is often not the Linux execution host.
+    """
+    adapter = root / "benchmarks/agents" / PROVIDERS[name]
+    argv = [sys.executable, str(adapter), "--check"]
+    if output:
+        argv += ["--output", str(output.resolve())]
+    # The adapter owns its configuration and reports the failing step itself.
+    return subprocess.call(argv, cwd=str(root))
 
 
 def main(argv=None) -> int:
@@ -66,8 +80,15 @@ def main(argv=None) -> int:
     export.add_argument("run", type=Path)
     export.add_argument("--output", type=Path, required=True)
     export.add_argument("--best", action="store_true", help="export the confirmed search incumbent")
+    probe = commands.add_parser("probe", help="Check the proposer model is reachable before searching")
+    probe.add_argument("--provider", choices=sorted(PROVIDERS), default="deepseek")
+    probe.add_argument("--output", type=Path, help="record the report as JSON")
     args = parser.parse_args(arguments)
     try:
+        if args.action == "probe":
+            # The controller needs a Linux host; the preflight must not.
+            return probe_provider(args.provider, args.output, root)
+        from . import campaign
         if args.action == "check":
             manifest = skills.validate(root)
             if args.recipe:
@@ -104,6 +125,8 @@ def main(argv=None) -> int:
             print(search_report(run, root) if (run / "search/state.json").exists() else campaign.report(run, root))
         elif args.action == "export":
             print(campaign.export(args.run.resolve(), args.output.resolve(), root, best=args.best))
+        elif args.action == "probe":
+            return probe_provider(args.provider, args.output, root)
         return 0
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"afd-rsi: {error}", file=sys.stderr)

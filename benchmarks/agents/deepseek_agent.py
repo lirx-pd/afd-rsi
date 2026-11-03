@@ -8,13 +8,19 @@ package beyond a Python interpreter.
 Configuration is taken from the environment only, so no credential or endpoint is
 ever written into a campaign, a request, or the repository:
 
-    DEEPSEEK_API_KEY                 required; present only on the proposer host
-    AFD_RSI_DEEPSEEK_BASE_URL        default https://api.deepseek.com
-    AFD_RSI_DEEPSEEK_MODEL           default deepseek-v4.1-flash, used by both stages
+    DEEPSEEK_API_KEY                 required unless AFD_RSI_DEEPSEEK_KEY_ENV renames it
+    AFD_RSI_DEEPSEEK_KEY_ENV         name of the variable holding the key
+    AFD_RSI_DEEPSEEK_BASE_URL        required; OpenAI-compatible gateway root, e.g. ending /v1
+    AFD_RSI_DEEPSEEK_MODEL           default DeepSeek-V4.1-Flash-1017, used by both stages
     AFD_RSI_DEEPSEEK_ANALYSIS_MODEL  optional per-stage override
     AFD_RSI_DEEPSEEK_CODE_MODEL      optional per-stage override
     AFD_RSI_DEEPSEEK_JSON_MODE       set 0 when the endpoint rejects JSON mode
     AFD_RSI_DEEPSEEK_MAX_CHARS       prompt budget in characters, default 200000
+
+Neither the endpoint nor the credential has a built-in value: an invented default is
+how a campaign ends up calling a host that never serves the requested model. Run
+``--check`` on the proposer host first; it reports the missing piece and the gateway's
+own model list instead of failing mid-round.
 
 A recipe may freeze the per-stage models itself through ``[search.models]``; those
 values win over the environment so a campaign always runs what it declared.
@@ -27,6 +33,7 @@ separately configurable so a future model can replace just one of them.
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -36,8 +43,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 
-DEFAULT_BASE_URL = 'https://api.deepseek.com'
-DEFAULT_MODEL = 'deepseek-v4.1-flash'
+DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
+DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
 DEFAULT_MAX_CHARS = 200_000
 
 SYSTEM_RULES = (
@@ -64,9 +71,40 @@ CODE_TASK = (
 )
 
 
-def endpoint() -> str:
-    base = (os.environ.get('AFD_RSI_DEEPSEEK_BASE_URL') or DEFAULT_BASE_URL).rstrip('/')
-    return base + '/chat/completions'
+def key_env() -> str:
+    """Name of the environment variable holding the API key.
+
+    The variable is named rather than assumed so a gateway that issues its own
+    credential (for example an internal one) needs no renaming or copying.
+    """
+    return os.environ.get('AFD_RSI_DEEPSEEK_KEY_ENV') or DEFAULT_KEY_ENV
+
+
+def api_key() -> str:
+    name = key_env()
+    key = os.environ.get(name)
+    if not key:
+        raise ValueError(f'{name} is not set on the proposer host')
+    return key
+
+
+def base_url() -> str:
+    """Gateway root, including the API prefix such as /v1.
+
+    There is deliberately no built-in default: an invented endpoint is exactly
+    how a campaign ends up calling a host that never serves the requested model.
+    ``--check`` reports the missing configuration before any round is spent.
+    """
+    value = (os.environ.get('AFD_RSI_DEEPSEEK_BASE_URL') or '').strip().rstrip('/')
+    if not value:
+        raise ValueError(
+            'AFD_RSI_DEEPSEEK_BASE_URL is not set; point it at an OpenAI-compatible '
+            'gateway root that serves the configured model')
+    return value
+
+
+def endpoint(path: str = '/chat/completions') -> str:
+    return base_url() + path
 
 
 def model_for(stage: str, request: dict | None = None) -> str:
@@ -136,22 +174,41 @@ def truncate(request: dict, budget: int) -> tuple[dict, list]:
     return view, dropped
 
 
-def post(payload: dict, timeout: float) -> dict:
+def redact(text: str) -> str:
+    """Strip key material from gateway messages before it can reach a log.
+
+    Gateways sometimes echo the presented token in an auth error. A credential
+    must never land in a campaign receipt, a probe report, or a test failure.
+    """
+    text = re.sub(r'sk-[A-Za-z0-9_\-]{6,}', 'sk-<redacted>', text)
+    try:
+        secret = os.environ.get(key_env())
+    except Exception:                                     # pragma: no cover - defensive
+        secret = None
+    if secret:
+        text = text.replace(secret, '<redacted>')
+    return text
+
+
+def request_json(url: str, payload: dict | None, timeout: float) -> dict:
     """One JSON round trip; the API key is read here and never persisted."""
-    key = os.environ.get('DEEPSEEK_API_KEY')
-    if not key:
-        raise ValueError('DEEPSEEK_API_KEY is not set on the proposer host')
-    body = json.dumps(payload).encode()
-    request = urllib.request.Request(endpoint(), data=body, method='POST', headers={
-        'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'})
+    key = api_key()
+    body = None if payload is None else json.dumps(payload).encode()
+    request = urllib.request.Request(
+        url, data=body, method='GET' if body is None else 'POST',
+        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'})
     try:
         with urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode())
     except urllib.error.HTTPError as error:
-        detail = error.read().decode('utf-8', 'replace')[:2000]
-        raise RuntimeError(f'DeepSeek HTTP {error.code}: {detail}') from error
+        detail = redact(error.read().decode('utf-8', 'replace')[:2000])
+        raise RuntimeError(f'gateway HTTP {error.code}: {detail}') from error
     except urllib.error.URLError as error:
-        raise RuntimeError(f'DeepSeek request failed: {error.reason}') from error
+        raise RuntimeError(f'gateway request failed: {error.reason}') from error
+
+
+def post(payload: dict, timeout: float) -> dict:
+    return request_json(endpoint(), payload, timeout)
 
 
 # Kept as a module attribute so tests can substitute a transport without network.
@@ -373,14 +430,110 @@ def exclusive_lock(path: Path):
     return handle
 
 
+def probe(timeout: float = 30.0) -> tuple[list, bool]:
+    """Verify the endpoint can actually serve the configured model.
+
+    Nothing here can guarantee an external service stays up; the point is that a
+    broken configuration is reported as a specific, actionable failure before a
+    campaign spends any round on it. Each step is independent so the first
+    failure names the one thing to change.
+    """
+    steps = []
+
+    def step(name: str, ok: bool, detail: str, remedy: str = '') -> bool:
+        steps.append({'step': name, 'ok': ok, 'detail': detail, 'remedy': remedy})
+        return ok
+
+    try:
+        key_name, key, base = key_env(), api_key(), base_url()
+    except ValueError as error:
+        step('configuration', False, str(error),
+             'export the named variable on the proposer host and set '
+             'AFD_RSI_DEEPSEEK_BASE_URL to the gateway root')
+        return steps, False
+    step('configuration', True,
+         f'endpoint {base}, key from {key_name} ({len(key)} chars), '
+         f'models {model_for("analysis")} / {model_for("code")}')
+
+    try:
+        listing = request_json(base + '/models', None, timeout)
+    except RuntimeError as error:
+        message = str(error)
+        code = message.split('HTTP ')[1].split(':')[0] if 'HTTP ' in message else ''
+        remedy = {
+            '401': f'{key_name} was rejected by the gateway; refresh the credential',
+            '403': f'{key_name} is valid but lacks access to this model',
+            '404': 'the gateway has no /models route; check AFD_RSI_DEEPSEEK_BASE_URL '
+                   'includes the API prefix such as /v1',
+            '503': 'the gateway is reachable but reports no healthy upstream; this is '
+                   'an availability problem, not a configuration one, so retry later',
+        }.get(code, 'check that AFD_RSI_DEEPSEEK_BASE_URL points at an '
+                    'OpenAI-compatible gateway and that the network allows it')
+        step('endpoint', False, message[:300], remedy)
+        return steps, False
+    step('endpoint', True, f'{base}/models answered')
+
+    served = [item.get('id') for item in (listing.get('data') or []) if isinstance(item, dict)]
+    wanted = sorted({model_for('analysis'), model_for('code')})
+    missing = [name for name in wanted if name not in served]
+    if missing:
+        step('model', False, f'gateway does not list {missing}; it serves {served[:12]}',
+             'set AFD_RSI_DEEPSEEK_MODEL or the recipe [search.models] to one of the '
+             'listed identifiers')
+        return steps, False
+    step('model', True, f'gateway lists {wanted}')
+
+    payload = {'model': model_for('analysis'), 'max_tokens': 16, 'stream': False,
+               'messages': [{'role': 'user', 'content': 'Reply with the single word ok.'}]}
+    try:
+        answer = post(payload, timeout)
+    except RuntimeError as error:
+        step('completion', False, str(error)[:300],
+             'the gateway accepts listing but not generation for this model; verify the '
+             'model is loaded and that the key may run completions')
+        return steps, False
+    choices = answer.get('choices') or []
+    text = ((choices[0].get('message') or {}).get('content') or '') if choices else ''
+    if not choices or not text.strip():
+        step('completion', False, f'no usable content in {json.dumps(answer)[:200]}',
+             'the endpoint answered without a chat completion; a plain completion-only '
+             'gateway needs /chat/completions support')
+        return steps, False
+    step('completion', True, f'generated {len(text)} chars')
+
+    payload['response_format'] = {'type': 'json_object'}
+    payload['messages'] = [{'role': 'user', 'content': 'Reply with {"ok": true} as JSON.'}]
+    try:
+        post(payload, timeout)
+        step('json mode', True, 'accepted')
+    except RuntimeError as error:
+        step('json mode', False, str(error)[:200],
+             'set AFD_RSI_DEEPSEEK_JSON_MODE=0; responses are still parsed and '
+             'validated locally, so this only removes an optimisation')
+    return steps, all(item['ok'] for item in steps)
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--request', type=Path, required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--request', type=Path)
+    parser.add_argument('--output', type=Path)
+    parser.add_argument('--check', action='store_true',
+                        help='verify the endpoint, model and JSON mode, then exit')
     parser.add_argument('--session-dir', type=Path,
                         default=os.environ.get('AFD_RSI_AGENT_SESSION_DIR')
                         or os.environ.get('AFD_RSI_DEEPSEEK_SESSION_DIR'))
     args = parser.parse_args()
+    if args.check:
+        steps, ok = probe()
+        for item in steps:
+            print(f'{"ok  " if item["ok"] else "FAIL"} {item["step"]}: {item["detail"]}')
+            if not item['ok'] and item['remedy']:
+                print(f'     fix: {item["remedy"]}')
+        if args.output:
+            write_json(args.output.resolve(), {'ok': ok, 'steps': steps})
+        raise SystemExit(0 if ok else 2)
+    if not args.request or not args.output:
+        parser.error('--request and --output are required unless --check is used')
     args.output = args.output.resolve()
     args.session_dir = (args.session_dir or args.output.parent / 'deepseek-session').resolve()
     args.session_dir.mkdir(parents=True, exist_ok=True)

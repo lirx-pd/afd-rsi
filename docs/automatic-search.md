@@ -15,8 +15,8 @@
 provider = "deepseek"
 
 [search.models]              # 可选；必须写在文件末尾的独立表
-analysis = "deepseek-v4.1-flash"
-code = "deepseek-v4.1-flash"
+analysis = "DeepSeek-V4.1-Flash-1017"
+code = "DeepSeek-V4.1-Flash-1017"
 ```
 
 `[search.models]` 让两个阶段各自冻结：只写一个阶段时另一个取默认值，所以以后换了
@@ -29,11 +29,36 @@ code = "deepseek-v4.1-flash"
 所以"换了模型却沿用旧请求"会失败而不是静默降级。声明 `provider` 的配方使用独立
 的经验指纹——不同模型的方向排序历史不会互相复用。
 
-DeepSeek 适配器只用标准库，不需要额外 SDK；认证走提案机的 `DEEPSEEK_API_KEY`，
-默认两个阶段都用 `deepseek-v4.1-flash`（`AFD_RSI_DEEPSEEK_MODEL` 可整体替换，
-便于使用带标签的模型 ID）。提案机可以是 Windows：适配器不依赖 POSIX，会话锁在
-两个平台都可用。换模型的唯一代价是 `max_calls` 语义不变、预算不变、验收门槛不变。
-细则见 [提案模型提供方](../knowledge/measurement/agent-providers.md)。
+### DeepSeek 需要和本机模型网关一致的三个输入
+
+适配器不内置网关地址，也不假设凭据变量名：凭空给的默认值会让 campaign 去调用一个
+根本不服务该模型的地址。三项都在提案机上配置：
+
+```bash
+export AFD_RSI_DEEPSEEK_BASE_URL='http://<gateway-host>:<port>/v1'   # 含 API 前缀
+export AFD_RSI_DEEPSEEK_KEY_ENV=CSI_API_KEY   # 该网关实际使用的凭据变量名
+export CSI_API_KEY=...                        # 只存在环境里，不落盘
+```
+
+模型标识默认 `DeepSeek-V4.1-Flash-1017`，可用 `[search.models]` 或
+`AFD_RSI_DEEPSEEK_MODEL` 改。三项要和发起提案那台机器上已有的模型网关配置一致
+（例如同一份 `providers` 条目里的地址、凭据变量与模型名）。
+
+先验证再搜索：
+
+```bash
+python -m afd_rsi probe            # Linux 执行机
+python benchmarks/agents/deepseek_agent.py --check   # 提案机（可为 Windows）
+```
+
+它逐项报告配置、连通性、网关模型清单、能否生成、JSON 输出是否可用，第一个失败项
+直接指出该改哪个变量。`401` 是凭据问题，`404` 通常是地址缺 `/v1`，`503` 是网关
+自身没有健康上游——属于可用性问题，不是配置问题，等网关恢复或换时间重试。
+`--output` 可把报告存成 JSON 便于归档。
+
+适配器只用标准库，不需要额外 SDK。提案机可以是 Windows：适配器不依赖 POSIX，
+会话锁在两个平台都可用。换模型的唯一代价是 `max_calls` 语义不变、预算不变、
+验收门槛不变。细则见 [提案模型提供方](../knowledge/measurement/agent-providers.md)。
 
 ## 单机 Codex
 
