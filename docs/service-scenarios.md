@@ -27,8 +27,10 @@ MegaMoe 是否有收益时必须关掉它，否则 DBO 的掩盖效果会遮住 
 窗口不足、流式事件合并多个 token、缺失 DP 计数器或实际路由不符均判失败。
 这些是 HTTP 客户端指标，不能当作算子时间或物理通算重叠证据。
 
-一套服务依次完成 smoke、GSM8K30 和上述三个专项场景；服务不重复
-加载。矩阵点和场景间沿用 `--perf-point-interval`。工作负载与阈值冻结在新 campaign，
+一套服务依次完成 smoke、GSM8K300 和上述三个专项场景；服务不重复
+加载。精度门禁是阈值而非复现：大模型输出有随机性，v4-flash 取 strict-match
+284/300 及以上为通过，不再要求和修改前的回答逐条一致。矩阵点和场景间沿用
+`--perf-point-interval`。工作负载与阈值冻结在新 campaign，
 `before-warmup.prom`、`before.prom`、`after.prom` 和 warmup/measured `requests.jsonl`
 全部归档；报告、恢复审计会从原始文件重新计算，不信任单独填写的汇总。
 

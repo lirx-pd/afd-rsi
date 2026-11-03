@@ -122,7 +122,7 @@ def test_pinned_runner_rejects_exited_service_before_http(monkeypatch):
         wait_ready(case, [SimpleNamespace(ensure_alive=exited)])
 
 
-@pytest.mark.parametrize("model, default", [("v2-lite", 0.27), ("v4-flash", 0.9)])
+@pytest.mark.parametrize("model, default", [("v2-lite", 0.27), ("v4-flash", 284 / 300)])
 @pytest.mark.parametrize("override", [None, 0.0, 0.8])
 def test_gsm8k_threshold_defaults_follow_model(monkeypatch, model, default, override):
     monkeypatch.syspath_prepend(str(ROOT / "benchmarks/service"))

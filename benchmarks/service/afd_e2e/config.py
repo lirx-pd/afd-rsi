@@ -10,6 +10,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 FULL_GSM8K_COUNT = 1319
+# Accuracy gate for the v4-flash campaign. Model output is stochastic, so a
+# candidate is not required to reproduce the pre-change answers exactly; it has
+# to stay above the frozen GSM8K pass line of 284/300 strict-match.
+GSM8K_ACCURACY_SAMPLES = 300
+GSM8K_ACCURACY_PASS = 284
+V4_FLASH_THRESHOLD = GSM8K_ACCURACY_PASS / GSM8K_ACCURACY_SAMPLES
 TOOL_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -332,7 +338,7 @@ def from_args(args) -> Case:
                                                if not args.baseline and v4 and async_mode else 0),
         test_interval_seconds=args.test_interval,
         dataset_path=args.dataset_path.resolve() if args.dataset_path else None,
-        threshold=args.threshold if args.threshold is not None else (0.9 if v4 else 0.27),
+        threshold=args.threshold if args.threshold is not None else (V4_FLASH_THRESHOLD if v4 else 0.27),
         fewshot=args.fewshot,
         concurrency=args.concurrency,
         max_gen_tokens=args.max_gen_tokens,

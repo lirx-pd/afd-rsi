@@ -24,7 +24,10 @@ confirmation requirements remain unchanged. Depth is not a line-count target.
 Under operator-first, only independently confirmed native winners enter final
 service qualification; ordinary screens and the initial baseline start no service.
 Within each final tested source/artifact version start the A/F service once, then run
-smoke, GSM8K30 and the performance matrix. Settle between suites and points,
+smoke, GSM8K300 and the performance matrix. Model output is stochastic, so accuracy is
+a threshold rather than a reproduction of the previous answers: v4-flash passes at
+284/300 strict-match or better, and a candidate is never rejected merely for answering
+differently from the baseline. Settle between suites and points,
 outside measured requests. Monitor service liveness during suite settling;
 cancellation interrupts settling and still cleans up owned processes. Do not
 reuse an old loaded service across different candidate libraries. Failed matrix

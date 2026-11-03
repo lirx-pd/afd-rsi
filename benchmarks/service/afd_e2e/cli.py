@@ -157,7 +157,7 @@ def parser() -> argparse.ArgumentParser:
         )
         sub.add_argument(
             "--threshold", type=float,
-            help="GSM8K strict-match threshold (default: v2-lite 0.27, v4-flash 0.9)",
+            help="GSM8K strict-match threshold (default: v2-lite 0.27, v4-flash 284/300)",
         )
         sub.add_argument("--fewshot", type=int, default=8)
         sub.add_argument("--concurrency", type=int, default=12)

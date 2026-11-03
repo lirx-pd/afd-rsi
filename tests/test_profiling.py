@@ -84,10 +84,10 @@ def test_profile_triggers_only_after_gates_and_before_unprofiled_benchmarks():
     assert not any(p == 'profile' for _, p, _ in campaign.phase_jobs({'repetitions': 2}, ['baseline']))
 
 
-def test_recipes_freeze_30_gsm8k_and_one_prefill_point(tmp_path, monkeypatch):
+def test_recipes_freeze_300_gsm8k_at_the_v4_pass_line(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/service'))
     from afd_e2e.cli import parser
-    from afd_e2e.config import from_args
+    from afd_e2e.config import GSM8K_ACCURACY_PASS, GSM8K_ACCURACY_SAMPLES, from_args
     for execution in ('eager', 'graph'):
         p = tmp_path / f'{execution}.toml'
         p.write_text((ROOT / f'recipes/ascend_{execution}.toml').read_text().replace('../../afd-plugin', str(tmp_path)))
@@ -95,8 +95,12 @@ def test_recipes_freeze_30_gsm8k_and_one_prefill_point(tmp_path, monkeypatch):
         assert plan['native']['profile'] is True
         case = from_args(parser().parse_args(['plan', *plan['service']['args'], '--repo', str(tmp_path)]))
         config = json.loads(json.dumps(case.to_dict()))
-        assert config['limit'] == 30 and set(config['tests']) == {'smoke', 'gsm8k', 'perf'}
-        assert config['threshold'] == 0.9
+        assert config['limit'] == GSM8K_ACCURACY_SAMPLES == 300
+        assert set(config['tests']) == {'smoke', 'gsm8k', 'perf'}
+        # Model output is stochastic: the gate is the frozen 284/300 pass line,
+        # not equality with the pre-change answers.
+        assert config['threshold'] == GSM8K_ACCURACY_PASS / GSM8K_ACCURACY_SAMPLES
+        assert config['threshold'] == 284 / 300
         assert config['performance']['input_lens'] == [128,512,2048]
         assert config['performance']['concurrencies'] == [1,4,8]
         assert config['performance']['point_interval_seconds'] == 3
