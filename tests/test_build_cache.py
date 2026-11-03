@@ -86,3 +86,32 @@ def test_tampered_cache_entry_is_refused(tmp_path, fake_build):
 
     with pytest.raises(ValueError, match='cached build artifacts changed'):
         native.build(source, tmp_path / 'run2/native', 60, cache_root=cache)
+
+
+def test_intermediate_build_dir_does_not_break_caching(tmp_path, monkeypatch):
+    """A dangling symlink in the compiler's scratch tree must not fail the copy."""
+    calls = []
+
+    def fake_execute(argv, cwd, output, timeout, env):
+        calls.append(list(argv))
+        for name, content in ARTIFACTS.items():
+            target = Path(cwd) / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content)
+        # The Ascend op build leaves a link to a library it does not keep.
+        scratch = Path(cwd) / 'csrc/npu/build/proj/build_out/op_host'
+        scratch.mkdir(parents=True, exist_ok=True)
+        (scratch / 'liboptiling.so').symlink_to(Path(cwd) / 'csrc/npu/build/proj/missing.so')
+        return {'status': 'completed', 'cleanup_complete': True, 'argv': list(argv)}
+
+    monkeypatch.setattr(native, 'execute', fake_execute)
+    cache = tmp_path / 'cache/build'
+    source = source_tree(tmp_path / 'afd-plugin')
+
+    native.build(source, tmp_path / 'run1/native', 60, cache_root=cache)
+    entry = next(path for path in cache.iterdir() if path.is_dir())
+    assert not (entry / 'source/csrc/npu/build').exists(), 'scratch tree is not cached'
+    assert (entry / 'source/afd_plugin/_C_ascend.so').is_file()
+
+    native.build(source, tmp_path / 'run2/native', 60, cache_root=cache)
+    assert len(calls) == 1, 'the cached build is reused'

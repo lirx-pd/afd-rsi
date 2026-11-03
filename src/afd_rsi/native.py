@@ -75,12 +75,32 @@ def build_key(snapshot: dict) -> str:
         sort_keys=True).encode()).hexdigest()
 
 
+CACHE_SKIP = ("source/build", "source/csrc/npu/build")
+
+
+def cache_copy(src: Path, dst: Path) -> None:
+    """Copy a build tree without the compiler's intermediate directories.
+
+    Those trees hold temporary objects and dangling symlinks (a removed
+    `liboptiling.so` is a real case), so dereferencing them both wastes space and
+    fails the copy; nothing in `artifact_identity` lives there.
+    """
+    base = Path(src)
+
+    def ignore(directory, names):
+        relative = Path(directory).relative_to(base)
+        return {name for name in names if str(relative / name) in CACHE_SKIP}
+
+    shutil.copytree(base, dst, symlinks=True, ignore=ignore)
+
+
 def build(source: Path, output: Path, timeout: float, cache_root: Path | None = None):
     """Build in an isolated copy, reusing a verified identical build when allowed.
 
     A cache hit is never trusted: the cached tree is copied and its artifacts are
     re-hashed against a fresh identity calculation, so a stale or corrupted entry
-    fails loudly instead of becoming evidence.
+    fails loudly instead of becoming evidence. Failing to *populate* the cache is
+    not fatal — a completed build stays usable and only the note is recorded.
     """
     if output.is_relative_to(source) or source.is_relative_to(output):
         raise ValueError("build output must be separate from input source")
@@ -88,7 +108,7 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
     key = build_key(snapshot) if cache_root else None
     cached = cache_root / key if key else None
     if cached is not None and (cached / "artifacts.json").is_file():
-        shutil.copytree(cached, output, symlinks=False)
+        cache_copy(cached, output)
         record = read_json(output / "cache.json")
         if record.get("key") != key or record.get("source") != snapshot["hash"]:
             raise ValueError("cached build does not match this source")
@@ -116,17 +136,22 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
     write_json(output / "artifacts.json", artifacts)
     write_json(output / "build.json", result)
     if cached is not None:
-        # Populate only after the hashes above are known to be good.
-        cached.parent.mkdir(parents=True, exist_ok=True)
-        staging = cached.with_name(cached.name + ".tmp")
-        if staging.exists():
-            shutil.rmtree(staging)
-        shutil.copytree(output, staging, symlinks=False)
-        write_json(staging / "cache.json", {"key": key, "source": snapshot["hash"],
-                                            "toolchain": toolchain_fingerprint()})
-        if cached.exists():
-            shutil.rmtree(cached)
-        staging.rename(cached)
+        # Populate only after the hashes above are known to be good. A cache that
+        # cannot be written must not discard an otherwise valid build.
+        try:
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            staging = cached.with_name(cached.name + ".tmp")
+            if staging.exists():
+                shutil.rmtree(staging)
+            cache_copy(output, staging)
+            write_json(staging / "cache.json", {"key": key, "source": snapshot["hash"],
+                                                "toolchain": toolchain_fingerprint()})
+            if cached.exists():
+                shutil.rmtree(cached)
+            staging.rename(cached)
+        except (OSError, shutil.Error) as error:
+            write_json(output / "cache.json", {"key": key, "populated": False,
+                                               "error": str(error)[:2000]})
     return target
 
 
