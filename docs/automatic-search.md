@@ -58,7 +58,12 @@ python benchmarks/agents/deepseek_agent.py --check   # 提案机（可为 Window
 
 适配器只用标准库，不需要额外 SDK。提案机可以是 Windows：适配器不依赖 POSIX，
 会话锁在两个平台都可用。换模型的唯一代价是 `max_calls` 语义不变、预算不变、
-验收门槛不变。细则见 [提案模型提供方](../knowledge/measurement/agent-providers.md)。
+验收门槛不变。
+
+思考等级也按阶段分开，默认分析方向用 `max`、写补丁用 `high`
+（`AFD_RSI_DEEPSEEK_EFFORT_ANALYSIS` / `AFD_RSI_DEEPSEEK_EFFORT_CODE` 可按主机覆盖），
+两者都记进 `usage.json` 与 `session.json`，便于事后核对用的是哪一档。
+细则见 [提案模型提供方](../knowledge/measurement/agent-providers.md)。
 
 ## 单机 Codex
 
@@ -96,6 +101,24 @@ fixture，比较两个 MegaMoe 版本，使用共同 layered 数值参考，校�
 设备对象身份；主指标是主 Attention rank 的七个 case 事务样本均值（us）。
 FFN rank 没有伪造计时，仍必须给出完整数值/身份/清理检查。graph 配方额外检查
 实际 FULL 捕获/replay 和禁止 eager 回退；参考输出仍来自 layered eager。
+
+## 长时间运行与预算
+
+这是长期连续运行的项目，一场 campaign 正常就要跑数小时：构建、数值、AB/BA、
+服务阶段串起来，单轮可能远超一次模型调用。因此：
+
+- `budget_seconds` 是**安全上限**，不是排期表。冻结进 plan 后在 prepare 时算成
+  `expires_at`，用于防止失控，而不是用来安排什么时候结束。样例给到 24 小时，
+  合成样例 1 小时。
+- 到点后控制器不再开启新一轮，并记为 `budget_exhausted`。若当时正处在一轮中间，
+  那一轮已经写下的样本仍保留，判定为 `INCONCLUSIVE`——报告会写明缺什么，
+  不会把半轮结果当成收益或当成失败。
+- 运行期间用 `afd_rsi report RUN`、`afd_rsi optimize ... --follow` 或直接读
+  `search/state.json` 的 `status` 看进展。**不要因为"看着像卡住"就杀掉再重来**：
+  重新 prepare 会换掉 manifest/plan 身份，之前的 attempt 和证据就不再属于同一个
+  campaign。要续跑就在原目录 `afd_rsi resume RUN`。
+- 真要延长上限时，正确做法是**准备新 campaign 并复用 `experience_dirs`**，
+  而不是改 `plan.lock.json`——那个文件被 sha256 冻结，改动会被拒绝。
 
 ## 服务是 campaign 的固定阶段
 

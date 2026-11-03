@@ -119,6 +119,10 @@ def test_two_stage_proposal_and_usage_without_leaking_the_key(tmp_path, monkeypa
     assert [turn['stage'] for turn in turns] == ['analysis', 'code']
     # One model serves both stages by default; the split is about what is asked.
     assert {turn['model'] for turn in turns} == {MODEL}
+    # Direction analysis reasons at the top level; patch writing runs one below.
+    assert [turn['effort'] for turn in turns] == ['max', 'high']
+    assert transport.payloads[0]['reasoning_effort'] == 'max'
+    assert transport.payloads[1]['reasoning_effort'] == 'high'
     assert turns[0]['prompt_tokens'] == 7 and turns[1]['completion_tokens'] == 3
     assert transport.payloads[0]['response_format'] == {'type': 'json_object'}
     assert transport.payloads[1]['temperature'] == 0
@@ -177,6 +181,44 @@ def test_unsupported_parameter_is_dropped_once_and_recorded(tmp_path, monkeypatc
     assert args.output.exists()
     record = json.loads((args.output.parent / 'analysis-events.unsupported-parameters.json').read_text())
     assert 'response_format' in record['dropped']
+
+
+def test_thinking_level_defaults_and_overrides(monkeypatch):
+    module = adapter()
+    assert module.effort_for('analysis') == 'max'
+    assert module.effort_for('code') == 'high'
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_EFFORT_CODE', 'medium')
+    assert module.effort_for('code') == 'medium'
+    assert module.effort_for('analysis') == 'max', 'stages stay independent'
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_EFFORT_ANALYSIS', 'low')
+    assert module.effort_for('analysis') == 'low'
+
+
+def test_thinking_level_is_dropped_if_the_gateway_rejects_it(tmp_path, monkeypatch):
+    module = adapter()
+    transport = FakeTransport(analysis_json(), code_json())
+    seen = []
+
+    def wrapped(request, timeout=None):
+        payload = json.loads(request.data.decode())
+        seen.append(payload)
+        if 'reasoning_effort' in payload:
+            raise urllib.error.HTTPError(request.full_url, 400, 'error', {},
+                                         io.BytesIO(b'{"error":"reasoning_effort unsupported"}'))
+        return transport(request, timeout)
+
+    monkeypatch.setattr(module, 'urlopen', wrapped)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    args = type('Args', (), {'request': request_document(tmp_path),
+                             'output': tmp_path / 'out/proposal.json',
+                             'session_dir': tmp_path / 'session'})()
+    module.propose(args)
+    assert 'reasoning_effort' in seen[0] and 'reasoning_effort' not in seen[1]
+    assert 'response_format' in seen[1], 'only the rejected parameter is dropped'
+    record = json.loads((args.output.parent / 'analysis-events.unsupported-parameters.json').read_text())
+    assert record['dropped'] == ['reasoning_effort']
+    assert args.output.exists()
 
 
 def test_analysis_stop_skips_the_coding_call(tmp_path, monkeypatch):

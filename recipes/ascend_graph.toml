@@ -11,7 +11,9 @@ ranks = 3
 primary_rank = 0
 repetitions = 2
 timeout_seconds = 1800
-budget_seconds = 14400
+# Wall time is a safety cap, not a schedule. A campaign is expected to run for
+# hours while its status is polled, so raise this rather than restarting a run.
+budget_seconds = 86400
 min_gain_pct = 2.0
 allowed_files = ["csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel/*", "csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_host/*"]
 artifacts = ["native/artifacts.json"]

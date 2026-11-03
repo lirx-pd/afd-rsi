@@ -15,6 +15,8 @@ ever written into a campaign, a request, or the repository:
     AFD_RSI_DEEPSEEK_ANALYSIS_MODEL  optional per-stage override
     AFD_RSI_DEEPSEEK_CODE_MODEL      optional per-stage override
     AFD_RSI_DEEPSEEK_JSON_MODE       set 0 when the endpoint rejects JSON mode
+    AFD_RSI_DEEPSEEK_EFFORT_ANALYSIS default max; thinking level for direction analysis
+    AFD_RSI_DEEPSEEK_EFFORT_CODE     default high; thinking level for patch writing
     AFD_RSI_DEEPSEEK_MAX_CHARS       prompt budget in characters, default 200000
 
 Neither the endpoint nor the credential has a built-in value: an invented default is
@@ -44,6 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
+DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
 DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
 DEFAULT_MAX_CHARS = 200_000
 
@@ -105,6 +108,17 @@ def base_url() -> str:
 
 def endpoint(path: str = '/chat/completions') -> str:
     return base_url() + path
+
+
+def effort_for(stage: str) -> str:
+    """Thinking level for a stage.
+
+    Choosing an optimization direction is the reasoning-heavy task, so it gets
+    the highest level; writing the patch from an already-decided direction is
+    narrower work and runs one level down. Both are overridable per host.
+    """
+    key = 'AFD_RSI_DEEPSEEK_EFFORT_ANALYSIS' if stage == 'analysis' else 'AFD_RSI_DEEPSEEK_EFFORT_CODE'
+    return (os.environ.get(key) or DEFAULT_EFFORT[stage]).strip()
 
 
 def model_for(stage: str, request: dict | None = None) -> str:
@@ -293,29 +307,37 @@ def optional_parameters(model: str) -> dict:
 def send(payload, timeout, prefix_name=''):
     """Post, falling back once if the endpoint rejects an optional parameter.
 
-    A gateway that fronts the model may not accept JSON mode or a temperature
-    field. Dropping them is safe: the response is parsed and validated locally
-    either way, so this only removes an optimisation, never a check.
+    A gateway that fronts the model may not accept JSON mode, a temperature
+    field, or a reasoning level. Dropping them is safe: the response is parsed
+    and validated locally either way, so this only removes an optimisation,
+    never a check. The drop is recorded so a silent downgrade stays visible.
     """
     try:
         return post(payload, timeout)
     except RuntimeError as error:
         message = str(error)
-        optional = [key for key in ('response_format', 'temperature') if key in payload]
+        optional = [key for key in ('response_format', 'temperature', 'reasoning_effort')
+                    if key in payload]
         if not optional or not any(key in message for key in optional):
             raise
-        reduced = {key: value for key, value in payload.items() if key not in optional}
+        # Drop only what the gateway actually named, so rejecting one parameter
+        # does not quietly downgrade the others; fall back to all of them when the
+        # message names none.
+        named = [key for key in optional if key in message]
+        dropped = named or optional
+        reduced = {key: value for key, value in payload.items() if key not in dropped}
         if prefix_name:
             (prefix_name.parent / f'{prefix_name.name}.unsupported-parameters.json').write_text(
-                json.dumps({'dropped': optional, 'error': message}) + '\n')
+                json.dumps({'dropped': dropped, 'error': message}) + '\n')
         return post(reduced, timeout)
 
 
 def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
     """One call with a single repair attempt; returns (parsed value, usage)."""
     model = model_for(stage, request)
+    effort = effort_for(stage)
     payload = {'model': model, 'messages': messages, 'max_tokens': 8192, 'stream': False,
-               **optional_parameters(model)}
+               'reasoning_effort': effort, **optional_parameters(model)}
     (prefix.parent / f'{prefix.name}.request.json').write_text(
         json.dumps({key: value for key, value in payload.items() if key != 'messages'}) + '\n')
     errors = []
@@ -324,7 +346,7 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
         (prefix.parent / f'{prefix.name}.response{"" if not attempt else "-repair"}.json').write_text(
             json.dumps(response) + '\n')
         usage = response.get('usage') or {}
-        turn = {'model': model, 'stage': stage, 'attempt': attempt,
+        turn = {'model': model, 'stage': stage, 'effort': effort, 'attempt': attempt,
                 'prompt_tokens': usage.get('prompt_tokens'),
                 'completion_tokens': usage.get('completion_tokens')}
         choices = response.get('choices') or []
@@ -351,8 +373,8 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
 
 def propose(args):
     request = json.loads(args.request.read_text())
-    if not os.environ.get('DEEPSEEK_API_KEY'):
-        raise ValueError('DEEPSEEK_API_KEY is not set; configure the proposer host or use file exchange')
+    # Fail before any other work, naming the variable this host actually exports.
+    api_key()
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.session_dir.mkdir(parents=True, exist_ok=True)
     session = args.session_dir / 'session.json'
@@ -360,7 +382,8 @@ def propose(args):
     if session.exists() and read_json(session).get('campaign') != campaign:
         raise ValueError('DeepSeek session belongs to another campaign; use a separate session directory')
     write_json(session, {'campaign': campaign, 'provider': 'deepseek', 'base_url': endpoint(),
-                         'models': {stage: model_for(stage, request) for stage in ('analysis', 'code')}})
+                         'models': {stage: model_for(stage, request) for stage in ('analysis', 'code')},
+                         'effort': {stage: effort_for(stage) for stage in ('analysis', 'code')}})
 
     contract = json.loads(Path(__file__).with_name('proposal.schema.json').read_text())
     proposal = contract['properties']['proposals']['items']
@@ -453,7 +476,8 @@ def probe(timeout: float = 30.0) -> tuple[list, bool]:
         return steps, False
     step('configuration', True,
          f'endpoint {base}, key from {key_name} ({len(key)} chars), '
-         f'models {model_for("analysis")} / {model_for("code")}')
+         f'models {model_for("analysis")} / {model_for("code")}, '
+         f'effort {effort_for("analysis")} / {effort_for("code")}')
 
     try:
         listing = request_json(base + '/models', None, timeout)
@@ -484,6 +508,7 @@ def probe(timeout: float = 30.0) -> tuple[list, bool]:
     step('model', True, f'gateway lists {wanted}')
 
     payload = {'model': model_for('analysis'), 'max_tokens': 16, 'stream': False,
+               'reasoning_effort': effort_for('analysis'),
                'messages': [{'role': 'user', 'content': 'Reply with the single word ok.'}]}
     try:
         answer = post(payload, timeout)
