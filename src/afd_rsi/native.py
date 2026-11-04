@@ -14,6 +14,11 @@ from pathlib import Path
 # The FFN-side pull kernel plus the comm kernel it pairs with. The profiler may
 # label either one, and older builds fused both into AfdMegaMoeFFN.
 MEGA_KERNELS = ("afd_mega_moe_pull_native", "afd_mega_moe_comm")
+# Mirrors benchmarks/native/pipeline_trace.py:PULL_STAGES. The overlay ships inside
+# the frozen foundation, so the controller keeps its own copy of the code names.
+PULL_STAGE_NAMES = {40: 'round_prepare', 41: 'pull_rows', 42: 'gmm1', 43: 'activation',
+                    44: 'gmm2', 45: 'combine', 46: 'round_complete', 47: 'sync_in',
+                    48: 'sync_out'}
 MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
 
 from . import skills
@@ -280,8 +285,10 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
     return {'pipeline': internal, 'scope': 'native synthetic seven-case transactions; separate profiled execution',
             'evidence': evidence, 'ffn_ranks': summaries,
             'analysis': 'Rank tasks by summed device duration. Investigate the largest tasks first. '
-                'The Mega transaction is one fused pull-native kernel plus its comm kernel, so this trace '
-                'cannot by itself separate Cube, Vector, MTE or communication time. '
+                'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
+                'device trace alone cannot separate Cube, Vector, MTE or communication time; the '
+                'instrumented diagnostic names those stages when a pipeline trace is present, and its '
+                'shares are per-core sums rather than critical path. '
                 'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
             'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
                 'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
@@ -313,12 +320,27 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
                     events=[[start-core['start'], end-core['start'], code, sequence]
                             for start, end, code, sequence in core['events'] if sequence in (0, 1, 2, 3, 4)]))
         summaries.append(dict(rank=rank, transactions=len(transactions), summed_core_cycles=totals,
+                              named_stages=named_stage_cycles(totals),
                               first_transaction=transactions[0]['work'], selected_cores=selected))
     return dict(identity=identities, ffn_ranks=summaries,
                 scope='instrumented eager diagnostic of seven-case fixture; not promotion timing',
                 warning='Per-core cycles include waits. Selected events are [start,end,code,sequence], '
                     'relative to each core entry; cross-core clocks are not aligned. '
                     'Summed spans are neither critical-path latency nor PMU activity.')
+
+
+def named_stage_cycles(totals: dict) -> list:
+    """Name the pull-native stage codes so a proposal can address a stage.
+
+    Summed per-core cycles: a stage that runs on every core looks large even when
+    it is not the critical path, so shares order attention and never claim latency.
+    """
+    known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
+    total = sum(known.values())
+    if not total:
+        return []
+    return [{'stage': name, 'core_cycles': cycles, 'share_pct': round(100 * cycles / total, 2)}
+            for name, cycles in sorted(known.items(), key=lambda item: -item[1]) if cycles]
 
 
 def write_report(output: Path, summary: dict):
@@ -336,7 +358,9 @@ def write_report(output: Path, summary: dict):
                      f"{statistics.median(candidate):.2f} | {case['median_gain_pct']:.2f}% |")
     lines.extend(["", "Negative gain means higher latency. No automatic promotion is performed.", "",
                   f"Mega device traces verified: {len(summary['profiler'])} FFN processes.",
-                  "Per-stage pipeline tracing is unavailable when the FFN runs as the pull-native kernel.", "",
+                  ("Per-stage pipeline trace present; stage shares are per-core sums, not latency."
+                   if any((rank.get('named_stages') for rank in (summary.get('pipeline') or {}).get('ffn_ranks', [])))
+                   else "No per-stage pipeline trace in this run; device tasks are the finest evidence."), "",
                   "Evidence: [plan](plan.lock.json), [observations](observations.json), [summary](summary.json).", ""])
     (output / "report.md").write_text("\n".join(lines))
 

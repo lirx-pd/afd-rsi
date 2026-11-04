@@ -83,13 +83,13 @@ if settings.get("execution", "eager") == "graph":
 if sys.argv[1] == "profile":
     argv += ["--profile-dir", str(output / "traces")]
     # Diagnostic overlay is built and tested separately; timed artifacts stay immutable.
-    # It only exists for the fused FFN kernel, so a pull-native checkout records the
-    # skip instead of failing a round over an unavailable diagnostic.
-    from pipeline_trace import instrument, supported
-    if not supported(source):
+    # It anchors on the kernel layout this checkout actually ships, so a pull-native
+    # build now yields per-stage rounds instead of a skip.
+    from pipeline_trace import eligible, instrument
+    mode = eligible(source)
+    if mode is None:
         write_json(output / 'traces/pipeline-unsupported.json', {
-            'reason': 'per-stage overlay targets the fused afd_mega_moe_ffn kernel; '
-                      'this checkout uses the pull-native FFN kernel',
+            'reason': 'no per-stage anchor exists for this FFN kernel layout',
             'production_profile': 'unaffected; kernel_details.csv evidence still applies'})
     else:
         diagnostic_input = output / 'diagnostic-input'
@@ -110,9 +110,54 @@ if sys.argv[1] == "profile":
         write_json(output / 'traces/pipeline/identity.json', {
             'production_source_hash': lock['hash'], 'diagnostic_artifacts': diagnostic_expected,
             'diagnostic_source_hash': read_json(output / 'diagnostic-build/source.lock.json')['hash'],
+            'overlay': mode,
             'mode': 'eager diagnostic only; production timing artifacts unchanged'})
 
+def case_spread(result):
+    """Worst per-case relative spread across repetitions, in percent.
+
+    A paired median gain smaller than the sampling noise cannot be judged, so the
+    measurement itself decides whether more repetitions are needed.
+    """
+    worst = 0.0
+    reports = result.get("reports") if isinstance(result, dict) else None
+    if not isinstance(reports, list):
+        raise ValueError(f'fixture result carries no reports list: {sorted(result or ())}')
+    for report in reports:
+        by_case = {}
+        for sample in report["timing"]:
+            by_case.setdefault(sample["case"], []).append(sample["transaction_us"])
+        for values in by_case.values():
+            if len(values) < 2:
+                continue
+            middle = statistics.median(values)
+            if middle <= 0:
+                continue
+            worst = max(worst, 100 * (max(values) - min(values)) / middle)
+    return worst
+
+
+def densify(native, argv, settings):
+    """Re-measure with more repetitions when the first pass is too noisy."""
+    spread = case_spread(native)
+    limit = float(os.environ.get("AFD_RSI_SPREAD_LIMIT") or 5.0)
+    factor = int(os.environ.get("AFD_RSI_REPEAT_FACTOR") or 3)
+    record = {"configured_repeats": settings["repeats"], "worst_case_spread_pct": spread,
+              "limit_pct": limit, "used": "configured"}
+    if spread > limit and os.environ.get("AFD_RSI_NO_ADAPTIVE_REPEATS") != "1":
+        dense = settings["repeats"] * factor
+        dense_argv = list(argv)
+        dense_argv[dense_argv.index("--repeats") + 1] = str(dense)
+        native = launch("transaction-dense", dense_argv, mega=True, repeats=dense)
+        record.update(dense_repeats=dense, dense_spread_pct=case_spread(native),
+                      used="dense", why=f"first pass spread {spread:.2f}% exceeds {limit:.2f}%")
+    write_json(output / "adaptive-repeats.json", record)
+    return native
+
+
 native = launch("transaction", argv, mega=True, repeats=settings["repeats"] if measured else 0)
+if measured:
+    native = densify(native, argv, settings)
 assert all(digest(Path(name)) == value for name, value in reference_files.items())
 artifacts = {name: digest(build_dir / name) for name in plan["artifacts"]}
 result = {key: plan[key] for key in ("backend", "workload_id", "scope", "unit", "metric")}

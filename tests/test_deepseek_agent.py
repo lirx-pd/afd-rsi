@@ -317,7 +317,12 @@ def test_truncated_reasoning_escalates_the_budget_instead_of_repeating(tmp_path,
     raw = json.loads((args.output.parent / 'analysis-events.response.json').read_text())
     assert raw['choices'][0]['finish_reason'] == 'length'
     turns = json.loads((args.output.parent / 'usage.json').read_text())['turns']
-    assert turns[0]['stage'] == 'analysis' and turns[0]['max_tokens'] == payloads[1]['max_tokens']
+    # Both the truncated attempt and the accepted one are recorded with the budget
+    # each actually ran with.
+    assert turns[0]['finish_reason'] == 'length'
+    assert turns[0]['max_tokens'] == payloads[0]['max_tokens']
+    assert turns[1]['finish_reason'] == 'stop'
+    assert turns[1]['max_tokens'] == payloads[1]['max_tokens']
 
 
 def test_token_budget_can_be_overridden_and_is_capped():
@@ -399,8 +404,48 @@ def test_one_repair_attempt_then_success(tmp_path, monkeypatch):
     repair = transport.payloads[1]['messages']
     assert repair[-1]['role'] == 'user' and 'rejected' in repair[-1]['content']
     turns = json.loads((output.parent / 'usage.json').read_text())['turns']
-    assert turns[0]['attempt'] == 1
-    assert (output.parent / 'analysis-events.response-repair.json').exists()
+    # Every call is recorded, including the rejected one, so a failed round still
+    # shows what it spent.
+    assert [turn['attempt'] for turn in turns[:2]] == [0, 1]
+    assert turns[0]['stage'] == 'analysis' and turns[0]['ignored_keys'] == []
+    assert (output.parent / 'analysis-events.response.json').exists()
+    assert not (output.parent / 'analysis-events.response-repair.json').exists()
+
+def test_extra_envelope_keys_are_ignored_but_recorded(tmp_path, monkeypatch):
+    """A model that echoes `type: json_object` must not lose the whole round."""
+    noisy = json.loads(code_json())
+    noisy['type'] = 'json_object'
+    for proposal in noisy['proposals']:
+        proposal['notes'] = 'extra field the schema does not name'
+    module, transport, args, output = prepare(tmp_path, monkeypatch,
+                                              analysis_json(), json.dumps(noisy))
+    module.propose(args)
+    assert len(transport.payloads) == 2, 'no repair is spent on tolerated extras'
+    turns = json.loads((output.parent / 'usage.json').read_text())['turns']
+    assert 'type' in turns[-1]['ignored_keys']
+    assert 'proposal.notes' in turns[-1]['ignored_keys']
+    assert output.exists()
+
+
+def test_unusable_hunk_headers_are_repaired_before_upload(tmp_path, monkeypatch):
+    """A bare `@@` header is corrupt for git, so it must not reach the device round."""
+    bare = json.loads(code_json())
+    bare['proposals'][0]['patch'] = ('--- a/x.h\n+++ b/x.h\n@@\n+// note\n')
+    module, transport, args, output = prepare(tmp_path, monkeypatch,
+                                              analysis_json(), json.dumps(bare), code_json())
+    module.propose(args)
+    assert len(transport.payloads) == 3, 'the malformed diff is repaired, not uploaded'
+    assert output.exists()
+
+
+def test_patch_problem_accepts_count_drift_and_names_missing_ranges():
+    module = adapter()
+    drifted = '--- a/x.h\n+++ b/x.h\n@@ -10,9 +10,9 @@\n-old\n+new\n'
+    assert module.patch_problem(drifted) == '', 'counts are tolerated: the controller recounts'
+    bare = '--- a/x.h\n+++ b/x.h\n@@\n-old\n+new\n'
+    assert 'no ranges' in module.patch_problem(bare)
+    # Anything else is left to the controller, which applies and validates.
+    assert module.patch_problem('diff --git a/a b/a\n') == ''
 
 
 def test_invalid_evidence_is_rejected_and_never_written(tmp_path, monkeypatch):

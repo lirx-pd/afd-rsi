@@ -80,3 +80,95 @@ def test_missing_anchor_fails_before_writing_either_file(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match='unsupported MegaMoe diagnostic source'):
         instrument(tmp_path)
     assert h.read_text() == header and c.read_text() == cpp
+
+
+PULL = Path('csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel')
+
+PULL_SOURCE = '''#include "afd_mega_moe_pull_pipeline.h"
+
+extern "C" __global__ __aicore__ void afd_mega_moe_pull_native(
+    GM_ADDR anchor, GM_ADDR state, GM_ADDR scratch, GM_ADDR completion) {
+    if (TILING_KEY_IS(1)) {
+        const Cam::NativeMegaWorkspace w(1, 2, 3, 4, 5);
+        Resource resource;
+        TPipe pipe;
+        const uint32_t id = GetBlockIdx();
+        do {
+            if ASCEND_IS_AIV {
+                if (id == 0) {
+                    Cam::Pull::Transport rx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
+                    rx.PrepareRound(scratch + w.batch, scratch + w.counts, c[10]);
+                    rx.Write(scratch + w.layer, slot);
+                }
+                pipe.Reset();
+            }
+            SyncAll<false>();
+            const auto layer = Load(state, Cam::Pull::FAILURE) ? -1 : Load(scratch + w.layer);
+            if (layer >= 0 && layer < c[13]) {
+                const ReceiveRound round(scratch, w, c[6]);
+                if (round.total) {
+                    if ASCEND_IS_AIC {
+                        Compute(scratch, w, t, round, w13, s13, layer, false, resource);
+                        Compute(scratch, w, t, round, w2, s2, layer, true, resource);
+                    }
+                    if ASCEND_IS_AIV {
+                        PullAndPrepare(scratch, w, t, round, resource);
+                        Activate(scratch, w, t, round, b13, layer, resource);
+                        Combine(scratch, w, t, round, b2, layer, resource);
+                    }
+                }
+            }
+            SyncAll<false>();
+            if ASCEND_IS_AIV { pipe.Reset(); }
+            if ASCEND_IS_AIV {
+                if (id == 0) {
+                    Cam::Pull::Transport tx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
+                    if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);
+                    tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));
+                }
+            }
+            // All GMM/epilogue events have drained before scratch and flag slots are reused.
+            SyncAll<false>();
+            if ASCEND_IS_AIV { pipe.Reset(); }
+        } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);
+    }
+}
+'''
+
+
+def pull_checkout(tmp_path, source=PULL_SOURCE):
+    target = tmp_path / PULL
+    target.mkdir(parents=True)
+    (target / 'afd_mega_moe_pull_native.cpp').write_text(source)
+    (target / 'afd_mega_moe_pull_pipeline.h').write_text('// pipeline header\n')
+    return target / 'afd_mega_moe_pull_native.cpp'
+
+
+def test_pull_native_overlay_names_every_stage_of_a_round(tmp_path, monkeypatch):
+    """The pull kernel is instrumented per stage instead of being skipped."""
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/native'))
+    from pipeline_trace import PULL_STAGES, eligible, instrument
+    path = pull_checkout(tmp_path)
+    assert eligible(tmp_path) == 'pull'
+    instrument(tmp_path)
+    text = path.read_text()
+    codes = sorted({int(code) for code in __import__('re').findall(r'trace\.Begin\((\d+)', text)})
+    assert codes == sorted(PULL_STAGES), 'every declared stage is instrumented'
+    assert text.count('trace.Begin(') == text.count('trace.End(')
+    assert text.count('trace.Finish()') == 1 and text.count('++traceRound') == 1
+    # The tail lives past the workspace the executor allocated.
+    assert 'AfdTrace::Phase trace(scratch + w.bytes)' in text
+    # Order inside one round: pull, activation, combine run after the two cube calls.
+    for stage in ('41', '43', '45'):
+        assert f'trace.Begin({stage}, traceRound)' in text
+    assert text.index('trace.End(44, traceRound, traceGmm2)') < text.index('trace.Begin(48, traceRound)')
+
+
+def test_pull_native_overlay_refuses_an_unexpected_layout(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/native'))
+    from pipeline_trace import instrument
+    source = PULL_SOURCE.replace('                        Activate(scratch, w, t, round, b13, layer, resource);\n', '')
+    path = pull_checkout(tmp_path, source)
+    with pytest.raises(ValueError, match='unsupported MegaMoe diagnostic source'):
+        instrument(tmp_path)
+    assert 'AfdTrace' not in path.read_text()

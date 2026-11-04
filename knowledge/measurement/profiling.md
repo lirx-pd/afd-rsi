@@ -84,3 +84,13 @@ count before writing either diagnostic file. Missing anchors are unsupported
 source, not permission to emit partial instrumentation. Entry and validation
 intervals must pair in the kernel entry scope; never match the helper's layerId.
 Retain diagnostic compiler stdout/stderr and process receipts in result archives.
+
+The pull-native target has its own overlay over `afd_mega_moe_pull_native.cpp`.
+It records one interval per stage of a receive round: `round_prepare`, `sync_in`,
+`gmm1`, `pull_rows`, `activation`, `gmm2`, `combine`, `round_complete`,
+`sync_out` (codes 40..48). Only nine selected cores record; every core writes the
+header the decoder requires. Report these stage names when a proposal has to name
+a bottleneck, because one fused device task cannot. Summed stage cycles cover the
+instrumented cores only, so they order attention and are not critical-path
+latency. The instrumented tree is a separate diagnostic build; timed artifacts
+stay uninstrumented.

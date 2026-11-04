@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from afd_rsi import optimize, search
-from afd_rsi.evidence import read_json, write_json
+from afd_rsi.evidence import digest, read_json, write_json
 from afd_rsi.runner import owned_alive, stop_owned
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,6 +152,88 @@ def test_interrupted_proposer_is_not_retried(tmp_path,monkeypatch):
     assert read_json(job/'status.json')['status']=='error'
     assert read_json(job/'proposals/1/agent/process.json')['status']=='interrupted'
 
+
+def test_restart_refreshes_controller_and_keeps_measured_rounds(tmp_path, monkeypatch):
+    """A restart replaces the proposer snapshot and archives the abandoned attempt."""
+    root = tmp_path / 'root'
+    for name in ('src', 'skills', 'knowledge', 'benchmarks', 'examples', 'recipes', 'tools'):
+        (root / name).mkdir(parents=True)
+    (root / 'benchmarks/agents').mkdir(parents=True)
+    (root / 'benchmarks/agents/deepseek_agent.py').write_text('# fixed adapter\n')
+    job = tmp_path / 'job'
+    (job / 'controller/benchmarks/agents').mkdir(parents=True)
+    (job / 'controller/benchmarks/agents/deepseek_agent.py').write_text('# defective adapter\n')
+    write_json(job / 'job.json', {'executor': 'local', 'retry_remote': False})
+    write_json(job / 'status.json', {'phase': 3, 'status': 'error'})
+    write_json(job / 'proposals/5/request.json', {'provider_hash': 'frozen-digest'})
+    write_json(job / 'proposals/5/agent/process.json', {'status': 'failed', 'cleanup_complete': True})
+    write_json(job / 'proposals/4/agent/process.json', {'status': 'completed', 'cleanup_complete': True})
+    spawned = []
+    monkeypatch.setattr(optimize, 'spawn', lambda target: spawned.append(target))
+    monkeypatch.setattr(optimize, 'skills', type('S', (), {'validate': staticmethod(lambda *_a, **_k: {})}))
+
+    optimize.restart(job, root, 'proposer rejected a valid envelope')
+
+    record = read_json(job / 'restart.json')
+    assert record['reason'] == 'proposer rejected a valid envelope'
+    assert record['expected_provider_hash'] == 'frozen-digest'
+    # The fixed adapter is now staged, the defective one is preserved.
+    assert 'fixed adapter' in (job / 'controller/benchmarks/agents/deepseek_agent.py').read_text()
+    assert 'defective adapter' in (job / record['archived_controller'] /
+                                   'benchmarks/agents/deepseek_agent.py').read_text()
+    # Only the unfinished attempt is archived; measured rounds stay where they are.
+    archived = list((job / 'proposals/5').glob('agent-abandoned-*'))
+    assert len(archived) == 1 and read_json(archived[0] / 'abandoned.json')['reason']
+    assert not (job / 'proposals/5/agent').exists()
+    assert (job / 'proposals/4/agent').exists()
+    assert read_json(job / 'job.json')['retry_remote'] is True
+    assert read_json(job / 'status.json')['phase'] == 4
+    assert spawned == [job]
+    with pytest.raises(ValueError, match='already restarted'):
+        optimize.restart(job, root, 'again')
+
+
+def test_restart_refuses_while_the_worker_is_alive(tmp_path, monkeypatch):
+    job = tmp_path / 'job'
+    job.mkdir()
+    write_json(job / 'job.json', {'executor': 'local'})
+    write_json(job / 'status.json', {'phase': 0, 'status': 'running'})
+    write_json(job / 'worker.json', {'tag': 'live', 'host_identity': 'host'})
+    monkeypatch.setattr(optimize, 'owned_alive', lambda tag: True)
+    with pytest.raises(ValueError, match='still running'):
+        optimize.restart(job, tmp_path, 'nope')
+    assert (job / 'status.json').exists() and not (job / 'restart.json').exists()
+
+
+def test_changed_adapter_needs_a_recorded_override(tmp_path, monkeypatch):
+    """Swapping the proposer is allowed only as an explicit, evidenced upgrade."""
+    root = tmp_path / 'root'
+    (root / 'benchmarks/agents').mkdir(parents=True)
+    (root / 'benchmarks/agents/deepseek_agent.py').write_text('# fixed\n')
+    request = tmp_path / 'request.json'
+    write_json(request, {'provider': 'benchmarks/agents/deepseek_agent.py',
+                         'provider_hash': 'frozen-digest', 'deadline': time.time() + 600,
+                         'agent_timeout_seconds': 30, 'max_response_bytes': 1000,
+                         'evidence': [], 'fingerprint': 'fp'})
+    output = tmp_path / 'agent'
+    output.mkdir()
+    monkeypatch.setattr(search, 'skills', type('S', (), {'validate': staticmethod(lambda *_a, **_k: {})}))
+    monkeypatch.setattr(search, 'execute',
+                        lambda *a, **k: {'status': 'completed', 'cleanup_complete': True})
+    write_json(output / 'proposal.json', {'stop': True, 'reason': 'no change', 'proposals': []})
+
+    with pytest.raises(ValueError, match='differs from the frozen campaign adapter'):
+        search.propose(request, output, root)
+
+    override = {'replaces': 'frozen-digest', 'digest': digest(root / 'benchmarks/agents/deepseek_agent.py'),
+                'reason': 'fixed envelope handling'}
+    search.propose(request, output, root, provider_override=override)
+    record = read_json(output / 'provider-change.json')
+    assert record['replaces'] == 'frozen-digest' and record['digest'] == override['digest']
+    assert record['campaign_fingerprint'] == 'fp'
+
+    with pytest.raises(ValueError, match='differs from the frozen campaign adapter'):
+        search.propose(request, output, root, provider_override={**override, 'digest': 'other'})
 
 def test_partial_bootstrap_reuses_sealed_archive(tmp_path):
     from afd_rsi.evidence import digest

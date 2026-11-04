@@ -261,11 +261,26 @@ def main():
             pipeline_records = []
             if args.pipeline_trace_dir:
                 from pipeline_trace import TRACE_CORES, TRACE_STRIDE
+                from afd_plugin.model_executor.npu.async_cam_mega import (
+                    METADATA_FIXED_WORDS, METADATA_PREFIX_WORDS_PER_SOURCE,
+                    METADATA_WORD_BYTES, WORKSPACE_ALIGNMENT_BYTES)
                 assert not args.full_graph and not args.measure
                 size = mega.scratch.numel()
                 trace_storage = torch.zeros(size + TRACE_CORES * TRACE_STRIDE + 512,
                                             dtype=torch.uint8, device=device)
                 mega.scratch = trace_storage[:size]
+                # The executor keeps metadata views into the buffer it allocated, and
+                # the kernel places the trace at scratch + workspace bytes. Rebind the
+                # views to the enlarged storage, or the retained metadata reads the
+                # superseded buffer while the record tail lands at the right offset.
+                words = METADATA_FIXED_WORDS + connector.tp_size * (
+                    METADATA_PREFIX_WORDS_PER_SOURCE + EXPERTS)
+                metadata_bytes = METADATA_WORD_BYTES * words
+                count_offset = ((metadata_bytes + WORKSPACE_ALIGNMENT_BYTES - 1)
+                                // WORKSPACE_ALIGNMENT_BYTES * WORKSPACE_ALIGNMENT_BYTES)
+                mega.batch_info = mega.scratch[:metadata_bytes].view(torch.int64)
+                mega.group_list = mega.scratch[
+                    count_offset:count_offset + METADATA_WORD_BYTES * EXPERTS].view(torch.int64)
                 trace_tail = trace_storage[size:size + TRACE_CORES * TRACE_STRIDE]
                 trace_guard = trace_storage[-512:]
                 trace_guard.fill_(165)

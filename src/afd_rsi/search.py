@@ -289,16 +289,28 @@ def session_env(directory: Path) -> dict:
             'AFD_RSI_CODEX_SESSION_DIR': str(directory)}
 
 
-def propose(request: Path, output: Path, root: Path, session_dir: Path = None):
+def propose(request: Path, output: Path, root: Path, session_dir: Path = None,
+            provider_override: dict = None):
     """Run only the proposer on an authenticated host; no target checkout is required."""
     skills.validate(root)
     context = read_json(request)
     # The request names the adapter it was frozen against; proposals from any
     # other adapter would come from a different model and must not be accepted.
+    # A restart may replace a defective adapter, but only through a recorded
+    # override naming the digest it replaces; the swap is written as evidence.
     provider = context.get('provider', DEFAULT_PROVIDER)
     driver = root / provider
-    if not driver.is_file() or digest(driver) != context['provider_hash']:
-        raise ValueError('proposer differs from the frozen campaign adapter')
+    if not driver.is_file():
+        raise ValueError('proposer adapter is missing from the controller')
+    changed = digest(driver) != context['provider_hash']
+    if changed:
+        replaces = (provider_override or {}).get('replaces')
+        if replaces != context['provider_hash'] or (provider_override or {}).get('digest') != digest(driver):
+            raise ValueError('proposer differs from the frozen campaign adapter')
+        write_json(output / 'provider-change.json', {
+            'provider': provider, 'replaces': replaces, 'digest': digest(driver),
+            'reason': (provider_override or {}).get('reason', ''),
+            'campaign_fingerprint': context.get('fingerprint')})
     remaining = context['deadline'] - time.time()
     if remaining <= 0:
         raise ValueError('campaign budget exhausted before proposal')

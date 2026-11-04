@@ -54,6 +54,30 @@ DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
 # analysis stage needs headroom well beyond the JSON it returns.
 DEFAULT_MAX_TOKENS = {'analysis': 32768, 'code': 16384}
 DEFAULT_TOKEN_CAP = 65536
+# Truncation retries are cheap compared with the device round they unblock.
+MAX_ATTEMPTS = 4
+
+
+class Truncated(ValueError):
+    """The model spent the output budget before writing an answer."""
+
+
+class UsageLog:
+    """Token record written after every call, so a failed round keeps its usage."""
+
+    def __init__(self, path=None):
+        self.path = Path(path) if path else None
+        self.turns = []
+
+    def add(self, turn):
+        self.turns.append(turn)
+        if self.path:
+            write_json(self.path, {'turns': self.turns})
+
+    def record(self, turn, path=None):
+        if path and not self.path:
+            self.path = Path(path)
+        self.add(turn)
 DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
 DEFAULT_MAX_CHARS = 200_000
 
@@ -289,10 +313,39 @@ def extract_json(text: str) -> dict:
     raise ValueError('model did not return a JSON object')
 
 
-def check_shape(value: dict, request: dict, *, analysis: bool) -> None:
-    """Advisory shape check; the controller re-validates authoritatively."""
-    if not isinstance(value, dict) or set(value) != {'stop', 'reason', 'proposals'}:
-        raise ValueError('response must hold exactly stop, reason and proposals')
+HUNK_HEADER = re.compile(r'^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@')
+
+
+def patch_problem(patch: str) -> str:
+    """Reject a diff that git cannot apply even with --recount.
+
+    Line counts are tolerated (the controller applies with --recount), but a hunk
+    header without ranges is corrupt for every git version, so it must be repaired
+    here instead of spending a device round on it. Everything else is left to the
+    controller, which validates the applied result.
+    """
+    for line in patch.splitlines():
+        if line.startswith('@@') and not HUNK_HEADER.match(line):
+            return (f'hunk header {line[:24]!r} has no ranges; '
+                    f'write @@ -start,count +start,count @@')
+    return ''
+
+
+def check_shape(value: dict, request: dict, *, analysis: bool) -> list[str]:
+    """Advisory shape check; the controller re-validates authoritatively.
+
+    Unknown keys are ignored and returned rather than fatal. A reasoning model
+    sometimes echoes a request field (``type: json_object``) or appends notes;
+    failing the whole round for that discards an expensive device experiment.
+    Missing or ill-typed required content is still rejected.
+    """
+    if not isinstance(value, dict):
+        raise ValueError('response must be a JSON object')
+    required = {'stop', 'reason', 'proposals'}
+    missing = required - set(value)
+    if missing:
+        raise ValueError(f'response is missing {sorted(missing)}')
+    ignored = sorted(set(value) - required)
     if type(value['stop']) is not bool or not isinstance(value['reason'], str):
         raise ValueError('stop must be boolean and reason must be a string')
     proposals = value['proposals']
@@ -311,13 +364,19 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> None:
         expected |= set() if analysis else {'patch'}
         if requirements:
             expected |= {'experiment'}
-        if set(proposal) != expected:
-            raise ValueError(f'proposal keys must be {sorted(expected)}')
+        missing = expected - set(proposal)
+        if missing:
+            raise ValueError(f'proposal is missing {sorted(missing)}')
+        ignored += [f'proposal.{name}' for name in sorted(set(proposal) - expected)]
         if not all(isinstance(proposal[name], str) and proposal[name].strip()
                    for name in ('hypothesis', 'category')):
             raise ValueError('proposal needs a hypothesis and a category')
         if not analysis and not (isinstance(proposal['patch'], str) and proposal['patch'].strip()):
             raise ValueError('coding proposals need a patch')
+        if not analysis:
+            problem = patch_problem(proposal['patch'])
+            if problem:
+                raise ValueError(problem)
         if type(proposal['priority']) is not int or proposal['priority'] not in (1, 2, 3):
             raise ValueError('priority must be 1, 2 or 3')
         cited = proposal['evidence']
@@ -331,6 +390,7 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> None:
                 raise ValueError('proposal needs a complete falsifiable experiment')
             if not set(requirements['required_evidence_ids']) <= set(cited):
                 raise ValueError('proposal must cite the incumbent measurement and profile evidence')
+    return ignored
 
 
 def optional_parameters(model: str) -> dict:
@@ -380,14 +440,18 @@ def token_cap() -> int:
     return int(os.environ.get('AFD_RSI_DEEPSEEK_TOKEN_CAP') or DEFAULT_TOKEN_CAP)
 
 
-def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
-    """One call with a single repair attempt; returns (parsed value, usage).
+def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None):
+    """Call until one accepted answer, escalating on truncation.
 
-    A reasoning model can spend the whole output budget thinking: the reply then
-    has `finish_reason=length` and empty content. Repeating the identical request
-    would do the same thing again, so the repair attempt escalates the budget
-    instead.
+    Two failure kinds are handled differently, because they need different fixes:
+
+    * truncation — the reasoning model spent the whole output budget thinking, so
+      `finish_reason=length` with empty content. The budget is doubled and the same
+      question is asked again; this does not consume the one shape repair.
+    * shape — the answer arrived but is missing required fields. One explicit
+      repair is allowed, quoting the accepted keys.
     """
+    usage = usage or UsageLog()
     model = model_for(stage, request)
     effort = effort_for(stage)
     budget = min(token_budget(stage), token_cap())
@@ -396,39 +460,56 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
     (prefix.parent / f'{prefix.name}.request.json').write_text(
         json.dumps({key: value for key, value in payload.items() if key != 'messages'}) + '\n')
     errors = []
-    for attempt in range(2):
+    repairs = 0
+    for attempt in range(MAX_ATTEMPTS):
         response = send(payload, timeout, prefix)
-        (prefix.parent / f'{prefix.name}.response{"" if not attempt else "-repair"}.json').write_text(
+        suffix = '' if attempt == 0 else f'-retry{attempt}'
+        (prefix.parent / f'{prefix.name}.response{suffix}.json').write_text(
             json.dumps(response) + '\n')
-        usage = response.get('usage') or {}
+        reported = response.get('usage') or {}
         choices = response.get('choices') or []
         finish = (choices[0].get('finish_reason') if choices else None) or ''
-        turn = {'model': model, 'stage': stage, 'effort': effort, 'attempt': attempt,
-                'max_tokens': payload['max_tokens'], 'finish_reason': finish,
-                'prompt_tokens': usage.get('prompt_tokens'),
-                'completion_tokens': usage.get('completion_tokens')}
         text = ''
         if choices:
             text = (choices[0].get('message') or {}).get('content') or ''
+        turn = {'model': model, 'stage': stage, 'effort': effort, 'attempt': attempt,
+                'max_tokens': payload['max_tokens'], 'finish_reason': finish,
+                'prompt_tokens': reported.get('prompt_tokens'),
+                'completion_tokens': reported.get('completion_tokens'),
+                'ignored_keys': []}
         try:
             if not choices:
                 raise ValueError('response carried no choices')
             if finish == 'length' and not text.strip():
-                raise ValueError(
-                    f'output budget {payload["max_tokens"]} was spent before any answer (finish_reason=length)')
+                raise Truncated(
+                    f'output budget {payload["max_tokens"]} was spent before any answer '
+                    f'(finish_reason=length)')
             value = extract_json(text)
-            check_shape(value, request, analysis=analysis)
+            turn['ignored_keys'] = check_shape(value, request, analysis=analysis)
+            usage.add(turn)
             return value, turn
+        except Truncated as error:
+            errors.append(str(error))
+            usage.add(turn)
+            escalated = min(payload['max_tokens'] * 2, token_cap())
+            if escalated <= payload['max_tokens']:
+                break
+            payload = {**payload, 'max_tokens': escalated, 'messages': messages + [
+                {'role': 'user', 'content':
+                 'Answer within a tighter budget: stop reasoning and reply with one JSON object '
+                 f'only, holding exactly the keys {sorted(schema)}.'}]}
         except (KeyError, IndexError, TypeError, ValueError) as error:
             errors.append(str(error))
-            if attempt:
+            usage.add(turn)
+            if repairs:
                 break
-            escalated = min(max(payload['max_tokens'] * 2, budget), token_cap())
-            payload = {**payload, 'max_tokens': escalated, 'messages': messages + [
+            repairs += 1
+            payload = {**payload, 'messages': messages + [
                 {'role': 'assistant', 'content': text},
                 {'role': 'user', 'content':
-                 f'That response was rejected: {error}. Reply with one JSON object that matches '
-                 f'the schema exactly, with no other text: {json.dumps(schema)}'}]}
+                 f'That response was rejected: {error}. Reply with one JSON object and nothing else. '
+                 f'It must contain exactly these keys: {sorted(schema)}. '
+                 f'The schema is: {json.dumps(schema)}'}]}
     raise ValueError(f'DeepSeek {stage} response rejected: {errors[-1]}')
 
 
@@ -467,12 +548,13 @@ def propose(args):
     remaining = deadline - time.time() if deadline else float('inf')
     limit = min(float(request.get('agent_timeout_seconds') or 600), max(1.0, remaining))
 
+    usage = UsageLog(args.output.parent / 'usage.json')
     analysis, first = ask('analysis',
         [{'role': 'system', 'content': SYSTEM_RULES},
          {'role': 'user', 'content': f'{ANALYSIS_TASK}\n\nSchema:\n{json.dumps(analysis_contract)}\n\nRequest:\n{document}'}],
-        analysis_contract, request, timeout=limit, prefix=args.output.parent / 'analysis-events', analysis=True)
+        analysis_contract, request, timeout=limit, prefix=args.output.parent / 'analysis-events',
+        analysis=True, usage=usage)
     write_json(args.output.parent / 'analysis.json', analysis)
-    turns = [first]
     if analysis['stop']:
         args.output.write_text(json.dumps(analysis) + '\n')
     else:
@@ -488,10 +570,9 @@ def propose(args):
             [{'role': 'system', 'content': SYSTEM_RULES},
              {'role': 'user', 'content': f'{CODE_TASK}\n\nSchema:\n{json.dumps(contract)}\n\nAnalysis:\n'
                                          f'{json.dumps(analysis, ensure_ascii=False)}\n\nRequest:\n{document}'}],
-            contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events', analysis=False)
-        turns.append(second)
+            contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events',
+            analysis=False, usage=usage)
         args.output.write_text(json.dumps(code) + '\n')
-    write_json(args.output.parent / 'usage.json', {'turns': turns})
 
 
 def exclusive_lock(path: Path):

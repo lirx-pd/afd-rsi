@@ -117,6 +117,15 @@ def check_candidate(run: Path, plan: dict, source: Path | None = None) -> dict:
 
 
 def apply_patch(run: Path, patch: Path, root: Path, *, source=None, locked=False) -> None:
+    def run_apply(directory: Path) -> None:
+        result = subprocess.run(
+            ["git", f"--git-dir={directory / '.git'}", f"--work-tree={directory}",
+             "apply", "--recount", str(patch)],
+            cwd=directory, capture_output=True, text=True)
+        if result.returncode:
+            detail = (result.stderr or result.stdout).strip().splitlines()
+            raise ValueError(f'patch does not apply: {detail[-1] if detail else result.returncode}')
+
     with exclusive(run) if not locked else nullcontext():
         plan = load(run, root)
         source = source or run / "workspaces/candidate"
@@ -125,8 +134,10 @@ def apply_patch(run: Path, patch: Path, root: Path, *, source=None, locked=False
             staged = Path(temporary) / "candidate"
             shutil.copytree(source, staged)
             before = inventory(source)
-            subprocess.run(["git", f"--git-dir={staged / '.git'}", f"--work-tree={staged}",
-                            "apply", str(patch)], cwd=staged, check=True)
+            # --recount trusts the hunk body over its declared ranges. A proposer
+            # that miscounts context lines would otherwise fail as a corrupt patch
+            # and burn the round, although the change itself is well defined.
+            run_apply(staged)
             staged_identity = inventory(staged)
             if staged_identity == before:
                 raise ValueError("patch made no source changes")
@@ -134,8 +145,7 @@ def apply_patch(run: Path, patch: Path, root: Path, *, source=None, locked=False
             if any(not any(fnmatch.fnmatchcase(name, pattern) for pattern in plan["allowed_files"])
                    for name in changes):
                 raise ValueError("patch changes a file outside allowed_files")
-            subprocess.run(["git", f"--git-dir={source / '.git'}", f"--work-tree={source}",
-                            "apply", str(patch)], cwd=source, check=True)
+            run_apply(source)
             if inventory(source) != staged_identity:
                 raise ValueError("applied patch differs from validated patch")
 

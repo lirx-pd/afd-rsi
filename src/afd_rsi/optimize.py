@@ -537,6 +537,56 @@ def proposer_unavailable(proposal_dir: Path) -> str:
     return ''
 
 
+def restart(job, root, reason):
+    """Refresh the controller and resume a stopped campaign without losing rounds.
+
+    The measured rounds live in the campaign on the execution host and are left
+    untouched. Only the local proposer snapshot is replaced, and any interrupted
+    proposal attempt is archived rather than deleted. The adapter digest that the
+    frozen campaign expects is recorded, so accepting a new adapter is an explicit,
+    evidenced upgrade instead of a silent swap.
+    """
+    status = read_json(job / 'status.json')
+    if status['status'] == 'running' and (job / 'worker.json').exists() \
+            and owned_alive(read_json(job / 'worker.json')['tag']):
+        raise ValueError('campaign worker is still running')
+    if (job / 'restart.json').exists():
+        raise ValueError('campaign was already restarted; inspect restart.json before repeating it')
+    stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())
+    previous = job / f'controller-replaced-{stamp}'
+    shutil.move(str(job / 'controller'), previous)
+    snapshot(root, job / 'controller')
+    abandoned = []
+    for request in sorted((job / 'proposals').glob('*/request.json')):
+        agent = request.parent / 'agent'
+        receipt = agent / 'process.json'
+        complete = receipt.exists() and read_json(receipt).get('status') == 'completed'
+        if agent.exists() and not complete:
+            target = request.parent / f'agent-abandoned-{stamp}'
+            agent.rename(target)
+            write_json(target / 'abandoned.json', {
+                'reason': reason, 'stamp': stamp,
+                'note': 'kept as evidence; the round was never measured'})
+            abandoned.append(str(target.relative_to(job)))
+    provider_hash = None
+    for request in sorted((job / 'proposals').glob('*/request.json')):
+        provider_hash = read_json(request).get('provider_hash')
+    write_json(job / 'restart.json', {
+        'at': stamp, 'reason': reason, 'archived_controller': previous.name,
+        'abandoned_attempts': abandoned, 'expected_provider_hash': provider_hash})
+    config = read_json(job / 'job.json')
+    config['retry_remote'] = True
+    write_json(job / 'job.json', config)
+    phase = int(read_json(job / 'status.json').get('phase', 0)) + 1
+    write_json(job / 'status.json', {**read_json(job / 'status.json'),
+                                     'status': 'restarted', 'phase': phase,
+                                     'activity': '', 'error': ''})
+    event(job, 'restarted', phase=phase, reason=reason,
+          archived_controller=previous.name, abandoned=abandoned)
+    spawn(job)
+    return job
+
+
 def worker(job):
     with (job / '.worker.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -619,12 +669,22 @@ def worker(job):
                     # A proposer outage is retried rather than failing the campaign:
                     # the dispatch is already charged and the work is untouched.
                     from .search import propose
+                    override = None
+                    if (job / 'restart.json').exists():
+                        # A restarted campaign may run a fixed adapter; the swap is
+                        # recorded against the digest the request was frozen with.
+                        record = read_json(job / 'restart.json')
+                        driver = job / 'controller' / read_json(request).get('provider', '')
+                        override = {'replaces': read_json(request).get('provider_hash'),
+                                    'digest': digest(driver) if driver.is_file() else None,
+                                    'reason': record.get('reason', '')}
                     deadline = time.monotonic() + float(
                         os.environ.get('AFD_RSI_PROPOSER_RETRY_SECONDS') or 1800)
                     while True:
                         try:
                             propose(request, proposal_dir, job / 'controller',
-                                    session_dir=job / 'codex-session')
+                                    session_dir=job / 'codex-session',
+                                    provider_override=override)
                             break
                         except (RuntimeError, ValueError):
                             reason = proposer_unavailable(proposal_dir)
@@ -656,14 +716,19 @@ def main(argv=None, root=None):
     if argv and argv[0] == '_remote':
         remote_run(Path(argv[1]), argv[2])
         return 0
-    if argv and argv[0] in ('status', 'resume'):
+    if argv and argv[0] in ('status', 'resume', 'restart'):
         action = argv[0]
         reader = argparse.ArgumentParser(prog='afd-rsi optimize ' + action)
         reader.add_argument('job', type=Path)
         reader.add_argument('--follow', action='store_true')
         reader.add_argument('--json', action='store_true', help='Print raw state plus monitoring assessment')
+        reader.add_argument('--reason', default='', help='restart only: why the controller was replaced')
         options = reader.parse_args(argv[1:])
         job = options.job.resolve()
+        root = (root or Path(__file__).resolve().parents[2]).resolve()
+        if action == 'restart':
+            restart(job, root, options.reason)
+            return watch(job, follow=options.follow, json_output=options.json)
         if action == 'resume' and read_json(job / 'status.json')['status'] != 'finished':
             if (job / 'worker.json').exists() and owned_alive(read_json(job / 'worker.json')['tag']):
                 return watch(job, follow=options.follow, json_output=options.json)

@@ -21,6 +21,14 @@ For one round, use deep mode. Strategy changes only proposal guidance: allowed
 paths, published interfaces, numerical/service gates, gain threshold and fresh
 confirmation requirements remain unchanged. Depth is not a line-count target.
 
+A native timing pass judges its own sampling first: the worst per-case relative
+spread across repetitions is compared with `AFD_RSI_SPREAD_LIMIT` (default 5%). A
+noisier pass is re-measured at `AFD_RSI_REPEAT_FACTOR` times the configured
+repetitions (default 3), both passes are archived and `adaptive-repeats.json`
+records which one the verdict used. The gain threshold does not move, so a
+smaller-than-noise gain stays unproven instead of being claimed.
+`AFD_RSI_NO_ADAPTIVE_REPEATS=1` disables the second pass.
+
 Under operator-first, only independently confirmed native winners enter final
 service qualification; ordinary screens and the initial baseline start no service.
 Within each final tested source/artifact version start the A/F service once, then run
