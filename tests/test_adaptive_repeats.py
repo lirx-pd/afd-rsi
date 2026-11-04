@@ -80,6 +80,28 @@ def test_spread_names_a_wrong_container_instead_of_a_key_error():
         namespace['case_spread']({'ranks': []})
 
 
+def test_densify_keeps_the_quieter_pass_when_the_denser_one_is_noisier(tmp_path, monkeypatch):
+    """Density is not a guarantee: a noisier re-measure must not win by default."""
+    namespace = driver_namespace()
+    namespace['output'] = tmp_path
+    namespace['write_json'] = lambda path, value: Path(path).write_text(json.dumps(value))
+    monkeypatch.delenv('AFD_RSI_NO_ADAPTIVE_REPEATS', raising=False)
+    monkeypatch.setenv('AFD_RSI_SPREAD_LIMIT', '5')
+
+    def launch(name, argv, *, mega, repeats):
+        spread = 8 if name == 'transaction' else 90
+        return {'reports': [sample(0, [100, 100 + spread, 100])]}
+
+    namespace['launch'] = launch
+    result = namespace['densify']({'reports': [sample(0, [100, 108, 100])]},
+                                  ['f', '--repeats', '2'], {'repeats': 2})
+    record = json.loads((tmp_path / 'adaptive-repeats.json').read_text())
+    assert record['used'] == 'configured' and record['resolved'] is False
+    assert record['dense_spread_pct'] > record['worst_case_spread_pct']
+    # The verdict keeps running on the quieter first pass.
+    assert result['reports'][0]['timing'][1]['transaction_us'] == 108
+
+
 def test_densify_can_be_disabled_by_environment(tmp_path, monkeypatch):
     namespace = driver_namespace()
     namespace['launch'] = lambda *args, **kwargs: pytest.fail('adaptive repeats are disabled')

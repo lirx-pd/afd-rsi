@@ -148,9 +148,19 @@ def densify(native, argv, settings):
         dense = settings["repeats"] * factor
         dense_argv = list(argv)
         dense_argv[dense_argv.index("--repeats") + 1] = str(dense)
-        native = launch("transaction-dense", dense_argv, mega=True, repeats=dense)
-        record.update(dense_repeats=dense, dense_spread_pct=case_spread(native),
-                      used="dense", why=f"first pass spread {spread:.2f}% exceeds {limit:.2f}%")
+        denser = launch("transaction-dense", dense_argv, mega=True, repeats=dense)
+        dense_spread = case_spread(denser)
+        # More repetitions can make a pass noisier, so keep the quieter sample set
+        # rather than assuming density is better. The threshold itself never moves.
+        record.update(dense_repeats=dense, dense_spread_pct=dense_spread,
+                      why=f"first pass spread {spread:.2f}% exceeds {limit:.2f}%",
+                      resolved=(min(spread, dense_spread) <= limit))
+        if dense_spread < spread:
+            native = denser
+            record["used"] = "dense"
+        else:
+            record["used"] = "configured"
+            record["kept"] = "the denser pass was noisier"
     write_json(output / "adaptive-repeats.json", record)
     return native
 
