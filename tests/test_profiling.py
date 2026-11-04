@@ -288,9 +288,9 @@ def test_service_startup_failure_retains_real_error_without_missing_metric_excep
 
 def test_internal_pipeline_trace_rejects_overflow_and_missing_cores(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/native'))
-    from pipeline_trace import decode, TRACE_MAGIC
+    from pipeline_trace import decode, TRACE_MAGIC, TRACE_RECORDS, TRACE_STRIDE
     from afd_rsi.native import analyze_pipeline
-    data = [[0] * 2080 for _ in range(72)]
+    data = [[0] * (TRACE_STRIDE // 8) for _ in range(72)]
     for row in data:
         row[:4] = [TRACE_MAGIC, 1, 10, 30]
         row[32:36] = [12, 24, 8, 1]
@@ -308,7 +308,7 @@ def test_internal_pipeline_trace_rejects_overflow_and_missing_cores(tmp_path, mo
     selected = analyze_pipeline(tmp_path, 1, 2)['ffn_ranks'][0]['selected_cores']
     assert selected[0]['events'][-2:] == [[14, 15, 9, 3], [15, 16, 9, 4]]
     assert summary['ffn_ranks'][0]['first_transaction']['rows'] == 7
-    data[0][1] = 513
+    data[0][1] = TRACE_RECORDS + 1
     with pytest.raises(ValueError, match='overflowed'):
         decode(data, {})
     transaction['cores'].pop()

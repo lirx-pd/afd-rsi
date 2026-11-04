@@ -15,8 +15,8 @@ def scenario_settings(args, selected, dp):
         if args.perf_dp_input_lens:
             raise ValueError('perf-dp-input-lens requires fixed-dp-prefill')
         return {}
-    if dp not in (2, 3):
-        raise ValueError('DP scenarios require async V4 AFD with two or three Attention DPs')
+    if dp not in (2, 3, 6):
+        raise ValueError('DP scenarios require async V4 AFD with two, three or six Attention DPs')
     result = {}
     if 'fixed-dp-prefill' in selected:
         inputs = list(map(int, args.perf_dp_input_lens.split(','))) if args.perf_dp_input_lens else [16384] + [512] * (dp - 1)

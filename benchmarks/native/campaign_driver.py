@@ -50,6 +50,9 @@ args = [sys.executable, "-m", "torch.distributed.run", "--standalone",
         "--boundary", "--tile-boundary", "--random-weights", "--routed-scale", "2.5",
         "--hidden-size", str(settings["hidden"]), "--intermediate-size", str(settings["intermediate"]),
         "--local-experts", str(settings["experts"]), "--attn-ranks", str(settings["attn_ranks"])]
+if settings.get("lengths"):
+    # Deployed lengths, so the transaction reflects the real matrix.
+    args += ["--lengths", str(settings["lengths"])]
 if settings["per_group"]:
     args.append("--per-group")
 env = runtime_env(repo, settings["devices"])

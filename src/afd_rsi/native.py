@@ -287,8 +287,10 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
             'analysis': 'Rank tasks by summed device duration. Investigate the largest tasks first. '
                 'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
                 'device trace alone cannot separate Cube, Vector, MTE or communication time; the '
-                'instrumented diagnostic names those stages when a pipeline trace is present, and its '
-                'shares are per-core sums rather than critical path. '
+                'instrumented diagnostic names those stages when a pipeline trace is present. '
+                'Its share_pct includes the Attention dispatch wait (sync_in, reported separately) and '
+                'active_share_pct excludes it, so compare stages on active shares and per-core sums '
+                'rather than treating either as critical-path latency. '
                 'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
             'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
                 'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
@@ -332,15 +334,31 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
 def named_stage_cycles(totals: dict) -> list:
     """Name the pull-native stage codes so a proposal can address a stage.
 
-    Summed per-core cycles: a stage that runs on every core looks large even when
-    it is not the critical path, so shares order attention and never claim latency.
+    Two shares are reported. ``share_pct`` covers every instrumented cycle, which
+    is dominated by ``sync_in`` because the FFN idles until Attention dispatches.
+    ``active_share_pct`` drops that wait, so the remaining stages answer "where
+    does the FFN spend its own work". Neither is critical-path latency: they are
+    per-core cycle sums.
     """
     known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
     total = sum(known.values())
     if not total:
         return []
-    return [{'stage': name, 'core_cycles': cycles, 'share_pct': round(100 * cycles / total, 2)}
-            for name, cycles in sorted(known.items(), key=lambda item: -item[1]) if cycles]
+    waiting = known.pop('sync_in', 0)
+    active = total - waiting
+    rows = []
+    for name, cycles in sorted(known.items(), key=lambda item: -item[1]):
+        if not cycles:
+            continue
+        rows.append({'stage': name, 'core_cycles': cycles,
+                     'share_pct': round(100 * cycles / total, 2),
+                     'active_share_pct': round(100 * cycles / active, 2) if active else 0.0})
+    if waiting:
+        rows.append({'stage': 'sync_in', 'core_cycles': waiting,
+                     'share_pct': round(100 * waiting / total, 2),
+                     'active_share_pct': None,
+                     'note': 'Attention dispatch wait; excluded from active shares'})
+    return rows
 
 
 def write_report(output: Path, summary: dict):

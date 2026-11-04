@@ -9,7 +9,10 @@ from pathlib import Path
 import json
 
 TRACE_CORES = 72
-TRACE_STRIDE = 16640
+# One record per stage per receive round. Long sequences produce many rounds, so
+# the tail must hold a whole suite: 2048 records x 32 bytes plus a 256-byte header.
+TRACE_RECORDS = 2048
+TRACE_STRIDE = 256 + TRACE_RECORDS * 32
 TRACE_MAGIC = 0x4d4f455452414345
 
 LEGACY_DIR = Path('csrc/npu/ascend_kernels/afd_mega_moe_ffn/op_kernel')
@@ -73,7 +76,7 @@ PULL_TRACE_CLASS = r'''
 namespace AfdTrace {
 // The class is inserted before the file's own namespace, so it brings AscendC in.
 using namespace AscendC;
-// Diagnostic contract: the caller owns 72 extended storage tails, 512 records/core.
+// Diagnostic contract: the caller owns 72 extended storage tails, __RECORDS__ records/core.
 class Phase {
 public:
     __aicore__ Phase(GM_ADDR tail) : tail_(tail) {
@@ -81,7 +84,7 @@ public:
         if ASCEND_IS_AIC { core += 48; }
         enabled_ = core == 0 || core == 4 || core == 8 || core == 28 || core == 47 ||
                    core == 48 || core == 60 || core == 71;
-        tail_ += core * 16640;
+        tail_ += core * __STRIDE__;
         // The tail outlives one kernel launch: the fixture drives several
         // transactions and each launch reuses the same storage, so records
         // accumulate and the header keeps the earliest entry and the total count.
@@ -92,7 +95,7 @@ public:
         const auto total = *reinterpret_cast<__gm__ volatile uint64_t *>(tail_ + 8);
         const auto entry = *reinterpret_cast<__gm__ volatile uint64_t *>(tail_ + 16);
         const auto now = GetSystemCycle();
-        count_ = (seen == 0x4d4f455452414345ULL && total <= 512) ? uint32_t(total) : 0;
+        count_ = (seen == 0x4d4f455452414345ULL && total <= __RECORDS__) ? uint32_t(total) : 0;
         start_ = count_ ? entry : now;
     }
     __aicore__ uint64_t Begin(uint32_t code, uint32_t seq) const {
@@ -101,7 +104,7 @@ public:
     __aicore__ void End(uint32_t code, uint32_t seq, uint64_t start) const {
         if (!enabled_) return;
         const auto stop = GetSystemCycle();
-        if (count_ < 512) {
+        if (count_ < __RECORDS__) {
             auto dst = reinterpret_cast<volatile __gm__ uint64_t *>(tail_ + 256 + count_ * 32);
             dst[0] = start; dst[1] = stop; dst[2] = code; dst[3] = seq;
         }
@@ -131,7 +134,9 @@ def instrument_pull(repo):
     source = path.read_text()
     # The workspace ends exactly where the caller's reserved tail begins.
     s = replace_checked(source, '#include "afd_mega_moe_pull_pipeline.h"\n',
-                        '#include "afd_mega_moe_pull_pipeline.h"\n' + PULL_TRACE_CLASS)
+                        '#include "afd_mega_moe_pull_pipeline.h"\n'
+                        + PULL_TRACE_CLASS.replace('__RECORDS__', str(TRACE_RECORDS))
+                                           .replace('__STRIDE__', str(TRACE_STRIDE)))
     s = replace_checked(s, '        const uint32_t id = GetBlockIdx();\n',
                         '        const uint32_t id = GetBlockIdx();\n'
                         '        ::AfdTrace::Phase trace(scratch + w.bytes);\n'
@@ -195,14 +200,14 @@ def instrument_pull(repo):
 def instrument_legacy(repo):
     """Instrument the fused afd_mega_moe_ffn pipeline (pre pull-native builds)."""
     trace_class=r'''
-    // Diagnostic contract: the caller owns 72 extended storage tails, 512 records/core.
+    // Diagnostic contract: the caller owns 72 extended storage tails, __RECORDS__ records/core.
     class PhaseTrace {
     public:
         __aicore__ PhaseTrace(GM_ADDR tail) : tail_(tail), start_(GetSystemCycle()) {
             uint32_t core = GetBlockIdx();
             if ASCEND_IS_AIC { core += 48; }
             enabled_ = !AFD_TRACE_SPARSE || core == 0 || core == 4 || core == 8 || core == 28 || core == 47 || core == 48 || core == 60 || core == 71;
-            tail_ += core * 16640;
+            tail_ += core * __STRIDE__;
         }
         __aicore__ uint64_t Begin(uint32_t code, uint32_t seq) const {
             if (!enabled_) return 0;
@@ -217,7 +222,7 @@ def instrument_legacy(repo):
     #if AFD_TRACE_NATIVE
             PrintTimeStamp(65536 + code * 128 + seq);
     #endif
-            if (count_ < 512) {
+            if (count_ < __RECORDS__) {
                 auto dst = reinterpret_cast<volatile __gm__ uint64_t *>(tail_ + 256 + count_ * 32);
                 dst[0] = start; dst[1] = stop; dst[2] = code; dst[3] = seq;
             }
@@ -242,7 +247,10 @@ def instrument_legacy(repo):
     original = (repo/p/'afd_mega_moe_pipeline.h').read_text()
     cpp = (repo/p/'afd_mega_moe_ffn.cpp').read_text()
     packed = 'const auto layer = ReadControl(scratch + w.validation, 0);' in cpp
-    s = replace_checked(original, 'class PipelineFlags {', trace_class+'\nclass PipelineFlags {')
+    s = replace_checked(original, 'class PipelineFlags {',
+                        trace_class.replace('__RECORDS__', str(TRACE_RECORDS))
+                                   .replace('__STRIDE__', str(TRACE_STRIDE))
+                        + '\nclass PipelineFlags {')
     s = replace_checked(s, 'PipelineFlags(GM_ADDR base) : base_(base) {}',
                         'PipelineFlags(GM_ADDR base, GM_ADDR tail) : trace(tail), base_(base) {}')
     s = replace_checked(s, 'public:\n    __aicore__ explicit PipelineFlags',
@@ -328,7 +336,7 @@ def decode(data, work):
     cores = []
     for core, row in enumerate(data):
         magic, count, start, end = map(int, row[:4])
-        if magic != TRACE_MAGIC or not 0 <= count <= 512 or end < start:
+        if magic != TRACE_MAGIC or not 0 <= count <= TRACE_RECORDS or end < start:
             raise ValueError(f'incomplete or overflowed pipeline trace on core {core}')
         records = [list(map(int, row[32+i*4:36+i*4])) for i in range(count)]
         if any(not start <= a <= b <= end for a, b, code, seq in records):

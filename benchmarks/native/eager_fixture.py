@@ -138,7 +138,10 @@ def main():
     parser.add_argument("--profile-dir")
     parser.add_argument("--pipeline-trace-dir")
     parser.add_argument("--full-graph", action="store_true")
-    parser.add_argument("--attn-ranks", type=int, choices=(1, 2), default=1)
+    parser.add_argument("--attn-ranks", type=int, choices=(1, 2, 4), default=1)
+    parser.add_argument("--lengths", default="",
+                        help="Comma-separated token lengths; empty uses the tail cases")
+    parser.add_argument("--top-k", type=int, choices=(2,), default=2)
     parser.add_argument("--boundary", action="store_true")
     parser.add_argument("--tile-boundary", action="store_true")
     parser.add_argument("--save-outputs")
@@ -149,6 +152,13 @@ def main():
         parser.error("H/I must be aligned and in [256,8192]")
     if not 4 <= EXPERTS <= 256 or args.repeats < 1 or args.warmups < 0:
         parser.error("invalid expert/repeat bounds")
+    if args.lengths:
+        try:
+            args.lengths = [int(item) for item in args.lengths.split(",") if item.strip()]
+        except ValueError:
+            parser.error("--lengths takes comma-separated integers")
+        if not args.lengths or any(not 1 <= tokens <= 16384 for tokens in args.lengths):
+            parser.error("--lengths entries must be within [1, 16384]")
     if (args.full_graph or args.mega_moe) and not args.reference_outputs:
         parser.error("MegaMoE requires saved matching layered eager outputs")
     # The pull-native Mega path is selected only through the connector extra
@@ -420,6 +430,13 @@ def main():
         cases.extend(((5, False, 16), (2, True, 16)))
     if args.tile_boundary:
         cases.extend(((5, True, 129), (2, False, 129)))
+    if args.lengths:
+        # Real operator lengths instead of the tiny tail cases, so the measured
+        # transaction reflects the deployed matrix rather than handshakes.
+        cases = []
+        for tokens in args.lengths:
+            for slot, layer_id in enumerate(LAYERS):
+                cases.append((layer_id, slot == 1, tokens))
     base_case_count = len(cases)
     if args.measure:
         cases = cases * (args.warmups + args.repeats)

@@ -83,6 +83,20 @@ def test_native_report_does_not_turn_consistency_into_performance_pass(tmp_path)
     assert "[observations](observations.json)" in report
 
 
+def test_stage_shares_exclude_the_dispatch_wait(tmp_path):
+    """The FFN idles until Attention dispatches; that wait must not hide the work."""
+    from afd_rsi.native import named_stage_cycles
+    totals = {'47': 8700, '40': 1200, '41': 50, '43': 60, '42': 30, '45': 40, '44': 20}
+    rows = {row['stage']: row for row in named_stage_cycles(totals)}
+    assert rows['sync_in']['share_pct'] == pytest.approx(100 * 8700 / 10100, abs=0.1)
+    assert rows['sync_in']['active_share_pct'] is None
+    # Active shares answer where the FFN's own cycles go.
+    assert rows['round_prepare']['active_share_pct'] == pytest.approx(100 * 1200 / 1400, abs=0.1)
+    assert rows['activation']['active_share_pct'] == pytest.approx(100 * 60 / 1400, abs=0.1)
+    assert sum(row['share_pct'] for row in rows.values()) == pytest.approx(100.0, abs=0.2)
+    assert named_stage_cycles({}) == []
+
+
 def test_profiler_requires_device_kernel_evidence_on_both_ffn_ranks(tmp_path):
     for rank in (1, 2):
         path = tmp_path / f"rank-{rank}" / "kernel_details.csv"

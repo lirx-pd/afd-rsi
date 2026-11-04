@@ -131,7 +131,9 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("validation driver escapes foundation")
     if "native" in config:
         native = config["native"]
-        if set(native) - {"execution", "profile"} != {"devices", "hidden", "intermediate", "experts", "attn_ranks", "warmups", "repeats", "per_group"}:
+        optional = {"execution", "profile", "lengths"}
+        if (set(native) - optional != {"devices", "hidden", "intermediate", "experts",
+                                       "attn_ranks", "warmups", "repeats", "per_group"}):
             raise ValueError("invalid native settings")
         if native.get("execution", "eager") not in ("eager", "graph"):
             raise ValueError("native execution must be eager or graph")
@@ -144,7 +146,17 @@ def load_recipe(path: Path) -> dict:
         for key in ("experts", "attn_ranks", "repeats"):
             positive(native[key], key, integer=True)
         positive(native["warmups"], "warmups", integer=True, zero=True)
-        if (native["attn_ranks"] not in (1, 2) or not 4 <= native["experts"] <= 256
+        if "lengths" in native:
+            # Deployed sequence coverage, bounded by what one op can receive.
+            values = native["lengths"]
+            if isinstance(values, str):
+                values = [item for item in values.split(",") if item.strip()]
+            if (not isinstance(values, list) or not values
+                    or not all(isinstance(item, (int, str)) and str(item).strip().isdigit()
+                               for item in values)
+                    or not all(1 <= int(item) <= 16384 for item in values)):
+                raise ValueError("native lengths must be integers within [1, 16384]")
+        if (native["attn_ranks"] not in (1, 2, 4) or not 4 <= native["experts"] <= 256
                 or type(native["per_group"]) is not bool or config["backend"] != "ascend"):
             raise ValueError("invalid native topology/quantization")
         devices = native["devices"].split(",")

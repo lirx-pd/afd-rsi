@@ -95,6 +95,21 @@ def test_topology_pinning_plan_and_stream_options(modules):
     assert plan['performance_scenarios']['fixed-dp-prefill']['input_lens'] == [16384, 512, 512]
 
 
+def test_dp6tp2_ep4_keeps_the_same_ranks_with_wider_dp(modules):
+    """Six DP groups of two Attention ranks feed the same four FFN ranks."""
+    plan = modules[4].describe(case(modules, '--topology', 'dp6tp2-ep4'))
+    assert plan['attention'] == dict(ranks=12, dp=6, tp=2)
+    assert plan['ffn'] == dict(ranks=4, dp=4, tp=1, ep=4)
+    attention, ffn = plan['services']
+    assert len(attention['demands'] if 'demands' in attention else attention['devices']) == 12
+    assert len(ffn['devices']) == 4
+    # EP stays the FFN DP width and Attention still runs one vLLM DP per group.
+    command = ffn['command']
+    assert command[command.index('--data-parallel-size') + 1] == '4'
+    assert '--enable-expert-parallel' in command
+    assert attention['command'][attention['command'].index('--tensor-parallel-size') + 1] == '2'
+
+
 @pytest.mark.parametrize('extra', [
     ['--perf-scenarios', 'long-decode,long-decode'], ['--perf-scenarios', 'unknown'],
     ['--perf-dp-input-lens', '16384,512'], ['--perf-dp-input-lens', '512,512,512'],

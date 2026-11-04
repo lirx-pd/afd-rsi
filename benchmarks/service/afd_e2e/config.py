@@ -215,14 +215,16 @@ class Case:
     def attention_ranks(self) -> int:
         if self.baseline:
             return sum(dp * tp for dp, tp in self.baseline_layouts)
-        return (12 if self.topology == "dp3tp4-ep4" else 8) if self.model == "v4-flash" else 2
+        if self.model != "v4-flash":
+            return 2
+        return {"dp3tp4-ep4": 12, "dp6tp2-ep4": 12}.get(self.topology, 8)
 
     @property
     def ffn_ranks(self) -> int:
         if self.baseline:
             return 0
         if self.model == "v4-flash":
-            return 4 if self.topology == "dp3tp4-ep4" else 8
+            return 4 if self.topology in {"dp3tp4-ep4", "dp6tp2-ep4"} else 8
         return 1 if self.topology == "2a1f" else 2
 
     @property
@@ -234,7 +236,7 @@ class Case:
         if self.baseline:
             return self.baseline_layouts[0][1]
         if self.model == "v4-flash":
-            return 4
+            return 2 if self.topology == "dp6tp2-ep4" else 4
         return 2 if self.comm == "async" else 1
 
     @property
@@ -334,8 +336,9 @@ def from_args(args) -> Case:
         devices=devices,
         limit=limit,
         test=args.test if args.test is not None else ("perf" if args.baseline else "all"),
-        performance=performance_configuration(args, (3 if topology == "dp3tp4-ep4" else 2)
-                                               if not args.baseline and v4 and async_mode else 0),
+        performance=performance_configuration(
+            args, (6 if topology == "dp6tp2-ep4" else 3 if topology == "dp3tp4-ep4" else 2)
+            if not args.baseline and v4 and async_mode else 0),
         test_interval_seconds=args.test_interval,
         dataset_path=args.dataset_path.resolve() if args.dataset_path else None,
         threshold=args.threshold if args.threshold is not None else (V4_FLASH_THRESHOLD if v4 else 0.27),
@@ -392,10 +395,12 @@ def validate(case: Case) -> None:
         raise ValueError("Performance input + output length exceeds --max-model-len")
     if not case.baseline and case.model == "v2-lite" and case.topology not in {"2a1f", "2a2f"}:
         raise ValueError("v2-lite supports 2a1f and 2a2f")
-    if not case.baseline and case.model == "v4-flash" and case.topology not in {"dp2tp4-ep8", "dp3tp4-ep4"}:
-        raise ValueError("v4-flash requires dp2tp4-ep8 or dp3tp4-ep4")
-    if case.topology == "dp3tp4-ep4" and case.comm != 'async':
-        raise ValueError("dp3tp4-ep4 requires async communication")
+    if not case.baseline and case.model == "v4-flash" and case.topology not in {
+        "dp2tp4-ep8", "dp3tp4-ep4", "dp6tp2-ep4"
+    }:
+        raise ValueError("v4-flash requires dp2tp4-ep8, dp3tp4-ep4 or dp6tp2-ep4")
+    if case.topology in {"dp3tp4-ep4", "dp6tp2-ep4"} and case.comm != 'async':
+        raise ValueError(f"{case.topology} requires async communication")
     for contract in case.performance.scenario_settings.values():
         if max(contract['input_lens']) + contract['output_tokens'] > case.max_model_len:
             raise ValueError("Scenario input + output length exceeds --max-model-len")
