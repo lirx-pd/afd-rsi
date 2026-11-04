@@ -512,6 +512,31 @@ def remote_run(base, phase):
             raise
 
 
+PROPOSER_INFRA_MARKERS = (
+    'gateway HTTP 429', 'gateway HTTP 500', 'gateway HTTP 502',
+    'gateway HTTP 503', 'gateway HTTP 504',
+    'gateway request failed', 'timed out', 'Connection reset',
+    'Temporary failure in name resolution',
+)
+
+
+def proposer_unavailable(proposal_dir: Path) -> str:
+    """Return the infrastructure error a failed proposal hit, if it was one.
+
+    A shared model gateway being down says nothing about the candidate, so the
+    same proposal is retried instead of burning the round. The classification is
+    read from the proposer's own stderr, not guessed from the wrapper message.
+    """
+    stderr = proposal_dir / 'stderr.log'
+    if not stderr.is_file():
+        return ''
+    text = stderr.read_text(errors='replace')
+    for marker in PROPOSER_INFRA_MARKERS:
+        if marker in text:
+            return marker
+    return ''
+
+
 def worker(job):
     with (job / '.worker.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -578,13 +603,42 @@ def worker(job):
                 event(job, 'proposing', phase=phase, progress=status)
                 proposal_dir = round_dir / 'agent'
                 receipt = proposal_dir / 'process.json'
+                retries = 0
                 if proposal_dir.exists():
-                    if not receipt.exists() or read_json(receipt)['status'] != 'completed' or not read_json(receipt)['cleanup_complete']:
+                    completed = (receipt.exists() and read_json(receipt)['status'] == 'completed'
+                                 and read_json(receipt)['cleanup_complete'])
+                    # A proposer killed by an unavailable gateway is retried; an
+                    # ambiguous local interruption still requires inspection.
+                    if not completed and not proposer_unavailable(proposal_dir):
                         raise ValueError('interrupted proposer is not retried or refunded; inspect its owned process receipts')
-                else:
+                    if not completed:
+                        retries += 1
+                        proposal_dir.rename(proposal_dir.with_name(f'agent-retry{retries:02d}'))
+                if not proposal_dir.exists():
                     # This finite process exits before any device experiment starts.
+                    # A proposer outage is retried rather than failing the campaign:
+                    # the dispatch is already charged and the work is untouched.
                     from .search import propose
-                    propose(request, proposal_dir, job / 'controller', session_dir=job / 'codex-session')
+                    deadline = time.monotonic() + float(
+                        os.environ.get('AFD_RSI_PROPOSER_RETRY_SECONDS') or 1800)
+                    while True:
+                        try:
+                            propose(request, proposal_dir, job / 'controller',
+                                    session_dir=job / 'codex-session')
+                            break
+                        except (RuntimeError, ValueError):
+                            reason = proposer_unavailable(proposal_dir)
+                            if not reason or time.monotonic() >= deadline:
+                                raise
+                            retries += 1
+                            # Preserve the failed attempt instead of overwriting it.
+                            if proposal_dir.exists():
+                                proposal_dir.rename(
+                                    proposal_dir.with_name(f'agent-retry{retries:02d}'))
+                            delay = min(30 * retries, 300)
+                            event(job, 'proposing', phase=phase, progress=status,
+                                  proposer_retry=retries, reason=reason, delay=delay)
+                            time.sleep(delay)
                 executor.send(proposal_dir / 'proposal.json', executor.base + '/campaign/' + pending['response'])
                 phase += 1
                 event(job, 'submitted', phase=phase, progress=status)

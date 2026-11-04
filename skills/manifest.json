@@ -50,7 +50,7 @@
     "knowledge/reference-code/mega_moe_workspace.h": "97c236690f67ce5c3b84793beee15b182ca93a129eb0cfc0e404b8e88d52f836",
     "knowledge/troubleshooting/review-debug.md": "d8218ac5097b0073888bce41ea4ce68f814b0634be2b101a3df3f8799ae8ef01",
     "benchmarks/agents/codex_agent.py": "361e77613c588ce8b4d31550b36d699739daeba6f510a2e06a6e90751c8036d1",
-    "benchmarks/agents/deepseek_agent.py": "a6dc907c24f5b98aaa1325b84de4c494776793576e1acba9dbf8035430712bda",
+    "benchmarks/agents/deepseek_agent.py": "fefe900dc7ef6ffd46d3539707676e9831517e01271d4db8ad9654d43e085717",
     "benchmarks/agents/proposal.schema.json": "474ab0bcab0df19699201f6418e0c1dc7ee314058ac70ca5d2bd3c5ffe32f304",
     "benchmarks/fixtures/cpu_driver.py": "98fa702fcd03ab175b862713168fdf782bb2b58a8f0d9e8fecaaacd8173bdbac",
     "benchmarks/native/LICENSE": "0e8566ea362276878e1f38f97da49964dbea301c15d4aa9d727f97a4c39fd943",

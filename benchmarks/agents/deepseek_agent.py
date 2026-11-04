@@ -17,6 +17,9 @@ ever written into a campaign, a request, or the repository:
     AFD_RSI_DEEPSEEK_JSON_MODE       set 0 when the endpoint rejects JSON mode
     AFD_RSI_DEEPSEEK_EFFORT_ANALYSIS default max; thinking level for direction analysis
     AFD_RSI_DEEPSEEK_EFFORT_CODE     default high; thinking level for patch writing
+    AFD_RSI_DEEPSEEK_MAX_TOKENS      output budget for both stages (analysis default 32768)
+    AFD_RSI_DEEPSEEK_MAX_TOKENS_ANALYSIS / _CODE   per-stage output budget
+    AFD_RSI_DEEPSEEK_TOKEN_CAP       ceiling for the truncated-reply escalation, default 65536
     AFD_RSI_DEEPSEEK_MAX_CHARS       prompt budget in characters, default 200000
 
 Neither the endpoint nor the credential has a built-in value: an invented default is
@@ -47,6 +50,10 @@ from afd_rsi.evidence import read_json, write_json
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
 DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
+# The reasoning model consumes the output budget before it writes anything, so the
+# analysis stage needs headroom well beyond the JSON it returns.
+DEFAULT_MAX_TOKENS = {'analysis': 32768, 'code': 16384}
+DEFAULT_TOKEN_CAP = 65536
 DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
 DEFAULT_MAX_CHARS = 200_000
 
@@ -204,29 +211,58 @@ def redact(text: str) -> str:
     return text
 
 
-def request_json(url: str, payload: dict | None, timeout: float) -> dict:
-    """One JSON round trip; the API key is read here and never persisted."""
+TRANSIENT_HTTP = frozenset({429, 500, 502, 503, 504})
+RETRY_SLEEPS = (5, 15, 45, 90)
+
+
+def retry_delay(failures: int) -> int:
+    return RETRY_SLEEPS[min(failures - 1, len(RETRY_SLEEPS) - 1)]
+
+
+def request_json(url: str, payload: dict | None, timeout: float,
+                 attempts: int | None = None) -> dict:
+    """One JSON round trip, retried while the gateway says it is unavailable.
+
+    A proposal round is expensive and the gateway is a shared service, so a 503 or
+    a connection reset is retried here with backoff. Client errors (bad key, bad
+    request, unknown model) are raised immediately: retrying cannot fix those.
+    """
+    attempts = attempts or int(os.environ.get('AFD_RSI_DEEPSEEK_ATTEMPTS') or 5)
     key = api_key()
     body = None if payload is None else json.dumps(payload).encode()
     request = urllib.request.Request(
         url, data=body, method='GET' if body is None else 'POST',
         headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {key}'})
-    try:
-        with urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode())
-    except urllib.error.HTTPError as error:
-        detail = redact(error.read().decode('utf-8', 'replace')[:2000])
-        raise RuntimeError(f'gateway HTTP {error.code}: {detail}') from error
-    except urllib.error.URLError as error:
-        raise RuntimeError(f'gateway request failed: {error.reason}') from error
+    failures = 0
+    while True:
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as error:
+            detail = redact(error.read().decode('utf-8', 'replace')[:2000])
+            failures += 1
+            if error.code not in TRANSIENT_HTTP or failures >= attempts:
+                raise RuntimeError(f'gateway HTTP {error.code}: {detail}') from error
+            time.sleep(retry_delay(failures))
+        except urllib.error.URLError as error:
+            failures += 1
+            if failures >= attempts:
+                raise RuntimeError(f'gateway request failed: {error.reason}') from error
+            time.sleep(retry_delay(failures))
 
 
 def post(payload: dict, timeout: float) -> dict:
     return request_json(endpoint(), payload, timeout)
 
 
+# Direct connection only. The gateway is reachable from the proposer host, and a
+# proxied hop would add its own credentials, buffering and truncation risk to a
+# long JSON body, so environment proxy settings are deliberately ignored here.
+PROXY_HANDLER = urllib.request.ProxyHandler({})
+OPENER = urllib.request.build_opener(PROXY_HANDLER)
+
 # Kept as a module attribute so tests can substitute a transport without network.
-urlopen = urllib.request.urlopen
+urlopen = OPENER.open
 
 
 def extract_json(text: str) -> dict:
@@ -332,11 +368,30 @@ def send(payload, timeout, prefix_name=''):
         return post(reduced, timeout)
 
 
+def token_budget(stage: str) -> int:
+    """Output budget for a stage, before any truncation escalation."""
+    key = 'AFD_RSI_DEEPSEEK_MAX_TOKENS_ANALYSIS' if stage == 'analysis' else 'AFD_RSI_DEEPSEEK_MAX_TOKENS_CODE'
+    shared = os.environ.get('AFD_RSI_DEEPSEEK_MAX_TOKENS')
+    value = os.environ.get(key) or shared
+    return int(value) if value else DEFAULT_MAX_TOKENS[stage]
+
+
+def token_cap() -> int:
+    return int(os.environ.get('AFD_RSI_DEEPSEEK_TOKEN_CAP') or DEFAULT_TOKEN_CAP)
+
+
 def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
-    """One call with a single repair attempt; returns (parsed value, usage)."""
+    """One call with a single repair attempt; returns (parsed value, usage).
+
+    A reasoning model can spend the whole output budget thinking: the reply then
+    has `finish_reason=length` and empty content. Repeating the identical request
+    would do the same thing again, so the repair attempt escalates the budget
+    instead.
+    """
     model = model_for(stage, request)
     effort = effort_for(stage)
-    payload = {'model': model, 'messages': messages, 'max_tokens': 8192, 'stream': False,
+    budget = min(token_budget(stage), token_cap())
+    payload = {'model': model, 'messages': messages, 'max_tokens': budget, 'stream': False,
                'reasoning_effort': effort, **optional_parameters(model)}
     (prefix.parent / f'{prefix.name}.request.json').write_text(
         json.dumps({key: value for key, value in payload.items() if key != 'messages'}) + '\n')
@@ -346,16 +401,21 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
         (prefix.parent / f'{prefix.name}.response{"" if not attempt else "-repair"}.json').write_text(
             json.dumps(response) + '\n')
         usage = response.get('usage') or {}
+        choices = response.get('choices') or []
+        finish = (choices[0].get('finish_reason') if choices else None) or ''
         turn = {'model': model, 'stage': stage, 'effort': effort, 'attempt': attempt,
+                'max_tokens': payload['max_tokens'], 'finish_reason': finish,
                 'prompt_tokens': usage.get('prompt_tokens'),
                 'completion_tokens': usage.get('completion_tokens')}
-        choices = response.get('choices') or []
         text = ''
         if choices:
             text = (choices[0].get('message') or {}).get('content') or ''
         try:
             if not choices:
                 raise ValueError('response carried no choices')
+            if finish == 'length' and not text.strip():
+                raise ValueError(
+                    f'output budget {payload["max_tokens"]} was spent before any answer (finish_reason=length)')
             value = extract_json(text)
             check_shape(value, request, analysis=analysis)
             return value, turn
@@ -363,11 +423,12 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis):
             errors.append(str(error))
             if attempt:
                 break
-            payload = {**payload, 'messages': messages + [
+            escalated = min(max(payload['max_tokens'] * 2, budget), token_cap())
+            payload = {**payload, 'max_tokens': escalated, 'messages': messages + [
                 {'role': 'assistant', 'content': text},
                 {'role': 'user', 'content':
                  f'That response was rejected: {error}. Reply with one JSON object that matches '
-                 f'the schema exactly: {json.dumps(schema)}'}]}
+                 f'the schema exactly, with no other text: {json.dumps(schema)}'}]}
     raise ValueError(f'DeepSeek {stage} response rejected: {errors[-1]}')
 
 

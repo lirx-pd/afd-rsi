@@ -221,6 +221,160 @@ def test_thinking_level_is_dropped_if_the_gateway_rejects_it(tmp_path, monkeypat
     assert args.output.exists()
 
 
+def test_transient_gateway_errors_are_retried_then_succeed(tmp_path, monkeypatch):
+    module = adapter()
+    transport = FakeTransport(analysis_json(), code_json())
+    calls = []
+    monkeypatch.setattr(module.time, 'sleep', lambda _seconds: None)
+
+    def flaky(request, timeout=None):
+        calls.append(request.full_url)
+        if len(calls) <= 2:
+            raise urllib.error.HTTPError(request.full_url, 503, 'unavailable', {}, io.BytesIO(b''))
+        return transport(request, timeout)
+
+    monkeypatch.setattr(module, 'urlopen', flaky)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    args = type('Args', (), {'request': request_document(tmp_path),
+                             'output': tmp_path / 'out/proposal.json',
+                             'session_dir': tmp_path / 'session'})()
+    module.propose(args)
+    assert args.output.exists()
+    assert len(calls) == 4, 'two 503s are retried, then analysis and code succeed'
+
+
+def test_client_errors_are_not_retried(tmp_path, monkeypatch):
+    module = adapter()
+    calls = []
+    monkeypatch.setattr(module.time, 'sleep', lambda _seconds: None)
+
+    def unauthorized(request, timeout=None):
+        calls.append(request.full_url)
+        raise urllib.error.HTTPError(request.full_url, 401, 'unauthorized', {},
+                                     io.BytesIO(b'{"error":"bad key"}'))
+
+    monkeypatch.setattr(module, 'urlopen', unauthorized)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    with pytest.raises(RuntimeError, match='gateway HTTP 401'):
+        module.request_json(GATEWAY + '/chat/completions', {'model': 'm'}, 5)
+    assert len(calls) == 1, 'a bad key cannot be fixed by retrying'
+
+
+def test_retry_backoff_is_bounded():
+    module = adapter()
+    delays = [module.retry_delay(n) for n in range(1, 7)]
+    assert delays == sorted(delays)
+    assert delays[-1] == module.RETRY_SLEEPS[-1]
+
+
+def test_truncated_reasoning_escalates_the_budget_instead_of_repeating(tmp_path, monkeypatch):
+    """A reasoning model that spends the budget thinking gets a bigger one."""
+    module = adapter()
+    payloads = []
+    truncated = json.dumps({'choices': [{'finish_reason': 'length',
+                                        'message': {'content': '', 'reasoning_content': 'thinking'}}],
+                            'usage': {'prompt_tokens': 5, 'completion_tokens': 8192}}).encode()
+
+    def body(content):
+        return json.dumps({'choices': [{'finish_reason': 'stop',
+                                        'message': {'content': content}}],
+                           'usage': {'prompt_tokens': 5, 'completion_tokens': 100}}).encode()
+
+    # Call 1 truncates, call 2 answers the analysis, call 3 answers the coding stage.
+    scripted = [truncated, body(analysis_json()), body(code_json())]
+
+    def wrapped(request, timeout=None):
+        payloads.append(json.loads(request.data.decode()))
+
+        class Response:
+            def __init__(inner, data):
+                inner._data = data
+
+            def __enter__(inner):
+                return inner
+
+            def __exit__(inner, *exc):
+                return False
+
+            def read(inner):
+                return inner._data
+
+        return Response(scripted[min(len(payloads), len(scripted)) - 1])
+
+    monkeypatch.setattr(module, 'urlopen', wrapped)
+    monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_BASE_URL', GATEWAY)
+    args = type('Args', (), {'request': request_document(tmp_path),
+                             'output': tmp_path / 'out/proposal.json',
+                             'session_dir': tmp_path / 'session'})()
+    module.propose(args)
+    assert payloads[0]['max_tokens'] == module.DEFAULT_MAX_TOKENS['analysis']
+    assert payloads[1]['max_tokens'] > payloads[0]['max_tokens'], 'the repair raises the budget'
+    # The truncated reply is kept as evidence, and the accepted turn records the
+    # budget it actually ran with.
+    raw = json.loads((args.output.parent / 'analysis-events.response.json').read_text())
+    assert raw['choices'][0]['finish_reason'] == 'length'
+    turns = json.loads((args.output.parent / 'usage.json').read_text())['turns']
+    assert turns[0]['stage'] == 'analysis' and turns[0]['max_tokens'] == payloads[1]['max_tokens']
+
+
+def test_token_budget_can_be_overridden_and_is_capped():
+    module = adapter()
+    assert module.token_budget('analysis') == module.DEFAULT_MAX_TOKENS['analysis']
+    os_environ = __import__('os').environ
+    previous = {key: os_environ.get(key) for key in
+                ('AFD_RSI_DEEPSEEK_MAX_TOKENS', 'AFD_RSI_DEEPSEEK_TOKEN_CAP')}
+    try:
+        os_environ['AFD_RSI_DEEPSEEK_TOKEN_CAP'] = '40000'
+        os_environ['AFD_RSI_DEEPSEEK_MAX_TOKENS'] = '999999'
+        assert min(module.token_budget('code'), module.token_cap()) == 40000
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os_environ.pop(key, None)
+            else:
+                os_environ[key] = value
+
+def test_gateway_access_is_direct_and_ignores_environment_proxies(tmp_path, monkeypatch):
+    """The proposer talks to the gateway directly, never through a proxy."""
+    import http.server
+    import threading
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get('Content-Length') or 0))
+            body = b'{"choices": [{"message": {"content": "ok"}}]}'
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # A closed proxy port plus an empty no_proxy: any proxied request fails.
+        for name in ('HTTP_PROXY', 'http_proxy', 'HTTPS_PROXY', 'https_proxy', 'ALL_PROXY', 'all_proxy'):
+            monkeypatch.setenv(name, 'http://127.0.0.1:1')
+        for name in ('NO_PROXY', 'no_proxy'):
+            monkeypatch.delenv(name, raising=False)
+        module = adapter()
+        monkeypatch.setenv('DEEPSEEK_API_KEY', 'sk-test-secret')
+        value = module.request_json(
+            f'http://127.0.0.1:{server.server_port}/chat/completions', {'model': 'm'}, 5)
+        assert value['choices'][0]['message']['content'] == 'ok'
+        assert module.PROXY_HANDLER.proxies == {}, 'no proxy is configured for the opener'
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+
 def test_analysis_stop_skips_the_coding_call(tmp_path, monkeypatch):
     module, transport, args, output = prepare(tmp_path, monkeypatch,
                                               analysis_json(stop=True, proposals=[]))
@@ -361,18 +515,22 @@ def test_extract_json_handles_prose_and_fences():
 
 
 def probed(tmp_path, monkeypatch, *, key='sk-test-secret', base=GATEWAY, models=(MODEL,),
-           http_errors=(), contents=('ok', '{"ok": true}')):
+           http_errors=(), persistent=False, contents=('ok', '{"ok": true}')):
     """Run the preflight with a substituted transport; no network is touched."""
     module = adapter()
     transport = FakeTransport(*contents, models=models)
     remaining = list(http_errors)
+    monkeypatch.setattr(module.time, 'sleep', lambda _seconds: None)
 
     def wrapped(request, timeout=None):
-        if remaining:
+        if remaining and (persistent or len(remaining) > 1):
+            code, body = remaining[0]
+        elif remaining:
             code, body = remaining.pop(0)
-            raise urllib.error.HTTPError(request.full_url, code, 'error', {},
-                                         io.BytesIO(body.encode()))
-        return transport(request, timeout)
+        else:
+            return transport(request, timeout)
+        raise urllib.error.HTTPError(request.full_url, code, 'error', {},
+                                     io.BytesIO(body.encode()))
 
     monkeypatch.setattr(module, 'urlopen', wrapped)
     if key is None:
@@ -431,7 +589,8 @@ def test_preflight_reports_a_model_the_gateway_does_not_serve(tmp_path, monkeypa
     (503, 'availability problem'),
 ])
 def test_preflight_translates_gateway_status_into_one_action(tmp_path, monkeypatch, code, hint):
-    steps, ok = probed(tmp_path, monkeypatch, http_errors=[(code, '{"error":"nope"}')])
+    steps, ok = probed(tmp_path, monkeypatch, http_errors=[(code, '{"error":"nope"}')],
+                       persistent=True)
     assert not ok
     endpoint = [item for item in steps if item['step'] == 'endpoint'][0]
     assert str(code) in endpoint['detail'] and hint in endpoint['remedy']
