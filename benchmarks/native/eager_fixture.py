@@ -151,9 +151,8 @@ def main():
         parser.error("invalid expert/repeat bounds")
     if (args.full_graph or args.mega_moe) and not args.reference_outputs:
         parser.error("MegaMoE requires saved matching layered eager outputs")
-    # Newer builds select the pull-native Mega path from connector extra config;
-    # older ones read this environment variable, which is harmless when unused.
-    os.environ["AFD_ASYNC_CAM_MEGA_MOE"] = "1" if args.mega_moe else "0"
+    # The pull-native Mega path is selected only through the connector extra
+    # config below; the current AFD build reads no Mega environment variable.
     faulthandler.dump_traceback_later(60)
     os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
     capacity = 256 if args.tile_boundary else 16
@@ -412,6 +411,19 @@ def main():
     expected: list[tuple[int, int, int | None]] = []
     for layer_id, sparse, tokens in cases:
         for source in range(args.attn_ranks):
+            if args.mega_moe:
+                # Pull mode fuses one transaction per source and layer, and the
+                # exposed metadata describes only its final slice. Chunking it
+                # with the layered table would issue transactions that no
+                # Attention dispatch ever answers.
+                ids = torch.arange(tokens * 2).reshape(tokens, 2).remainder(
+                    2 if sparse else EXPERTS * 2)
+                local = rank - args.attn_ranks
+                rows = int(((ids >= local * EXPERTS)
+                            & (ids < (local + 1) * EXPERTS)).sum())
+                expected.append((source, layer_id,
+                                 (rows - 1) % capacity + 1 if rows else 0))
+                continue
             chunks = (
                 2 if sparse and 2 * tokens > capacity and rank == args.attn_ranks else 1
             )
@@ -433,20 +445,37 @@ def main():
             }
         )
 
+    collect_observations = None
     if is_ffn and args.mega_moe and not args.measure and not args.full_graph:
         original_step = runner._ffn_forward_connector_driven
+        control_results = []
+        # Per-step metadata is staged into pinned host buffers with async copies,
+        # the same shape the graph path uses. Reading it here would need a device
+        # fence on this thread, and that fence is what deadlocks the pull window.
+        mega_headers = torch.empty(
+            (len(expected), mega_state.token_nums_rankid_layeridx.numel()),
+            dtype=torch.int64, pin_memory=True)
+        mega_counts = torch.empty(
+            (len(expected), mega_state.group_list.numel()),
+            dtype=mega_state.group_list.dtype, pin_memory=True)
 
         def observe_mega_step(**kwargs):
             result = original_step(**kwargs)
-            torch.npu.current_stream().synchronize()
-            assert result.item() == 0, "MegaMoE device control validation failed"
-            observe(SimpleNamespace(states=mega_state))
-            if args.pipeline_trace_dir:
-                from pipeline_trace import decode
-                assert (trace_guard.cpu() == 165).all(), 'pipeline trace guard overwritten'
-                rows = trace_tail.cpu().view(torch.int64).reshape(72, 2080).tolist()
-                pipeline_records.append(decode(rows, report['work'][-1]))
+            index = len(control_results)
+            mega_headers[index].copy_(mega_state.token_nums_rankid_layeridx, non_blocking=True)
+            mega_counts[index].copy_(mega_state.group_list, non_blocking=True)
+            control_results.append(result)
             return result
+
+        def collect_observations():
+            torch.npu.current_stream().synchronize()
+            for index, control in enumerate(control_results):
+                assert control.item() == 0, "MegaMoE device control validation failed"
+                header = mega_headers[index].tolist()
+                if header[2] >= 0:
+                    report["work"].append({"source": header[1], "layer": header[2],
+                                           "rows": int(mega_counts[index].sum())})
+            control_results.clear()
 
         runner._ffn_forward_connector_driven = observe_mega_step
     if is_ffn and not args.mega_moe and not args.measure and not args.full_graph:
@@ -468,6 +497,16 @@ def main():
                 with torch.inference_mode():
                     for _ in expected:
                         runner._ffn_forward_connector_driven(single=True)
+                # One fence for the whole finite loop, then the retained control
+                # values are read back. Fencing per step would stall the receive
+                # loop the pull protocol depends on.
+                if collect_observations is not None:
+                    collect_observations()
+                if args.pipeline_trace_dir:
+                    from pipeline_trace import decode
+                    assert (trace_guard.cpu() == 165).all(), 'pipeline trace guard overwritten'
+                    rows = trace_tail.cpu().view(torch.int64).reshape(72, 2080).tolist()
+                    pipeline_records.append(decode(rows, report['work'][-1]))
                 return
             connector.graph_startup.service_ready()
             for start in range(0, len(expected), len(LAYERS)):
@@ -620,6 +659,13 @@ def main():
     # Retain the TCPStore owner until finite eager peers have consumed all work.
     dist.barrier()
     if is_ffn:
+        # Production teardown for the pull protocol: drain the window, publish
+        # pull_stopped, and only then allow shutdown. The Attention side publishes
+        # pull_quiet from its own close(), so both run after the barrier above.
+        if args.mega_moe and not args.full_graph:
+            runner.drain()
+            runner.session.finish_receiver()
+            runner._graph_receiver_exited = True
         runner.shutdown()
         runner.shutdown()
         assert runner.model is None and runner._graph is None

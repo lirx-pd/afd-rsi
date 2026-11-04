@@ -229,23 +229,31 @@ def mega_task(name: str) -> bool:
     return any(stem in normalized for stem in MEGA_TASK_STEMS)
 
 
-def profile_evidence(directory: Path, ffn_ranks: int) -> list:
+def profile_evidence(directory: Path, rank_ids) -> list:
+    """One device trace per FFN rank, each holding a Mega task.
+
+    Scoping by rank matters: the comm kernel also runs on Attention, so a global
+    search would count that rank as FFN evidence and hide a rank that never
+    produced a trace.
+    """
     evidence = []
-    for path in sorted(directory.rglob("kernel_details.csv")):
-        with path.open(newline="") as handle:
+    for rank in rank_ids:
+        files = sorted((directory / f"rank-{rank}").rglob("kernel_details.csv"))
+        if len(files) != 1:
+            raise ValueError(f"need one exported device trace for FFN rank {rank}")
+        with files[0].open(newline="") as handle:
             names = [row.get("Name", "") for row in csv.DictReader(handle)]
         matches = [name for name in names if mega_task(name)]
-        if matches:
-            evidence.append({"file": str(path.relative_to(directory)), "sha256": digest(path),
-                             "mega_kernel_count": len(matches), "names": sorted(set(matches))})
-    if len(evidence) != ffn_ranks:
-        raise ValueError("profiler must contain actual MegaMoe device kernels for every FFN rank")
+        if not matches:
+            raise ValueError(f"profiler must contain actual MegaMoe device kernels for FFN rank {rank}")
+        evidence.append({"file": str(files[0].relative_to(directory)), "sha256": digest(files[0]),
+                         "mega_kernel_count": len(matches), "names": sorted(set(matches))})
     return evidence
 
 
 def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
     """Summarize device tasks without inventing a fused kernel's internal bound."""
-    evidence = profile_evidence(directory, ranks - attn_ranks)
+    evidence = profile_evidence(directory, range(attn_ranks, ranks))
     summaries = []
     for rank in range(attn_ranks, ranks):
         files = list((directory / f'rank-{rank}').rglob('kernel_details.csv'))
@@ -272,7 +280,8 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
     return {'pipeline': internal, 'scope': 'native synthetic seven-case transactions; separate profiled execution',
             'evidence': evidence, 'ffn_ranks': summaries,
             'analysis': 'Rank tasks by summed device duration. Investigate the largest tasks first. '
-                'AfdMegaMoeFFN is fused: this trace alone cannot identify Cube, Vector, MTE or communication bound. '
+                'The Mega transaction is one fused pull-native kernel plus its comm kernel, so this trace '
+                'cannot by itself separate Cube, Vector, MTE or communication time. '
                 'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
             'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
                 'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
@@ -326,7 +335,8 @@ def write_report(output: Path, summary: dict):
                      f"{statistics.median(baseline):.2f} | "
                      f"{statistics.median(candidate):.2f} | {case['median_gain_pct']:.2f}% |")
     lines.extend(["", "Negative gain means higher latency. No automatic promotion is performed.", "",
-                  f"MegaMoe device traces verified: {len(summary['profiler'])} FFN processes.", "",
+                  f"Mega device traces verified: {len(summary['profiler'])} FFN processes.",
+                  "Per-stage pipeline tracing is unavailable when the FFN runs as the pull-native kernel.", "",
                   "Evidence: [plan](plan.lock.json), [observations](observations.json), [summary](summary.json).", ""])
     (output / "report.md").write_text("\n".join(lines))
 

@@ -400,3 +400,18 @@ def test_shutdown_waiver_does_not_ignore_inference_cleanup_or_reporting_errors()
     assert not validate_summary({**summary, 'errors': ['Report write failed']}, ['smoke'], require_clean_shutdown=False)
     assert not validate_summary({**summary, 'test_results': {'smoke': 'failed'}}, ['smoke'], require_clean_shutdown=False)
     assert not validate_summary({**summary, 'status': 'cancelled'}, ['smoke'], require_clean_shutdown=False)
+
+
+def test_forced_pull_shutdown_is_accepted_only_when_classified():
+    """A pull teardown ends in a forced kill; that is shutdown noise, not a gate."""
+    forced = 'forced SIGKILL for FFN 4242 after 60.0s'
+    summary = {'status': 'failed', 'inference_status': 'passed', 'shutdown_status': 'failed',
+               'cleanup_status': 'passed', 'test_results': {'smoke': 'passed'},
+               'errors': [forced], 'shutdown_errors': [forced]}
+    assert validate_summary(summary, ['smoke'], require_clean_shutdown=False)
+    # Unclassified, the same text must not be waved through.
+    assert not validate_summary({k: v for k, v in summary.items() if k != 'shutdown_errors'},
+                                ['smoke'], require_clean_shutdown=False)
+    # A real inference error still fails even when shutdown errors are declared.
+    mixed = {**summary, 'errors': [forced, 'inference: EngineDeadError']}
+    assert not validate_summary(mixed, ['smoke'], require_clean_shutdown=False)

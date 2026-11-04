@@ -20,6 +20,19 @@ def evidence_files(directory):
             if p.is_file() and p.name not in ('observation.json', 'loaded-maps.json')}
 
 
+def shutdown_only(errors, classified):
+    """Whether every recorded error is shutdown-classified.
+
+    The runner tags shutdown errors explicitly; a pull-protocol teardown can end
+    in a forced kill, whose message does not carry the `shutdown:` prefix used by
+    older summaries. Fall back to the prefix check when the tag is absent.
+    """
+    errors = errors or []
+    if isinstance(classified, list) and all(isinstance(item, str) for item in classified):
+        return all(isinstance(error, str) and error in classified for error in errors)
+    return all(isinstance(error, str) and error.startswith('shutdown:') for error in errors)
+
+
 def validate_summary(summary, expected_tests, *, require_clean_shutdown=True):
     if not isinstance(summary, dict) or not isinstance(summary.get('test_results'), dict):
         return False
@@ -33,8 +46,9 @@ def validate_summary(summary, expected_tests, *, require_clean_shutdown=True):
         if summary.get('shutdown_status') not in ('passed', 'failed'):
             return False
         expected_status = 'failed' if summary['shutdown_status'] == 'failed' else 'passed'
-        if summary.get('status') != expected_status or not all(
-                isinstance(error, str) and error.startswith('shutdown:') for error in summary.get('errors', [])):
+        if summary.get('status') != expected_status:
+            return False
+        if not shutdown_only(summary.get('errors'), summary.get('shutdown_errors')):
             return False
     return set(summary.get('test_results', {})) == set(expected_tests) and all(
         value == 'passed' for value in summary['test_results'].values())

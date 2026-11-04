@@ -577,6 +577,9 @@ def execute(case: Case) -> dict:
                     if not any(first["message"] in item for item in summary["errors"]):
                         summary["errors"].append(error)
         summary["shutdown_status"] = "failed" if shutdown_errors else "passed"
+        # Record the classification itself: callers must not have to sniff message
+        # prefixes, and the pull protocol's forced exit does not use one.
+        summary["shutdown_errors"] = shutdown_errors
         if shutdown_errors:
             summary["status"] = "failed"
             summary.setdefault("failed_stage", "shutdown")

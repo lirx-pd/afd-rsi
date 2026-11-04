@@ -84,14 +84,27 @@ def test_native_report_does_not_turn_consistency_into_performance_pass(tmp_path)
 
 
 def test_profiler_requires_device_kernel_evidence_on_both_ffn_ranks(tmp_path):
-    for rank in range(2):
-        path = tmp_path / str(rank) / "kernel_details.csv"
+    for rank in (1, 2):
+        path = tmp_path / f"rank-{rank}" / "kernel_details.csv"
         path.parent.mkdir()
-        path.write_text('Name,Duration(us)\nAfdMegaMoeFFN_kernel,12\n')
-    assert len(profile_evidence(tmp_path, 2)) == 2
-    (tmp_path / "1/kernel_details.csv").write_text('Name\nCPU_launch_AfdOther\n')
-    with pytest.raises(ValueError, match="every FFN rank"):
-        profile_evidence(tmp_path, 2)
+        path.write_text('Name,Duration(us)\nAfdMegaMoePullNative_kernel,12\n')
+    assert len(profile_evidence(tmp_path, range(1, 3))) == 2
+    (tmp_path / "rank-2/kernel_details.csv").write_text('Name\nCPU_launch_AfdOther\n')
+    with pytest.raises(ValueError, match="FFN rank 2"):
+        profile_evidence(tmp_path, range(1, 3))
+
+
+def test_profiler_does_not_count_attention_comm_as_ffn_evidence(tmp_path):
+    """The comm kernel also runs on Attention; that must not satisfy a FFN rank."""
+    attention = tmp_path / "rank-0/kernel_details.csv"
+    attention.parent.mkdir()
+    attention.write_text('Name,Duration(us)\nAfdMegaMoeComm,9\n')
+    ffn = tmp_path / "rank-1/kernel_details.csv"
+    ffn.parent.mkdir()
+    ffn.write_text('Name,Duration(us)\nAfdMegaMoePullNative,12\n')
+    with pytest.raises(ValueError, match="FFN rank 2"):
+        profile_evidence(tmp_path, range(1, 3))
+    assert len(profile_evidence(tmp_path, range(1, 2))) == 1
 
 
 def test_build_snapshot_sets_version_and_preserves_input(monkeypatch, tmp_path):
