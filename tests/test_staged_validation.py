@@ -15,25 +15,38 @@ EXPERIMENT = dict(bottleneck='Synthetic latency field is 10.', mechanism='Reduce
 
 
 @pytest.fixture
-def staged(tmp_path, monkeypatch):
+def staged(tmp_path, monkeypatch, request):
+    candidate_ms = getattr(request, 'param', None)
     recipe = tmp_path / 'recipe.toml'
     text = (ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source'))
     text = text.replace('backend = "cpu-synthetic"', 'backend = "cpu-synthetic"\nvalidation = "operator-first"')
     text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 1')
     text += '\n[service]\nrepo = "."\nargs = ["--test", "smoke"]\ntimeout_seconds = 10\ncleanup_seconds = 1\n'
+    if candidate_ms is not None:
+        text += 'primary = { id = "point-000", metric = "ttft_p50_ms" }\n'
     recipe.write_text(text)
     calls = []
 
+    if candidate_ms is not None:
+        def fixture_metrics(summary, configuration, **_):
+            point = dict(id='point-000', phase='prefill', input_lens=[512], output_lens=[1],
+                         concurrency=1, requests=8)
+            return {'performance': [{**point, 'ttft_ms': {'p50': summary['latency_ms']}}]}
+        monkeypatch.setattr(service_phase, 'service_metrics', fixture_metrics)
+
     def fake_service(plan, run, trial, build, identity, timeout):
-        calls.append(identity['hash'])
+        calls.append(plan['service']['args'])
         summary = {'test_results': {'smoke': 'passed'}}
+        if candidate_ms is not None:
+            summary['latency_ms'] = 100 if identity['hash'] == plan['source_snapshot']['hash'] else candidate_ms
         write_json(trial / 'service/summary.json', summary)
         write_json(trial / 'service/plan.json', {'configuration': {'tests': ['smoke']}})
         write_json(trial / 'loaded-maps.json', {'fixture': 'no real service'})
         return dict(process={'status': 'completed', 'cleanup_complete': True}, checks_passed=True,
                     summary_hash=digest(trial / 'service/summary.json'),
                     loaded_maps_hash=digest(trial / 'loaded-maps.json'),
-                    evidence=service_phase.evidence_files(trial / 'service'), service_metrics={})
+                    evidence=service_phase.evidence_files(trial / 'service'),
+                    service_metrics=service_phase.service_metrics(summary, {}) if candidate_ms is not None else {})
 
     monkeypatch.setattr(service_phase, 'run_service', fake_service)
     return campaign.prepare(recipe, tmp_path / 'run', ROOT), calls
@@ -66,6 +79,34 @@ def test_screen_then_fresh_confirmation_then_service(staged):
     search.search(run, ROOT)
     assert len(calls) == 2
     assert read_json(run / 'search/experience/0001.json')['experiment'] == EXPERIMENT
+
+
+@pytest.mark.parametrize('staged,native_us,expected', [(80, 12, 'promoted'), (110, 8, 'rejected')], indirect=['staged'])
+def test_search_uses_model_service_gain_over_synthetic_gain(staged, native_us, expected):
+    run, calls = staged
+    search.search(run, ROOT, external=True)
+    patch = (ROOT / 'examples/faster.patch').read_text().replace('"synthetic_us": 8.0',
+                                                                 f'"synthetic_us": {native_us}.0')
+    respond(run, patch)
+    search.search(run, ROOT)
+    record = read_json(run / 'search/rounds/0001/state.json')
+    assert record['decision'] == expected
+    screen = run / 'attempts' / record['screen']
+    verdict = read_json(screen / 'verdict.json')
+    assert verdict['primary_source'] == 'service'
+    assert verdict['gain_pct'] == pytest.approx(20 if expected == 'promoted' else -10)
+    assert verdict['native_gain_pct'] == pytest.approx(-20 if native_us == 12 else 20)
+    phases = [(step['side'], step['phase']) for step in read_json(screen / 'progress.json')['steps']]
+    assert phases[-2:] == [('baseline', 'service'), ('candidate', 'service')]
+    if expected == 'promoted':
+        final = run / 'attempts' / record['confirmation']
+        final_phases = [(step['side'], step['phase']) for step in read_json(final / 'progress.json')['steps']]
+        assert final_phases[-2:] == [('candidate', 'service'), ('baseline', 'service')]
+        assert len(calls) == 4
+        assert all(args[-2:] == ['--test', 'smoke,perf'] for args in calls[:2])
+        assert all(args[-2:] == ['--test', 'smoke'] for args in calls[2:])
+    else:
+        assert 'confirmation' not in record and len(calls) == 2
 
 
 def test_confirmation_loses_gain_defers_all_services(staged, monkeypatch):
@@ -166,6 +207,62 @@ def test_service_regression_needs_model_repeat_before_promotion():
     assert result['gain_pct'] == pytest.approx(20)
     assert result['verdict'] == 'INCONCLUSIVE'
     assert result['service_performance_comparison'][0]['gain_pct'] == pytest.approx(-10)
+
+
+def test_service_primary_uses_model_gain_and_keeps_native_regressions_diagnostic():
+    plan = dict(backend='ascend', scope='native', unit='us', repetitions=1, min_gain_pct=2,
+                native={'max_case_regression_pct': 5},
+                service={'primary': {'id': 'point-000', 'metric': 'ttft_p50_ms'}})
+    point = dict(id='point-000', phase='prefill', input_lens=[512], output_lens=[1],
+                 concurrency=1, requests=8)
+    observations = []
+    for side, native_us, ttft_ms in [('baseline', 10, 100), ('candidate', 12, 80)]:
+        observations.extend([
+            dict(side=side, phase='correctness', status='valid', checks_passed=True),
+            dict(side=side, phase='benchmark', status='valid', checks_passed=True,
+                 value=native_us, case_metrics=[dict(case=0, layer=2, sparse=False,
+                                                     tokens=129, median_us=native_us)]),
+            dict(side=side, phase='service', status='valid', checks_passed=True,
+                 service_metrics={'performance': [{**point, 'ttft_ms': {'p50': ttft_ms}}]}),
+        ])
+    result = evaluate(plan, observations, level='operator')
+    assert result['verdict'] == 'PASS' and result['gain_pct'] == pytest.approx(20)
+    assert result['native_gain_pct'] == pytest.approx(-20)
+    assert result['operator_case_comparison'][0]['median_gain_pct'] == pytest.approx(-20)
+    observations[-1]['service_metrics'] = {}
+    assert evaluate(plan, observations, level='operator')['verdict'] == 'INCONCLUSIVE'
+
+
+def test_service_primary_mixes_decode_and_prefill_without_hiding_regressions():
+    plan = dict(backend='ascend', scope='native', unit='us', repetitions=1, min_gain_pct=2,
+                service={'primary': [{'id': 'native-long-decode', 'metric': 'common_window_tpot_ms_p50'},
+                                    {'id': 'mixed-prefill', 'metric': 'ttft_p50_ms'}],
+                         'max_regression_pct': 5})
+    observations = []
+    for side, decode_ms, prefill_ms in [('baseline', 10, 100), ('candidate', 9, 80)]:
+        scenarios = [dict(id='native-long-decode', configuration={'routing': 'native'},
+                          per_dp=[], per_workload_group=[], ttft_ms={'mean': 50, 'p50': 50, 'p90': 50},
+                          common_window_tpot_ms={'p50': decode_ms}, request_tpot_ms={'p50': decode_ms}),
+                     dict(id='mixed-prefill', configuration={'routing': 'native'},
+                          per_dp=[], per_workload_group=[],
+                          ttft_ms={'mean': prefill_ms, 'p50': prefill_ms, 'p90': prefill_ms})]
+        observations.extend([
+            dict(side=side, phase='correctness', status='valid', checks_passed=True),
+            dict(side=side, phase='benchmark', status='valid', checks_passed=True, value=10),
+            dict(side=side, phase='service', status='valid', checks_passed=True,
+                 service_metrics={'scenarios': scenarios}),
+        ])
+    result = evaluate(plan, observations, level='operator')
+    assert result['verdict'] == 'PASS' and result['gain_pct'] == pytest.approx(15)
+    assert len(result['primary_metric']) == 2
+    observations[2]['service_metrics']['scenarios'][1]['input_tokens_per_s'] = 10
+    observations[-1]['service_metrics']['scenarios'][1]['input_tokens_per_s'] = 9
+    assert evaluate(plan, observations, level='operator')['verdict'] == 'PASS'
+    assert evaluate(plan, observations)['verdict'] == 'INCONCLUSIVE'
+    observations[-1]['service_metrics']['scenarios'][1]['ttft_ms']['p50'] = 110
+    observations[-1]['service_metrics']['scenarios'][1]['ttft_ms']['mean'] = 110
+    observations[-1]['service_metrics']['scenarios'][1]['ttft_ms']['p90'] = 110
+    assert evaluate(plan, observations, level='operator')['verdict'] != 'PASS'
 
 
 def test_evidence_and_falsification_are_required():

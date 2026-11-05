@@ -21,16 +21,20 @@ For one round, use deep mode. Strategy changes only proposal guidance: allowed
 paths, published interfaces, numerical/service gates, gain threshold and fresh
 confirmation requirements remain unchanged. Depth is not a line-count target.
 
-A native timing pass judges its own sampling first: the worst per-case relative
+A native-primary timing pass judges its own sampling first: the worst per-case relative
 spread across repetitions is compared with `AFD_RSI_SPREAD_LIMIT` (default 5%). A
 noisier pass is re-measured at `AFD_RSI_REPEAT_FACTOR` times the configured
 repetitions (default 3), both passes are archived and `adaptive-repeats.json`
 records which one the verdict used. The gain threshold does not move, so a
 smaller-than-noise gain stays unproven instead of being claimed.
 `AFD_RSI_NO_ADAPTIVE_REPEATS=1` disables the second pass.
+With service.primary, native timing spread is archived as diagnostic evidence;
+it neither triggers a denser synthetic rerun nor blocks a real-model test.
 
-Under operator-first, only independently confirmed native winners enter final
-service qualification; ordinary screens and the initial baseline start no service.
+Under operator-first with service.primary, the screen runs smoke and the selected
+performance scenario after native correctness and timing. Fresh confirmation
+runs the full model service; the initial baseline starts no service.
+The frozen service metric, rather than synthetic transaction gain, decides promotion.
 Within each final tested source/artifact version start the A/F service once, then run
 smoke, GSM8K300 and the performance matrix. Model output is stochastic, so accuracy is
 a threshold rather than a reproduction of the previous answers: v4-flash passes at

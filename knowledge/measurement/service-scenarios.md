@@ -22,15 +22,17 @@ warmup and measured counter snapshots. Acceptance recomputes summaries with the
 frozen validator. Retain failures instead of silently shortening input or workload.
 Common-window TPOT and output tokens/s, aggregate/group prefill TTFT and input
 throughput enter reports and Agent context. Higher throughput means improvement;
-lower latency means improvement. Native screening/promotion gates remain unchanged.
+lower latency means improvement. The pipeline recipe averages percentage gains in
+real-model common-window TPOT p50 and mixed-prefill TTFT p50. Both are screened;
+heavy-prefill and other service metrics screen regressions in confirmation.
 
 The historical fixed-DP protocols remain available explicitly and are described
 below; their results are not directly comparable to native-routing experiments.
 
 # Fixed-DP prefill and long-context decode
 
-These are optional final service performance scenarios. Keep native operator
-screening and fresh confirmation ahead of expensive model work. One A/F startup
+These are optional service performance scenarios. Keep native operator correctness
+and fresh confirmation; service-primary recipes run model work in both attempts. One A/F startup
 runs smoke, GSM8K, the selected matrix and both scenarios. Do not restart services
 between scenario points or reuse loaded libraries across source versions.
 
@@ -66,11 +68,11 @@ matrix point. Agent context and reports retain per-DP TTFT and both TPOT scopes.
 When a recipe freezes `service.max_regression_pct`, matrix TTFT p50 and selected
 scenario TTFT/TPOT p50 and throughput metrics block promotion if any regression
 exceeds the limit. One service run per side is a screen: an apparent regression
-becomes INCONCLUSIVE and needs a fresh model rerun before promotion. Raw request
+becomes INCONCLUSIVE and cannot pass that attempt. Raw request
 and counter evidence remains mandatory.
 
 The scenarios measure integration behavior; they do not prove actual DBO, graph
 replay or physical compute/communication overlap. Use separate device evidence
-for those claims. The native primary metric and promotion thresholds stay frozen;
-service scenario comparisons are not the primary gain objective. Never claim model
+for those claims. The configured service metric and gain threshold are frozen;
+other scenario comparisons remain regression screens. Never claim model
 improvement from a native-only PASS.

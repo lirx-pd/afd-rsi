@@ -31,12 +31,14 @@ host observations during timing; use separate diagnostic/profiler runs. Keep
 all samples and per-case regressions. No kernel-time or service-throughput claim
 can be derived from these transaction timings.
 Campaign results retain each primary Attention rank case's samples and median.
-Recipes freeze `native.max_case_regression_pct`; a favorable suite mean cannot
-pass if a case's paired median gain breaches that limit. Case timing is still a
+Recipes retain `native.max_case_regression_pct` for native-primary evaluation;
+when `service.primary` is set, case regressions remain diagnostic and cannot
+veto a real-model service gain. Case timing is still a
 serialized Attention DS→FFN→CR transaction, not isolated FFN kernel time.
-If a timing pass exceeds the configured case spread limit, the denser rerun is
-used; unresolved spread stops the benchmark as incomplete. Both runs remain
+For native-primary recipes, timing beyond the configured case spread limit triggers
+a denser rerun; unresolved spread stops the benchmark as incomplete. Both runs remain
 archived, and the evaluator does not select the quieter run after observing it.
+Service-primary recipes archive the spread but keep this synthetic timing diagnostic.
 
 Missing ranks, actual-library mismatches, changed source/artifacts, malformed
 or nonfinite samples and incomplete cleanup invalidate the attempt. Failed

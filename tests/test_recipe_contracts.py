@@ -55,3 +55,25 @@ def test_service_rule_does_not_disturb_other_recipes():
     # The synthetic recipe has no service stage; it must keep loading unchanged.
     plan = contracts.load_recipe(ROOT / 'recipes/cpu_search.toml')
     assert 'service' not in plan
+
+
+def test_ascend_search_recipes_freeze_real_model_primary_and_small_screen(monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/service'))
+    from afd_e2e.cli import parser
+    for path in sorted((ROOT / 'recipes').glob('ascend_*.toml')):
+        plan = contracts.load_recipe(path)
+        primary = plan['service']['primary']
+        assert plan['validation'] == 'operator-first'
+        components = primary if isinstance(primary, list) else [primary]
+        assert all(item['metric'] in ('ttft_p50_ms', 'common_window_tpot_ms_p50') for item in components)
+        if path.stem == 'ascend_pipeline_scenarios':
+            assert plan['service']['screen_scenarios'] == ['native-long-decode', 'mixed-prefill']
+        else:
+            assert components[0]['id'] == 'point-008'
+        screen_args = [*plan['service']['args'], '--test', 'smoke,perf']
+        if plan['service'].get('screen_scenarios'):
+            screen_args += ['--perf-scenarios', ','.join(plan['service']['screen_scenarios'])]
+        selected = parser().parse_args(['plan', *screen_args])
+        assert selected.test == 'smoke,perf'
+        if path.stem == 'ascend_pipeline_scenarios':
+            assert selected.perf_scenarios == 'native-long-decode,mixed-prefill'

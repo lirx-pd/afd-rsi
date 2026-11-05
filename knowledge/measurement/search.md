@@ -8,11 +8,16 @@ structured JSON response; the existing CLI login stays on the proposer host.
 
 Qualify the baseline before a model call. With validation=operator-first, qualify
 native numerics and timing and collect the incumbent profile once; initial
-baseline qualification does not claim model/service correctness. Screen a patch
-with native correctness and paired timing only. In a fresh confirmation repeat
-the same native gates first. Only if both rounds meet the frozen native gain
-threshold run every configured service gate and the final candidate profile.
-Two matching native PASS results plus full final qualification can replace best.
+baseline qualification does not claim model/service correctness. When the recipe
+sets service.primary, screen a patch with native correctness and paired timing,
+then compare the frozen real-model service metric with smoke and the selected
+performance scenario only. A fresh confirmation repeats the native checks and
+model metric with reversed service order, and runs GSM8K plus all configured
+service scenarios. Both service gains
+must pass the frozen threshold; native timing is diagnostic and cannot veto a
+model gain. Run the final candidate profile after the confirmation service gates.
+Two matching model-service PASS results plus full final qualification can replace best.
+A recipe without service.primary retains its native timing objective and gate.
 A numerical, timing or final service failure cannot promote a candidate. Ordinary
 full recipes retain the previous full-validation order. Old snapshots are immutable.
 HTTP inference success cannot replace cleanup evidence. A frozen service policy may

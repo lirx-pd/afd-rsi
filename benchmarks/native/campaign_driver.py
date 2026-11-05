@@ -142,13 +142,17 @@ def case_spread(result):
     return worst
 
 
-def densify(native, argv, settings):
+def densify(native, argv, settings, *, diagnostic_only=False):
     """Re-measure with more repetitions when the first pass is too noisy."""
     spread = case_spread(native)
     limit = float(os.environ.get("AFD_RSI_SPREAD_LIMIT") or 5.0)
     factor = int(os.environ.get("AFD_RSI_REPEAT_FACTOR") or 3)
     record = {"configured_repeats": settings["repeats"], "worst_case_spread_pct": spread,
               "limit_pct": limit, "used": "configured"}
+    if diagnostic_only:
+        record.update(resolved=True, diagnostic_only=True)
+        write_json(output / "adaptive-repeats.json", record)
+        return native
     if spread > limit and os.environ.get("AFD_RSI_NO_ADAPTIVE_REPEATS") != "1":
         dense = settings["repeats"] * factor
         dense_argv = list(argv)
@@ -171,7 +175,7 @@ def densify(native, argv, settings):
 
 native = launch("transaction", argv, mega=True, repeats=settings["repeats"] if measured else 0)
 if measured:
-    native = densify(native, argv, settings)
+    native = densify(native, argv, settings, diagnostic_only=bool(plan.get("service", {}).get("primary")))
 assert all(digest(Path(name)) == value for name, value in reference_files.items())
 artifacts = {name: digest(build_dir / name) for name in plan["artifacts"]}
 result = {key: plan[key] for key in ("backend", "workload_id", "scope", "unit", "metric")}

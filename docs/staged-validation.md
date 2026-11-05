@@ -1,21 +1,23 @@
 # 先算子、后服务的分层验证
 
-`recipes/ascend_eager.toml` / `ascend_graph.toml` 已默认设置
-`validation = "operator-first"`。统一 `optimize` 命令不变。未设置该字段或显式
+`recipes/ascend_eager.toml` / `ascend_graph.toml` / `ascend_pipeline_scenarios.toml`
+设置 `validation = "operator-first"` 和 `[service].primary`。统一 `optimize` 命令不变。未设置该字段或显式
 设为 `full` 的配方沿用原顺序；旧 campaign 使用各自冻结的控制器，不能原地换策略。
 
 | 阶段 | 执行内容 | 不通过时 |
 | --- | --- | --- |
 | 首次基线 | 原生构建、算子数值、计时、一次内部 profiling | 停止，不调用模型 |
 | 方向审查 | 引用当前测量/profile，给出瓶颈、机制、预测、否定条件和风险 | 不派发候选验证 |
-| 候选初筛 | 独立构建、算子数值、AB/BA 计时 | 拒绝，不启动 E2E 或完整 profiling |
-| 独立复测 | 新 attempt 重跑原生构建、数值及 AB/BA，对照同一 incumbent | 拒绝，不启动 E2E 或完整 profiling |
-| 最终资格 | 复测达标后，基线/候选分别一次启动服务，跑 smoke、GSM8K300（v4-flash 284/300 及以上通过）、九点 prefill；最后采候选 profile | 拒绝，保留原始失败 |
-| 晋升 | 两次原生 PASS，最终服务/profile 也全部通过 | 更新 best、导出补丁 |
+| 候选初筛 | 独立构建、算子数值、AB/BA 计时；基线→候选各启动一次服务，只跑 smoke 和主性能场景 | 模型指标未达标则拒绝，不启动 GSM8K、其他重载场景或完整 profiling |
+| 独立复测 | 新 attempt 重跑原生检查；候选→基线各启动一次服务，复测同一真实模型指标 | 拒绝，保留原始失败 |
+| 最终资格 | 独立复测的 smoke、GSM8K300（v4-flash 284/300 及以上通过）、全部性能场景通过后采候选 profile | 拒绝，保留原始失败 |
+| 晋升 | 两次真实模型主指标 PASS，数值、其他服务门槛及最终 profile 也全部通过 | 更新 best、导出补丁 |
 
-这让数值不对、没有收益或收益无法重复的候选不再消耗服务启动、模型推理和诊断
-重建时间。服务验收仍是晋升的必要条件，不能由 Agent 以“低风险”为由跳过。
-GSM8K30 的 V4=0.9、V2 Lite=0.27、收益阈值、数值容差和完整独立复测都不降低。
+数值不对的候选在启动服务前停止。初筛去掉 GSM8K300，专项配方还去掉 64K
+重载 prefill；独立复测才运行全部服务场景。专项主指标等权合并长解码与混合
+prefill 的收益，并逐项执行退化门槛。模型收益在两次独立 attempt 中分别判定；
+合成原生计时及逐 case 回退供诊断，不再阻止真实模型收益候选进入服务阶段。
+GSM8K300 的 V4=284/300、V2 Lite=0.27、收益阈值、数值容差和完整独立复测都不降低。
 初始 best 只是经算子验证的起点，不代表通过模型精度；无候选胜出时不产生服务收益结论。
 
 ## 轻量算子测试
@@ -43,9 +45,9 @@ PYTHONPATH=src python3 -m afd_rsi compare runs/operator-check --operator-only
 ```
 
 每一步等待执行完成；若需要一条后台优化命令，继续使用 `optimize`。这里的
-`--operator-only` 不启动服务或完整 profiling，报告 `validation_level=operator`，
-即使 PASS 也不能替代最终资格。`compare` 不加该标志为完整验证，operator-first
-配方仍先做原生计时，达到原生阈值后才进入配置的服务/profile。
+这些带 `[service].primary` 的配方中，`--operator-only` 仍会运行服务主指标，
+但不运行完整 profiling；报告 `validation_level=operator`，即使 PASS 也不能替代
+独立复测。`compare` 不加该标志会运行完整验证及候选 profile。
 
 ## 提高方向质量
 
@@ -68,10 +70,10 @@ PYTHONPATH=src python3 -m afd_rsi compare runs/operator-check --operator-only
 
 ## 恢复与审计
 
-验证层级写进 attempt.lock.json，不能把 operator 结果改名为 full。独立复测进入
-服务前保存 operator-gate.json；恢复时复核原生结果与该判定，完成的原生试验复用。
-审计仅允许“原生门槛未通过”导致后续阶段缺失；原生 PASS 不能豁免缺失服务或
-profile。中断、异常设备健康检查、原始 deadline、失败留存和模型额度规则均不变。
+验证层级写进 attempt.lock.json，不能把 operator 结果改名为 full。带服务主指标的
+新配方不写原生收益 gate；恢复时复核已完成原生及服务证据，缺失任一服务阶段
+不能晋升。旧冻结 campaign 的原生 gate 和验证顺序不变。中断、异常设备健康检查、
+原始 deadline、失败留存和模型额度规则均不变。
 
 本次缩减的是无效方向的昂贵验收次数；没有引入跨候选构建缓存，也未削减数值覆盖
 或配对计时次数。真实硬件上的耗时节省需要另行测量。

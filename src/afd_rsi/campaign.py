@@ -193,7 +193,15 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
         timeout = min(plan["timeout_seconds"], remaining)
         if phase == "service":
             from .service_phase import run_service
-            service = run_service(plan, run, output, build, identity,
+            service_plan = plan
+            if (plan["service"].get("primary") and
+                    read_json(attempt / "attempt.lock.json").get("validation_level") == "operator"):
+                config = plan["service"]
+                args = [*config["args"], "--test", "smoke,perf"]
+                if config.get("screen_scenarios"):
+                    args += ["--perf-scenarios", ",".join(config["screen_scenarios"])]
+                service_plan = {**plan, "service": {**config, "args": args}}
+            service = run_service(service_plan, run, output, build, identity,
                                   min(plan["service"]["timeout_seconds"], remaining))
             process = service["process"]
             observation.update(service)
@@ -325,7 +333,7 @@ def _continue(run, attempt, root):
     level = metadata.get("validation_level", "full")
     jobs = phase_jobs(plan, sides, level=level)
     for index, (side, phase, pair) in enumerate(jobs):
-        if (plan.get("validation") == "operator-first" and len(sides) == 2
+        if (plan.get("validation") == "operator-first" and not plan.get("service", {}).get("primary") and len(sides) == 2
                 and level == "full" and phase in ("service", "profile")):
             gate = evaluate(plan, [step["result"] for step in state["steps"]
                                   if "result" in step and step["phase"] != "build"], level="operator")
@@ -398,9 +406,12 @@ def phase_jobs(plan, sides, *, level="full"):
         jobs = [(side, phase, None) for side in sides for phase in ("build", "correctness")]
         for pair in range(plan["repetitions"]):
             jobs.extend((side, "benchmark", pair) for side in (sides if pair % 2 == 0 else sides[::-1]))
-        if level == "full":
+        if level == "full" or plan.get("service", {}).get("primary"):
             if len(sides) == 2 and "service" in plan:
-                jobs.extend((side, "service", None) for side in sides)
+                # Screen AB and fresh confirmation BA to expose order effects.
+                order = sides[::-1] if level == "full" and plan.get("service", {}).get("primary") else sides
+                jobs.extend((side, "service", None) for side in order)
+        if level == "full":
             if plan.get("native", {}).get("profile", False):
                 jobs.append((sides[-1], "profile", None))
         return jobs
@@ -484,7 +495,7 @@ def report(run: Path, root: Path) -> Path:
     path = run / "report.md"
     shutdown_policy = plan.get("service", {}).get("require_clean_shutdown", True)
     path.write_text(f"# {plan['name']}\n\nVerdict: {verdict['verdict']}\n\n"
-                    f"Backend: {plan['backend']}; scope: {plan['scope']}; unit: {plan['unit']}\n\n"
+                    f"Backend: {verdict['backend']}; scope: {verdict['scope']}; unit: {verdict['unit']}\n\n"
                     f"Require clean service shutdown: {shutdown_policy}; raw lifecycle results are retained.\n\n"
                     f"Claim: {verdict['claim']}\n\n"
                     f"Attempt: {attempt.name}\n\n```json\n{json.dumps(verdict, indent=2)}\n```\n")

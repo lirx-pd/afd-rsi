@@ -2,8 +2,8 @@
 
 框架在 Linux 执行机本地运行，Agent 仅提出补丁。新 Ascend 配方使用
 `validation="operator-first"`：资格验证基线并收集一次 profile，候选先做原生
-正确性与 AB/BA 筛选；通过后在新 attempt 对同一 incumbent 独立复测原生收益。
-两轮都通过才做最终服务验收和候选 profile，完整资格通过后才替换 best。
+正确性与 AB/BA 计时，再以真实模型服务主指标筛选；新 attempt 对同一 incumbent
+反转服务顺序并独立复测。两轮模型收益都通过且完整资格达标后才替换 best。
 未设置该策略的 full 配方保留原顺序。报告不会把合成字段或 HTTP 指标当作算子计时。
 
 ## 选择提案模型
@@ -125,7 +125,8 @@ FFN rank 没有伪造计时，仍必须给出完整数值/身份/清理检查。
 `[service]` 不再只启动外部独立作业。控制器指向本 attempt/side 的隔离原生构建，
 调用仓库固定版本 AFD E2E 的 plan/run：标准 vllm serve、HTTP 就绪、真实请求、
 正常关闭和有界清理。服务输出、实际加载库映射、源码/产物身份及哈希归档在该
-side/service/trial 中。新策略在最终资格要求两侧通过该阶段；普通算子初筛不启动服务。
+side/service/trial 中。带服务主指标的初筛只跑 smoke 和主性能场景；复测两侧
+运行完整 GSM8K 与所有冻结场景。每个来源重新加载、核对身份并清理。
 
 服务默认要求完整生命周期通过。本轮按需求在样例中固定
 `require_clean_shutdown = false`：只暂不考察 E2E 已归类为 shutdown 的错误，
@@ -133,17 +134,18 @@ side/service/trial 中。新策略在最终资格要求两侧通过该阶段；�
 全部冻结测试、实际映射库身份和 cleanup 必须通过；报告/启动/推理错误不能
 借此忽略。该策略只能在 prepare 前设置，Agent 无权修改。没有把服务结果伪装为
 native 全 rank 指标。样例配置为真实 V4 W4A8、
-16 设备 DP2TP4/EP8，eager/graph 按 recipe 分开冻结。默认执行 smoke、30 条 GSM8K
-strict-match（V4 Flash 门槛 0.9，V2 Lite 默认门槛 0.27）以及九点 prefill：
+16 设备 DP2TP4/EP8，eager/graph 按 recipe 分开冻结。完整复测执行 smoke、300 条 GSM8K
+strict-match（V4 Flash 门槛 284/300，V2 Lite 默认门槛 0.27）以及九点 prefill：
 128/512/2048 输入 token、1 输出 token、并发 1/4/8，每点 2 次 warmup、8 次测量。离线数据集须已缓存，或在 prepare 前配置 `--dataset-path`。
 GSM8K 样本数/分数和 HTTP TTFT mean/p50/p90 进入观察、比较报告及 Agent 上下文。
-TTFT 是辅助性能指标，包含服务/网络开销；晋升仍使用冻结的原生主指标。
-这组小样本用于跑通功能，不代表正式精度或性能资格。
+eager/graph 配方使用 point-008（2048 输入、并发 8）的 TTFT p50 作主指标；
+它包含服务/网络开销，合成原生耗时只供诊断。这组小样本的收益会有噪声，
+需结合原始分布和独立复测判断，不代表正式生产性能资格。
 
 ## 自动 profiling 和瓶颈假设
 
 样例 `[native].profile = true`：初始基线通过原生数值和计时后收集一次 profile，
-生成首份 Agent 请求。普通初筛不做完整 profile；独立复测原生收益和最终服务门槛
+生成首份 Agent 请求。普通初筛不做完整 profile；独立复测模型收益和最终服务门槛
 全部通过后才收集候选 profile。初始基线未做服务，不作为模型精度资格。
 
 复用已有 torch_npu profiler 子进程，保留每个 FFN rank 的原始 trace、

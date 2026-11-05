@@ -33,10 +33,11 @@ workdir 为执行端持久化父目录，自动创建唯一 rsi-ID 子目录；J
 
 ## 服务复用与阶段策略
 
-新 Ascend 配方采用 [分层验证](staged-validation.md)：普通初筛不启动服务，
-两轮原生收益都通过后才执行最终服务验收。
-每个进入服务验收的候选/基线的加载产物必须独立验证，不能跨版本复用旧服务。每次启动的服务
-同时用于 smoke、30 条 GSM8K 和完整性能矩阵。默认 Ascend 配方为 prefill 输入
+新 Ascend 配方采用 [分层验证](staged-validation.md)：普通初筛和独立复测均启动
+真实模型服务，按 AB/BA 顺序比较冻结主指标，合成原生计时用于诊断。
+每个进入服务验收的候选/基线的加载产物必须独立验证，不能跨版本复用旧服务。初筛
+只跑 smoke 和冻结性能场景；复测的一次服务启动用于 smoke、GSM8K300 和完整性能场景。
+默认 Ascend 配方为 prefill 输入
 128/512/2048，输出 1，并发 1/4/8，共 9 点。可用已有参数扩展输入/输出、并发和 RPS。
 当前 MegaMoe 专用配方 `ascend_pipeline_scenarios.toml` 已改为原生路由的
 32K→512 六并发 decode、16K/512 混合 prefill 和 64K 重载 prefill；

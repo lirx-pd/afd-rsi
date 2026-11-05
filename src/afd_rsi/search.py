@@ -172,6 +172,18 @@ def request_context(run, plan, best, records, number, router=None):
             'avoid new protocol, ABI or broad pipeline redesigns.'),
     }
     provider = agent_driver(plan['search']['agent_command'])
+    primary = plan.get('service', {}).get('primary')
+    components = primary if isinstance(primary, list) else [primary] if primary else []
+    objective = {'metric': plan['metric'], 'scope': plan['scope'], 'unit': plan['unit'],
+                 'min_gain_pct': plan['min_gain_pct'], 'backend': plan['backend']}
+    if components:
+        objective.update(source='real model service' if plan['backend'] == 'ascend' else 'synthetic service fixture',
+                         metric=components[0]['metric'] if len(components) == 1 else 'mean_gain_pct',
+                         scope=components[0]['id'] if len(components) == 1 else 'service-scenario-mean',
+                         unit=('tokens/s' if components[0]['metric'].endswith('_per_s') else 'ms')
+                         if len(components) == 1 else 'percent gain')
+        if len(components) > 1:
+            objective['components'] = components
     context = {'schema_version': 1, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
                'provider': provider,
                'provider_hash': digest(run / 'foundation' / provider),
@@ -179,8 +191,7 @@ def request_context(run, plan, best, records, number, router=None):
                'max_response_bytes': plan['search']['max_context_bytes'] * 2,
                'source_hash': best['source_hash'], 'allowed_files': plan['allowed_files'],
                'execution': {key: plan.get(key) for key in ('ranks', 'primary_rank', 'repetitions', 'native', 'service')},
-               'objective': {'metric': plan['metric'], 'scope': plan['scope'], 'unit': plan['unit'],
-                             'min_gain_pct': plan['min_gain_pct'], 'backend': plan['backend']},
+               'objective': objective,
                'evidence': evidence, 'logs': [], 'source_files': {}, 'knowledge': '',
                'instructions': 'Use only supplied evidence and local knowledge. Return complete unified diffs. '
                    'Validators, gates, framework and original source are immutable. Hypotheses are not measured facts. '
@@ -672,13 +683,19 @@ def search_report(run, root):
     plan = campaign.load(run, root)
     state = read_json(run / 'search/state.json')
     best = best_candidate(run, root) if (run / 'search/best.json').is_file() else None
+    primary = plan.get('service', {}).get('primary')
+    components = primary if isinstance(primary, list) else [primary] if primary else []
+    scope = components[0]['id'] if len(components) == 1 else 'service-scenario-mean' if components else plan['scope']
+    unit = (('tokens/s' if components[0]['metric'].endswith('_per_s') else 'ms') if len(components) == 1
+            else 'percent gain' if components else plan['unit'])
     lines = [f'# {plan["name"]}', '', f'Search status: {state["status"]}', '',
              f'Reason: {state["reason"]}', '', f'Agent dispatches charged: {state["calls"]} / {plan["search"]["max_calls"]}', '',
-             f'Backend: {plan["backend"]}; scope: {plan["scope"]}; unit: {plan["unit"]}', '',
+             f'Backend: {plan["backend"]}; scope: {scope}; unit: {unit}', '',
              f'Require clean service shutdown: {plan.get("service", {}).get("require_clean_shutdown", True)}; raw lifecycle results are retained.', '',
              f'Best source: {best["source_hash"] if best else "none: baseline unqualified"}', '',
-             'Promotion requires a native screen and a fresh confirmation with every configured final service gate. '
-             'Operator-only PASS is not service qualification.', '',
+             ('Promotion requires two model-service gains and a fresh confirmation with every final service gate. '
+              if primary else 'Promotion requires a native screen and a fresh confirmation with every configured final service gate. ')
+             + 'Operator-only PASS is not final qualification.', '',
              _routing_summary(run, plan), '',
              '| Round | Decision | Evidence |', '| --- | --- | --- |']
     for name in state['rounds']:

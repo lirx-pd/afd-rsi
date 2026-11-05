@@ -1,7 +1,7 @@
 """Only complete and compatible evidence may satisfy an acceptance gate."""
 
 import math
-from statistics import median
+from statistics import mean, median
 
 from .contracts import positive
 
@@ -9,13 +9,15 @@ from .contracts import positive
 def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
     if level not in ("full", "operator"):
         raise ValueError("unknown validation level")
+    service_primary = plan.get("service", {}).get("primary")
     reasons, incomplete, failed = [], False, False
     samples = {"baseline": [], "candidate": []}
     case_trials = {"baseline": [], "candidate": []}
     quality, service_quality = set(), set()
     service_metrics, profiles = {}, set()
     for observation in observations:
-        if level == "operator" and observation["phase"] in ("service", "profile"):
+        if level == "operator" and (observation["phase"] == "profile" or
+                                    (observation["phase"] == "service" and not service_primary)):
             continue
         if observation["status"] != "valid":
             incomplete = True
@@ -40,7 +42,7 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
     if quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both correctness results required")
-    if level == "full" and "service" in plan and service_quality != {"baseline", "candidate"}:
+    if (level == "full" or service_primary) and "service" in plan and service_quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both configured service gates required")
     if level == "full" and plan.get("native", {}).get("profile", False) and "candidate" not in profiles:
@@ -49,15 +51,15 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
     if any(len(values) != plan["repetitions"] for values in samples.values()):
         incomplete = True
         reasons.append("paired measurements incomplete")
-    gain = None
+    native_gain = None
     if all(samples.values()):
         before, after = median(samples["baseline"]), median(samples["candidate"])
-        gain = (1 - after / before) * 100
-        if not math.isfinite(gain):
-            gain = None
+        native_gain = (1 - after / before) * 100
+        if not math.isfinite(native_gain):
+            native_gain = None
             incomplete = True
-            reasons.append("derived gain is not finite")
-        elif gain <= 0 or gain < plan["min_gain_pct"]:
+            reasons.append("derived native gain is not finite")
+        elif not service_primary and (native_gain <= 0 or native_gain < plan["min_gain_pct"]):
             failed = True
             reasons.append("positive gain meeting the frozen threshold required")
     case_comparison = []
@@ -84,24 +86,36 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
                     gains = [(1 - new / old) * 100 for old, new in zip(before, after, strict=True)]
                     case_comparison.append({**identity, "baseline_us": before, "candidate_us": after,
                                             "gain_pct_by_trial": gains, "median_gain_pct": median(gains)})
-                if any(row["median_gain_pct"] < -case_limit for row in case_comparison):
+                if not service_primary and any(row["median_gain_pct"] < -case_limit for row in case_comparison):
                     failed = True
                     reasons.append("operator case regression exceeds the frozen limit")
     result = {"verdict": "FAIL" if failed else "INCONCLUSIVE" if incomplete else "PASS",
             "validation_level": level,
             "backend": plan["backend"], "scope": plan["scope"], "unit": plan["unit"],
-            "gain_pct": gain, "samples": samples, "reasons": reasons,
+            "gain_pct": None if service_primary else native_gain, "samples": samples, "reasons": reasons,
             "claim": "synthetic controller fixture only" if plan["backend"] == "cpu-synthetic"
             else "limited to configured native and service gates; not production qualification" if "service" in plan
             else "limited to the supplied benchmark and validators; not service qualification"}
     if level == "operator":
-        result["claim"] = ("synthetic controller fixture only; service deferred" if plan["backend"] == "cpu-synthetic"
-                           else "native operator numerical and timing screen only; service deferred; not promotable")
+        result["claim"] = ("synthetic controller fixture only" if plan["backend"] == "cpu-synthetic" else
+                           "real model service performance screen; fresh confirmation required; not promotable"
+                           if service_primary else
+                           "native operator numerical and timing screen only; service deferred; not promotable")
+    if service_primary:
+        components = service_primary if isinstance(service_primary, list) else [service_primary]
+        result["primary_source"] = "service"
+        result["native_gain_pct"] = native_gain
+        result["native_samples"] = samples
+        result["scope"] = components[0]["id"] if len(components) == 1 else "service-scenario-mean"
+        result["unit"] = ("tokens/s" if components[0]["metric"].endswith("_per_s") else "ms") if len(components) == 1 else "percent gain"
+        result["metric"] = components[0]["metric"] if len(components) == 1 else "mean_gain_pct"
+        result["samples"] = {"baseline": [], "candidate": []}
     if case_comparison:
         result["operator_case_comparison"] = case_comparison
     if service_metrics:
         result["service_metrics"] = service_metrics
-        result["service_metric_policy"] = "GSM8K is an accuracy gate; service latency/throughput are a regression screen when configured, separate from native timing."
+        result["service_metric_policy"] = ("GSM8K is a final accuracy gate; the configured service metric is primary; native timing is diagnostic."
+                                           if service_primary else "GSM8K is an accuracy gate; service latency/throughput are a regression screen when configured, separate from native timing.")
         if all(side in service_metrics for side in samples):
             before = service_metrics['baseline'].get('performance', [])
             after = service_metrics['candidate'].get('performance', [])
@@ -140,13 +154,38 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
                         claim='auxiliary service HTTP/SSE metric; not native kernel time'))
             if comparisons:
                 result['service_scenario_comparison'] = comparisons
-    service_limit = plan.get('service', {}).get('max_regression_pct') if level == 'full' else None
+    if service_primary:
+        rows = result.get('service_performance_comparison', []) + result.get('service_scenario_comparison', [])
+        selected = [[row for row in rows if row.get('point', row.get('scenario')) == item['id']
+                     and row['metric'] == item['metric']] for item in components]
+        if any(len(matches) != 1 for matches in selected):
+            reasons.append('configured primary service metric missing or ambiguous')
+            if result['verdict'] == 'PASS':
+                result['verdict'] = 'INCONCLUSIVE'
+        else:
+            selected = [{**matches[0], 'claim': 'primary model-service HTTP/SSE metric; not native kernel time'}
+                        for matches in selected]
+            result['primary_metric'] = selected[0] if len(selected) == 1 else selected
+            result['gain_pct'] = mean(row['gain_pct'] for row in selected)
+            result['samples'] = ({side: [selected[0][side]] for side in ('baseline', 'candidate')}
+                                 if len(selected) == 1 else
+                                 {side: [{'id': row.get('point', row.get('scenario')), 'metric': row['metric'],
+                                          'value': row[side]} for row in selected]
+                                  for side in ('baseline', 'candidate')})
+            if result['gain_pct'] <= 0 or result['gain_pct'] < plan['min_gain_pct']:
+                reasons.append('positive model service gain meeting the frozen threshold required')
+                result['verdict'] = 'FAIL'
+    service_limit = plan.get('service', {}).get('max_regression_pct') if level == 'full' or service_primary else None
     if service_limit is not None:
-        gated = result.get('service_performance_comparison', []) + [
-            row for row in result.get('service_scenario_comparison', [])
-            if row['metric'] in {'ttft_p50_ms', 'common_window_tpot_ms_p50',
-                                 'input_tokens_per_s', 'common_window_output_tokens_per_s'}
-            or row['metric'].endswith('_ttft_p50_ms')]
+        if level == 'operator' and service_primary:
+            primary_rows = result.get('primary_metric', [])
+            gated = primary_rows if isinstance(primary_rows, list) else [primary_rows]
+        else:
+            gated = result.get('service_performance_comparison', []) + [
+                row for row in result.get('service_scenario_comparison', [])
+                if row['metric'] in {'ttft_p50_ms', 'common_window_tpot_ms_p50',
+                                     'input_tokens_per_s', 'common_window_output_tokens_per_s'}
+                or row['metric'].endswith('_ttft_p50_ms')]
         if not gated:
             reasons.append('service performance comparison missing')
             if result['verdict'] == 'PASS':

@@ -1,24 +1,24 @@
 # Campaign profiling and small prefill
 
-The Ascend recipes freeze smoke, 30 official GSM8K strict-match samples and a
+The Ascend eager/graph recipes freeze smoke, 300 official GSM8K strict-match samples and a
 prefill matrix: 128/512/2048 input token IDs, one output token, concurrency 1/4/8,
 eight measured requests and two unmeasured warmups per point. Routing can raise
 warmups to cover all Attention endpoints. GSM8K strict-match defaults to 0.27 for DeepSeek
-V2 Lite and 0.9 for DeepSeek V4 Flash; the V4 recipes explicitly freeze 0.9.
+V2 Lite and 284/300 for DeepSeek V4 Flash; the V4 recipes use that default.
 This small sample is a functional gate, not production accuracy qualification.
 Keep seed 42, eight few-shot examples and 512 maximum generated tokens fixed.
 Use the existing offline cache or explicitly configure a prepared local dataset.
 
 Service observations and reports retain GSM8K counts/scores and client HTTP TTFT
 mean/p50/p90. Prefill TTFT includes scheduling, Attention, FFN, networking and
-client overhead. It is an auxiliary performance indicator; promotion still uses
-the frozen paired native transaction metric and independent confirmation. Eight
+client overhead. The eager/graph recipes use the 2048-token, concurrency-8 TTFT
+p50 as the frozen model-service primary metric, with independent confirmation. Eight
 requests demonstrate the measurement path, not a statistically reliable gain.
 
 With native.profile=true, the initial operator-first baseline is profiled once
 after native qualification and before the first proposal. This is diagnostic,
 not service qualification. Ordinary candidate screens run no profiler. Only a
-fresh confirmation that also repeats the native gain and passes the configured
+fresh confirmation that repeats the model-service gain and passes the configured
 service gates runs the final candidate profile. Legacy full recipes keep their
 previous profiling order. Completed profiles are audited and reused on resume.
 A failed or interrupted profile blocks qualification and requires the existing

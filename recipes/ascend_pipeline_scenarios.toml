@@ -42,6 +42,8 @@ timeout_seconds = 120
 
 [service]
 repo = "native/source"
+primary = [{ id = "native-long-decode", metric = "common_window_tpot_ms_p50" }, { id = "mixed-prefill", metric = "ttft_p50_ms" }]
+screen_scenarios = ["native-long-decode", "mixed-prefill"]
 # DBO stays off: it overlaps Attention with FFN work, so an FFN-side gain gets
 # absorbed into the overlap instead of showing up in the measured transaction.
 # Gain validation must see the FFN improvement, so every benefit campaign runs

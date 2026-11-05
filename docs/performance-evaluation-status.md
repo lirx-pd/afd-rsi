@@ -6,12 +6,16 @@
 
 | 层级 | 当前入口与可判读内容 | 本次修正 | 仍需的设备证据 |
 | --- | --- | --- | --- |
-| 算子事务 | `benchmarks/native/eager_fixture.py`：合成权重、序列化 A 源，Attention 同时钟域 DS→FFN→CR 事务 | 对齐现版 `LayeredFFNWeights` 接口；保存每个 case 样本、配对中位增益，冻结 5% case 回退门槛 | 真实 H/I、专家数和路由下的 FFN kernel、等待、完整事务分别计时；同输入 AB/BA 与无打点复测 |
+| 算子事务 | `benchmarks/native/eager_fixture.py`：合成权重、序列化 A 源，Attention 同时钟域 DS→FFN→CR 事务 | 对齐现版 `LayeredFFNWeights` 接口；保存每个 case 样本、配对中位增益；case 回退不再否决服务主指标 | 真实 H/I、专家数和路由下的 FFN kernel、等待、完整事务分别计时；同输入 AB/BA 与无打点复测 |
 | E2E | `benchmarks/service/afd_e2e/`：真实模型 HTTP/SSE、GSM8K、服务生命周期和原始计数器 | Pull 接收容量随批量预算固定；模型 top-k 可读时预检 uint16 源行限制；冻结 5% 场景回退筛选 | 用当前镜像、模型、16 卡配置跑基线和候选；核对实际加载库、GSM8K、每个服务场景、设备错误及清理 |
 
-`ascend_eager.toml`、`ascend_graph.toml` 和 `ascend_pipeline_scenarios.toml`
-仍以 H256/I512、E_local4、2F 的合成事务作自动搜索主指标。它能筛掉数值错误和
-明显的事务回退，不能证明 DeepSeek V4 模型端收益。配方里的 32764 批量上限
+`ascend_eager.toml`、`ascend_graph.toml` 现以真实模型 2048-token/并发 8 的
+prefill TTFT p50 为搜索主指标；`ascend_pipeline_scenarios.toml` 对原生路由
+六并发 32K→512 decode 的公共窗口 TPOT p50 与 16K/512 混合 prefill TTFT p50
+取等权收益均值。初筛只运行 smoke 与这两项性能场景；独立复测才运行 GSM8K300
+及 64K 重载 prefill。每个候选在初筛和独立复测中各做一次基线/候选服务对照，
+顺序为 AB/BA。H256/I512 合成事务只用于
+数值验证和诊断，其收益不再决定晋升。配方里的 32764 批量上限
 按 TP4、top-k8 的 Pull 路由边界留出一行余量；实际 checkpoint 的 top-k 由
 服务计划读取 `config.json` 再检查。64K 请求使用 chunked prefill，不能作为
 单次 64K Pull 算子样本。
@@ -19,13 +23,15 @@
 现在按同一长度列表生成/核验 case，不再把非默认长度误判为 7 个短算例。
 
 每次探索方向保留：源码与原生库哈希、有效配置、输入/路由、warmup、所有算例
-样本、AB/BA trial 顺序、逐 case 回退、数值结果、服务原始请求和计数器。总均值
-达标但 case 回退超过 5% 为 FAIL；单轮 E2E 场景回退超过 5% 为 INCONCLUSIVE，
-需要独立模型复测。服务 TTFT/TPOT/吞吐是 HTTP 端指标，不能推断 FFN kernel
+样本、AB/BA trial 顺序、逐 case 回退、数值结果、服务原始请求和计数器。合成
+case 回退仍报告，但不再作为真实模型收益的拒绝条件；初筛只对主场景应用 5% 回退
+筛查，完整复测对所有配置场景应用，超限为 INCONCLUSIVE，不能晋升。服务
+TTFT/TPOT/吞吐是 HTTP 端指标，不能推断 FFN kernel
 本身加速或流水重叠。参考 megamoe 的 ready-input 与 cycle 区分，诊断 profile
 与无打点计时分开，且不把单次 FFN kernel 时间当作完整 A→F→A 延迟。
-原生首次采样过散会做预定的加密复测；复测仍过散则保留两轮原始数据并停止判定，
-不从两轮中挑较平稳的一轮作为收益。
+原生主指标配方的首次采样过散会做预定的加密复测；复测仍过散则保留两轮原始数据
+并停止判定，不从两轮中挑较平稳的一轮作为收益。服务主指标配方仅归档小形状
+原生计时离散度，不因其噪声增加测量或阻断真实模型评估。
 
 工作区原有 `raw_mega_perf.py` 仍是草稿，已保留在 `docs/prototypes/`，
 未接入评估入口：

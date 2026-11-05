@@ -65,7 +65,7 @@ def main(argv=None) -> int:
         subparser = commands.add_parser(name)
         subparser.add_argument("run", type=Path)
         if name == "compare":
-            subparser.add_argument("--operator-only", action="store_true", help="Numerical and paired native timing screen; no service/profile and no promotion")
+            subparser.add_argument("--operator-only", action="store_true", help="Screen with native checks and any configured service primary; no profile or promotion")
     search = commands.add_parser("search")
     search.add_argument("run", type=Path)
     search.add_argument("--external-agent", action="store_true", help="exchange request/proposal files with a separate proposer host")

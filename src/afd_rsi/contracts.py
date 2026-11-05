@@ -172,14 +172,42 @@ def load_recipe(path: Path) -> dict:
     if "service" in config:
         service = config["service"]
         required = {"repo", "args", "timeout_seconds", "cleanup_seconds"}
-        if not required <= set(service) or set(service) - required - {"require_clean_shutdown", "max_regression_pct"}:
+        if not required <= set(service) or set(service) - required - {"require_clean_shutdown", "max_regression_pct", "primary", "screen_scenarios"}:
             raise ValueError("invalid service settings")
+        relative_path(service["repo"], "service repo")
+        argv_list(service["args"], "service args")
+        if "primary" in service:
+            primary = service["primary"]
+            components = primary if isinstance(primary, list) else [primary]
+            if (not components or config.get("validation") != "operator-first"
+                    or any(not isinstance(item, dict) or set(item) != {"id", "metric"}
+                           or not isinstance(item["id"], str) or not item["id"]
+                           or not isinstance(item["metric"], str)
+                           or item["metric"] not in {"ttft_p50_ms", "common_window_tpot_ms_p50",
+                                                      "input_tokens_per_s", "common_window_output_tokens_per_s"}
+                           for item in components)
+                    or len({(item["id"], item["metric"]) for item in components}) != len(components)):
+                raise ValueError("service primary requires an operator-first performance metric")
+            if config["backend"] == "ascend":
+                args = service["args"]
+                tests = (args[args.index("--test") + 1].split(",")
+                         if "--test" in args and args.index("--test") + 1 < len(args) else [])
+                if not {"smoke", "gsm8k", "perf"} <= set(tests):
+                    raise ValueError("service primary needs smoke, gsm8k and perf in final validation")
+        if "screen_scenarios" in service:
+            scenarios = service["screen_scenarios"]
+            args = service["args"]
+            configured = (args[args.index("--perf-scenarios") + 1].split(",")
+                          if "--perf-scenarios" in args and args.index("--perf-scenarios") + 1 < len(args) else [])
+            if ("primary" not in service or not isinstance(scenarios, list) or not scenarios
+                    or not all(isinstance(name, str) for name in scenarios)
+                    or len(scenarios) != len(set(scenarios)) or not set(scenarios) <= set(configured)
+                    or not all(item["id"] in scenarios for item in components)):
+                raise ValueError("screen scenarios must include the configured primary scenario")
         if type(service.get("require_clean_shutdown", True)) is not bool:
             raise ValueError("require_clean_shutdown must be boolean")
         if "max_regression_pct" in service:
             positive(service["max_regression_pct"], "service max_regression_pct", zero=True)
-        relative_path(service["repo"], "service repo")
-        argv_list(service["args"], "service args")
         reserved = {"--repo", "--output", "--baseline", "--python", "--cleanup-timeout"}
         if any(arg.split("=", 1)[0] in reserved or "AFD_RSI_PROCESS_TAG" in arg or "AFD_RSI_ANCESTOR_TAGS" in arg for arg in service["args"]):
             raise ValueError("service repo/output/python/cleanup and process ownership are framework owned")

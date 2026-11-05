@@ -24,7 +24,7 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 或 `deepseek`（提案机设置 `DEEPSEEK_API_KEY`，只用标准库）。两者都支持提案机和执行机
 通过文件交换，详见[自动搜索与续跑](docs/automatic-search.md)与
 [提案模型提供方](knowledge/measurement/agent-providers.md)。`recipes/ascend_eager.toml` 和 `recipes/ascend_graph.toml` 将真实
-原生构建和 AFD E2E 服务接入同一个 campaign。默认验收 30 条 GSM8K，并记录
+原生构建和 AFD E2E 服务接入同一个 campaign。完整复测验收 300 条 GSM8K，并记录
 128/512/2048 输入、1 输出 token、并发 1/4/8 的 prefill TTFT 矩阵；通过门槛后自动采集独立 profiling，
 把每个 FFN rank 的设备任务分析和历史结果交给 Agent 提出下一轮优化假设。固定控制器不耦合调度平台；统一 optimize 入口支持本机和可选 iTASK 执行器，不使用 SSH。
 独立诊断构建还记录 MegaMoe 内部逐核、逐 tile 的阶段和等待；当前摘要覆盖首次双槽
@@ -33,8 +33,10 @@ runner/connector、加载身份检查、layered 正确性参考、AB/BA 事务�
 当前算子与 E2E 评估的覆盖、门槛和设备证据缺口见
 [性能评估现状](docs/performance-evaluation-status.md)。
 
-Ascend 配方默认先做算子数值和配对性能筛选，再独立复测；只有两轮原生收益都达标，
-才运行最终 E2E 精度/性能矩阵和候选 profiling。初始基线只做原生资格与一次 profile。
+Ascend 配方先做算子数值和配对计时，再在候选初筛与独立复测中各运行真实模型 E2E。
+搜索主指标是配方冻结的服务 TTFT，或长解码 TPOT 与混合预填充 TTFT 的等权收益；
+合成原生耗时只作诊断，不决定晋升。
+初始基线只做原生资格与一次 profile。
 提案必须给出测量证据、改动机制、预测、否定条件和风险。可用 `compare --operator-only`
 手动只测算子，结果不能替代最终晋升资格。详见 [分层验证](docs/staged-validation.md)。
 
@@ -63,7 +65,7 @@ PYTHONPATH=src python3 -m afd_rsi optimize resume runs/optimization-001
 `optimize status JOB` 区分存活、异常退出、失败与完成；`--json` 输出结构化详情。
 简要进度在 `worker.log`，完整状态与事件在 `status.json` / `events.jsonl`；结束后
 自动下载并校验 `results.tar.gz`，导出最佳补丁但不自动修改真实源码。默认轮询 60 秒，
-可用 `--poll-seconds` 设置。任务不会自动停止或删除。一次服务启动内完成 GSM8K
+可用 `--poll-seconds` 设置。任务不会自动停止或删除。完整复测的一次服务启动内完成 GSM8K
 与配方选择的性能场景；`ascend_pipeline_scenarios.toml` 只测原生路由的六并发
 32K→512 decode、16K/512 混合 prefill 和 128 请求的 64K 重载 prefill，
 不跑小 prefill 矩阵。套件间隔 5 秒、点间隔 3 秒；等待不计入性能样本。
@@ -94,9 +96,9 @@ Git 目标使用未忽略文件和已跟踪文件；普通目录包含除 `.git`
 以外的文件。源码符号链接不支持。大型模型与输出应放在源码目录之外。
 
 `baseline` 保存基线检查；`compare` 会重新构建两侧、先验证正确性，再交替执行
-冻结数量的测量。它保存新 attempt，保留所有原始失败。`min_gain_pct` 是延迟
-下降的百分比，必须为正收益且达到冻结门槛；当前仅支持一个 workload、一个
-主指标及明确 primary rank；case 集合的聚合由冻结 driver 定义。
+冻结数量的测量。它保存新 attempt，保留所有原始失败。`min_gain_pct` 是主指标
+的收益百分比（延迟下降或吞吐提高），必须为正且达到冻结门槛；当前仅支持一个
+冻结主指标。原生 benchmark 的 primary rank 与 case 聚合由冻结 driver 定义。
 
 `patch` 先在临时副本核对允许文件，再应用到候选。也可以手工编辑
 `workspaces/candidate` 中允许的文件。构建输出必须放在提供的 build 目录。

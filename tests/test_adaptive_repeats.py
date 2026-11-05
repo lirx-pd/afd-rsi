@@ -110,3 +110,15 @@ def test_densify_can_be_disabled_by_environment(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match='timing spread'):
         namespace['densify']({'reports': [sample(0, [100, 200, 100])]},
                              ['x', '--repeats', '4'], {'repeats': 4})
+
+
+def test_service_primary_keeps_noisy_native_timing_as_diagnostic(tmp_path, monkeypatch):
+    namespace = driver_namespace()
+    namespace['launch'] = lambda *args, **kwargs: pytest.fail('diagnostic timing must not be rerun')
+    namespace['output'] = tmp_path
+    namespace['write_json'] = lambda path, value: Path(path).write_text(json.dumps(value))
+    monkeypatch.setenv('AFD_RSI_SPREAD_LIMIT', '5')
+    native = {'reports': [sample(0, [100, 150, 100])]}
+    assert namespace['densify'](native, ['x', '--repeats', '2'], {'repeats': 2}, diagnostic_only=True) is native
+    record = json.loads((tmp_path / 'adaptive-repeats.json').read_text())
+    assert record['diagnostic_only'] and record['worst_case_spread_pct'] > 5
