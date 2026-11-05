@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
 import socket
 import struct
@@ -118,6 +119,9 @@ def environment(
                 "TASK_QUEUE_ENABLE": "1",
             }
         )
+    if case.ffn_mega_moe:
+        # Keep the pull scratch proportional to the frozen dispatch budget.
+        env["BATCH_SIZE_FACTOR"] = str(math.ceil(case.max_batched_tokens / 256) / 1024)
     if case.offline:
         env.update({"HF_HUB_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1"})
     env.update(assignment.split("=", 1) for assignment in case.serve_env)

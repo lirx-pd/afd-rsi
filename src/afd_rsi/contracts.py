@@ -131,7 +131,7 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("validation driver escapes foundation")
     if "native" in config:
         native = config["native"]
-        optional = {"execution", "profile", "lengths"}
+        optional = {"execution", "profile", "lengths", "max_case_regression_pct"}
         if (set(native) - optional != {"devices", "hidden", "intermediate", "experts",
                                        "attn_ranks", "warmups", "repeats", "per_group"}):
             raise ValueError("invalid native settings")
@@ -139,6 +139,10 @@ def load_recipe(path: Path) -> dict:
             raise ValueError("native execution must be eager or graph")
         if type(native.get("profile", False)) is not bool:
             raise ValueError("native profile must be boolean")
+        if "max_case_regression_pct" in native:
+            positive(native["max_case_regression_pct"], "max_case_regression_pct", zero=True)
+            if native["repeats"] < 2:
+                raise ValueError("case regression screening needs at least two repeats")
         for key in ("hidden", "intermediate"):
             positive(native[key], key, integer=True)
             if native[key] % 256 or not 256 <= native[key] <= 8192:
@@ -168,10 +172,12 @@ def load_recipe(path: Path) -> dict:
     if "service" in config:
         service = config["service"]
         required = {"repo", "args", "timeout_seconds", "cleanup_seconds"}
-        if not required <= set(service) or set(service) - required - {"require_clean_shutdown"}:
+        if not required <= set(service) or set(service) - required - {"require_clean_shutdown", "max_regression_pct"}:
             raise ValueError("invalid service settings")
         if type(service.get("require_clean_shutdown", True)) is not bool:
             raise ValueError("require_clean_shutdown must be boolean")
+        if "max_regression_pct" in service:
+            positive(service["max_regression_pct"], "service max_regression_pct", zero=True)
         relative_path(service["repo"], "service repo")
         argv_list(service["args"], "service args")
         reserved = {"--repo", "--output", "--baseline", "--python", "--cleanup-timeout"}

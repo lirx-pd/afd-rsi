@@ -130,6 +130,44 @@ def test_operator_pass_does_not_satisfy_service_or_profile():
     assert jobs[-1] == ('baseline', 'profile', None)
 
 
+def test_operator_case_regression_blocks_a_favorable_suite_mean():
+    plan = dict(backend='ascend', scope='native', unit='us', repetitions=2,
+                min_gain_pct=2, native={'max_case_regression_pct': 5})
+    observations = [dict(side=side, phase='correctness', status='valid', checks_passed=True)
+                    for side in ('baseline', 'candidate')]
+    for side in ('baseline', 'candidate'):
+        cases = [(10, 10), (5, 11)][side == 'candidate']
+        metrics = [dict(case=index, layer=2, sparse=False, tokens=128, median_us=value)
+                   for index, value in enumerate(cases)]
+        observations.extend(dict(side=side, phase='benchmark', status='valid', checks_passed=True,
+                                 value=sum(cases) / 2, case_metrics=metrics) for _ in range(2))
+    result = evaluate(plan, observations, level='operator')
+    assert result['gain_pct'] == pytest.approx(20)
+    assert result['verdict'] == 'FAIL'
+    assert result['operator_case_comparison'][1]['median_gain_pct'] == pytest.approx(-10)
+    observations[-1].pop('case_metrics')
+    assert evaluate(plan, observations, level='operator')['verdict'] == 'INCONCLUSIVE'
+
+
+def test_service_regression_needs_model_repeat_before_promotion():
+    plan = dict(backend='ascend', scope='native', unit='us', repetitions=1, min_gain_pct=2,
+                service={'max_regression_pct': 5})
+    point = dict(id='point-000', phase='prefill', input_lens=[512], output_lens=[1],
+                 concurrency=1, requests=8)
+    observations = []
+    for side, native_us, ttft_ms in [('baseline', 10, 100), ('candidate', 8, 110)]:
+        observations.extend([
+            dict(side=side, phase='correctness', status='valid', checks_passed=True),
+            dict(side=side, phase='benchmark', status='valid', checks_passed=True, value=native_us),
+            dict(side=side, phase='service', status='valid', checks_passed=True,
+                 service_metrics={'performance': [{**point, 'ttft_ms': {'p50': ttft_ms}}]}),
+        ])
+    result = evaluate(plan, observations)
+    assert result['gain_pct'] == pytest.approx(20)
+    assert result['verdict'] == 'INCONCLUSIVE'
+    assert result['service_performance_comparison'][0]['gain_pct'] == pytest.approx(-10)
+
+
 def test_evidence_and_falsification_are_required():
     requirements = dict(experiment_fields=list(EXPERIMENT), required_evidence_ids=['baseline', 'profile-incumbent'])
     value = dict(stop=False, reason='fixture', proposals=[dict(hypothesis='test', category='test',

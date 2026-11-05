@@ -11,6 +11,7 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
         raise ValueError("unknown validation level")
     reasons, incomplete, failed = [], False, False
     samples = {"baseline": [], "candidate": []}
+    case_trials = {"baseline": [], "candidate": []}
     quality, service_quality = set(), set()
     service_metrics, profiles = {}, set()
     for observation in observations:
@@ -34,6 +35,8 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
             profiles.add(side)
         elif phase == "benchmark":
             samples[side].append(positive(observation["value"], "measurement"))
+            if "case_metrics" in observation:
+                case_trials[side].append(observation["case_metrics"])
     if quality != {"baseline", "candidate"}:
         incomplete = True
         reasons.append("both correctness results required")
@@ -57,6 +60,33 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
         elif gain <= 0 or gain < plan["min_gain_pct"]:
             failed = True
             reasons.append("positive gain meeting the frozen threshold required")
+    case_comparison = []
+    case_limit = plan.get("native", {}).get("max_case_regression_pct")
+    if case_limit is not None:
+        if any(len(case_trials[side]) != len(samples[side]) for side in samples):
+            incomplete = True
+            reasons.append("operator case timing evidence incomplete")
+        elif all(case_trials.values()):
+            reference = case_trials["baseline"][0]
+            if not reference or any(len(trial) != len(reference) for trials in case_trials.values() for trial in trials):
+                incomplete = True
+                reasons.append("operator case timing shapes differ")
+            else:
+                for index, base_case in enumerate(reference):
+                    identity = {key: base_case[key] for key in ("case", "layer", "sparse", "tokens")}
+                    if any(any(trial[index][key] != value for key, value in identity.items())
+                           for trials in case_trials.values() for trial in trials):
+                        incomplete = True
+                        reasons.append("operator case workload differs")
+                        break
+                    before = [positive(trial[index]["median_us"], "operator case") for trial in case_trials["baseline"]]
+                    after = [positive(trial[index]["median_us"], "operator case") for trial in case_trials["candidate"]]
+                    gains = [(1 - new / old) * 100 for old, new in zip(before, after, strict=True)]
+                    case_comparison.append({**identity, "baseline_us": before, "candidate_us": after,
+                                            "gain_pct_by_trial": gains, "median_gain_pct": median(gains)})
+                if any(row["median_gain_pct"] < -case_limit for row in case_comparison):
+                    failed = True
+                    reasons.append("operator case regression exceeds the frozen limit")
     result = {"verdict": "FAIL" if failed else "INCONCLUSIVE" if incomplete else "PASS",
             "validation_level": level,
             "backend": plan["backend"], "scope": plan["scope"], "unit": plan["unit"],
@@ -67,19 +97,27 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
     if level == "operator":
         result["claim"] = ("synthetic controller fixture only; service deferred" if plan["backend"] == "cpu-synthetic"
                            else "native operator numerical and timing screen only; service deferred; not promotable")
+    if case_comparison:
+        result["operator_case_comparison"] = case_comparison
     if service_metrics:
         result["service_metrics"] = service_metrics
-        result["service_metric_policy"] = "GSM8K is an accuracy gate; prefill TTFT is an auxiliary performance metric. Promotion uses the frozen primary metric."
+        result["service_metric_policy"] = "GSM8K is an accuracy gate; service latency/throughput are a regression screen when configured, separate from native timing."
         if all(side in service_metrics for side in samples):
             before = service_metrics['baseline'].get('performance', [])
             after = service_metrics['candidate'].get('performance', [])
+            if len(before) != len(after) or any(a['id'] != b['id'] or
+                    any(a[key] != b[key] for key in ('phase', 'input_lens', 'output_lens', 'concurrency', 'requests'))
+                    for a, b in zip(before, after, strict=True)):
+                raise ValueError('service matrix comparison contract mismatch')
             result['service_performance_comparison'] = [
                 {'point': a['id'], 'metric': 'ttft_p50_ms', 'baseline': a['ttft_ms']['p50'],
-                 'candidate': b['ttft_ms']['p50'], 'gain_pct': (1 - b['ttft_ms']['p50'] / a['ttft_ms']['p50']) * 100,
-                 'claim': 'auxiliary client HTTP measurement; not a promotion gate'}
+                 'candidate': b['ttft_ms']['p50'], 'gain_pct': (1 - positive(b['ttft_ms']['p50'], 'service TTFT') / positive(a['ttft_ms']['p50'], 'service TTFT')) * 100,
+                 'claim': 'client HTTP TTFT; regression screen when configured'}
                 for a, b in zip(before, after, strict=True)]
             before = service_metrics['baseline'].get('scenarios', [])
             after = service_metrics['candidate'].get('scenarios', [])
+            if len(before) != len(after):
+                raise ValueError('service scenario comparison count mismatch')
             comparisons = []
             for a, b in zip(before, after, strict=True):
                 if a['id'] != b['id'] or a['configuration'] != b['configuration']:
@@ -96,9 +134,26 @@ def evaluate(plan: dict, observations: list[dict], *, level="full") -> dict:
                     rows.extend((key + '_p50', a[key]['p50'], b[key]['p50'])
                                 for key in ('common_window_tpot_ms', 'request_tpot_ms'))
                 for metric, old, new in rows:
+                    old, new = positive(old, metric), positive(new, metric)
                     comparisons.append(dict(scenario=a['id'], metric=metric, baseline=old, candidate=new,
                         gain_pct=((new / old - 1) if metric.endswith('_per_s') else (1 - new / old)) * 100,
                         claim='auxiliary service HTTP/SSE metric; not native kernel time'))
             if comparisons:
                 result['service_scenario_comparison'] = comparisons
+    service_limit = plan.get('service', {}).get('max_regression_pct') if level == 'full' else None
+    if service_limit is not None:
+        gated = result.get('service_performance_comparison', []) + [
+            row for row in result.get('service_scenario_comparison', [])
+            if row['metric'] in {'ttft_p50_ms', 'common_window_tpot_ms_p50',
+                                 'input_tokens_per_s', 'common_window_output_tokens_per_s'}
+            or row['metric'].endswith('_ttft_p50_ms')]
+        if not gated:
+            reasons.append('service performance comparison missing')
+            if result['verdict'] == 'PASS':
+                result['verdict'] = 'INCONCLUSIVE'
+        elif any(row['gain_pct'] < -service_limit for row in gated):
+            reasons.append('service performance regression exceeds the frozen limit; repeat on model')
+            if result['verdict'] == 'PASS':
+                result['verdict'] = 'INCONCLUSIVE'
+        result['service_regression_limit_pct'] = service_limit
     return result

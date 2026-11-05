@@ -31,6 +31,7 @@ experts = 4
 attn_ranks = 1
 warmups = 1
 repeats = 2
+max_case_regression_pct = 5.0
 per_group = false
 profile = true
 
@@ -40,10 +41,11 @@ timeout_seconds = 120
 
 [service]
 repo = "native/source"
-args = ["--model", "v4-flash", "--model-path", "/home/admin/model", "--device", "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on", "--moe-ubatching", "off", "--execution", "eager", "--dbo", "off", "--ffn-mega-moe", "on", "--test", "smoke,gsm8k,perf", "--limit", "300", "--perf-phase", "prefill", "--perf-input-lens", "128,512,2048", "--perf-output-lens", "1", "--perf-concurrencies", "1,4,8", "--test-interval", "5", "--perf-point-interval", "3", "--perf-mode", "matrix", "--perf-requests", "8", "--perf-warmup", "2", "--max-model-len", "32768", "--max-batched-tokens", "32768", "--max-seqs", "16", "--memory-utilization", "0.7", "--api-port", "19280", "--afd-port", "6455", "--nic", "eth0", "--startup-timeout", "600", "--request-timeout", "120", "--offline"]
+args = ["--model", "v4-flash", "--model-path", "/home/admin/model", "--device", "0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15", "--comm", "async", "--mrv", "mrv2", "--layered-gmm", "on", "--moe-ubatching", "off", "--execution", "eager", "--dbo", "off", "--ffn-mega-moe", "on", "--test", "smoke,gsm8k,perf", "--limit", "300", "--perf-phase", "prefill", "--perf-input-lens", "128,512,2048", "--perf-output-lens", "1", "--perf-concurrencies", "1,4,8", "--test-interval", "5", "--perf-point-interval", "3", "--perf-mode", "matrix", "--perf-requests", "8", "--perf-warmup", "2", "--max-model-len", "32768", "--max-batched-tokens", "32764", "--max-seqs", "16", "--memory-utilization", "0.7", "--api-port", "19280", "--afd-port", "6455", "--nic", "eth0", "--startup-timeout", "600", "--request-timeout", "120", "--offline"]
 timeout_seconds = 1800
 cleanup_seconds = 60
 require_clean_shutdown = false
+max_regression_pct = 5.0
 
 [search]
 # Proposer model: codex (default) or deepseek. Switching this one line selects the

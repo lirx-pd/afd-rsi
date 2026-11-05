@@ -63,5 +63,7 @@ service.require_clean_shutdown 默认 true；设为 false 只豁免关闭阶段�
 独立复测使用不同 attempt；自动搜索仅在两次完整 PASS 后晋升最佳版本。
 
 输入与参考、warmup 规则、全部有效开关应由冻结的 benchmark 正文确定。当前
-recipe 不实现多 case 权重、置信区间或 P99 样本门槛。需要这些语义时先扩展
+Ascend recipe 记录每个算例的样本和配对中位增益，以冻结的逐 case 回退上限阻止
+总体均值掩盖明显回退；E2E 超阈值回退需要重新做模型复测。当前不实现多 case
+权重、置信区间或 P99 样本门槛。需要这些语义时先扩展
 独立评测合同，不能隐藏在某个候选中。

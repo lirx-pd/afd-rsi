@@ -19,16 +19,23 @@ MRV2、Async CAM、Layered、eager/graph 的参数从实际命令和环境传入
 真实接受配置并完成请求，plan 成功仅说明方案可以生成。不得用同步 V2 默认
 配置替代当前 W4A8 MegaMoe 的 V4 异步 MRV2 场景。
 
-当前目标的 AFDAsyncExtraInfo 只接受 dynamicQuant、attn_ranks_per_dp、
-hccl_buffer_size、ffn_two_stream、ffn_compute_aic_num、ffn_compute_aiv_num、
+当前目标的 AFDAsyncExtraInfo 接受 dynamicQuant、attn_ranks_per_dp、
+hccl_buffer_size、ffn_mega_moe、ffn_two_stream、ffn_compute_aic_num、ffn_compute_aiv_num、
 ffn_combine_aiv_num。历史 async_moe_ubatching 已删除；即使值为 false 也会
 导致 worker 初始化失败。本地工具不再传该字段，默认关闭 splitting，对显式 on
 在 plan 阶段报错。不要通过修改目标配置校验器绕过接口不匹配。
 
+Pull native 由 `ffn_mega_moe=true` 选择，并要求 dynamicQuant=1、关闭 FFN
+two-stream。服务计划按 max-batched-tokens 设置 BATCH_SIZE_FACTOR，避免默认
+262144 行接收缓冲放大工作区。若模型目录提供 config.json，计划会核验
+`max_num_batched_tokens / Attention TP <= 65535 / top-k`。配方的 32764
+批量上限适用于 TP4、top-k8；换模型或拓扑时必须重新核对实际 top-k。
+
 V4 async 默认上下文为 32768，max-batched-tokens 为 32768；更大上下文需要
 重新核对当前 KV 容量。原始工具版本和本地适配后的文件哈希均保留在 provenance。
 
-V4 工具模板为 dp2tp4-ep8、16 张本地设备。模型路径必须是已准备好的 V4 权重，
+V4 默认工具模板为 dp2tp4-ep8、16 张本地设备；也支持显式
+dp3tp4-ep4、dp6tp2-ep4。模型路径必须是已准备好的 V4 权重，
 不可假造小模型或随机权重然后宣称 V4 服务通过。先用 smoke 核对服务，再用相同
 配置的独立运行做性能和质量验收。GSM8K 使用固定 lm_eval 版本和数据条件。
 

@@ -230,6 +230,8 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
             checks = all(all(rank["checks"].values()) for rank in data["ranks"])
             observation.update(status="valid", value=value, checks_passed=checks,
                                result_hash=digest(result_path), artifacts=actual)
+            if phase == "benchmark" and "case_metrics" in data:
+                observation["case_metrics"] = data["case_metrics"]
             if phase == "profile":
                 from .native import analyze_profile
                 profiling = analyze_profile(output / "traces", plan["native"]["attn_ranks"], plan["ranks"])
@@ -261,6 +263,9 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
             raise ValueError("completed process receipt changed")
     if "result_hash" in observation and digest(trial / "result.json") != observation["result_hash"]:
         raise ValueError("raw result changed")
+    if observation["phase"] == "benchmark" and observation["status"] == "valid" and "case_metrics" in observation:
+        if read_json(trial / "result.json").get("case_metrics") != observation["case_metrics"]:
+            raise ValueError("operator case metrics differ from raw result")
     if observation["phase"] == "service" and observation["status"] == "valid":
         from .service_phase import evidence_files, service_metrics
         if (digest(trial / "service/summary.json") != observation["summary_hash"]

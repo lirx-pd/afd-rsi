@@ -32,7 +32,7 @@ from afd_plugin.compat.npu.ops import ensure_cam_async_ops_available
 from afd_plugin.config import parse_afd_config
 from afd_plugin.connectors.metadata import AFDTransferContext, AFDTransferMetadata
 from afd_plugin.connectors.npu.async_cam import CAMAsyncAFDConnector
-from afd_plugin.model_executor.npu.async_cam_w4a8 import W4A8LayerWeights
+from afd_plugin.model_executor.npu.async_cam_layered import LayeredFFNWeights
 from afd_plugin.v1.worker.npu.async_ffn_model_runner import AsyncNPUFFNModelRunner
 
 HIDDEN = 256
@@ -64,7 +64,7 @@ class SyntheticModel(torch.nn.Module):
                 device, per_channel, 1, False, random_weights, intermediate_size
             )
             self.layers.append(
-                W4A8LayerWeights(
+                LayeredFFNWeights(
                     layer_id,
                     w13,
                     w2,
@@ -116,7 +116,7 @@ class SyntheticModel(torch.nn.Module):
     def get_experts_layer_indices(self):
         return LAYERS
 
-    def get_async_cam_w4a8_layers(self):
+    def get_async_cam_layered_weights(self):
         return self.layers, ""
 
 
@@ -159,14 +159,26 @@ def main():
             parser.error("--lengths takes comma-separated integers")
         if not args.lengths or any(not 1 <= tokens <= 16384 for tokens in args.lengths):
             parser.error("--lengths entries must be within [1, 16384]")
+        # One dispatch carries max_num_batched_tokens // tp tokens, and the pull
+        # layout caps rows at 65535/topk. A longer case needs chunked prefill, which
+        # this single-transaction fixture does not drive.
+        reachable = (65535 // 2) // max(args.attn_ranks, 1)
+        if max(args.lengths) > reachable:
+            parser.error(f"--lengths above {reachable} tokens need chunked prefill; "
+                         f"attn_ranks={args.attn_ranks} bounds one dispatch")
     if (args.full_graph or args.mega_moe) and not args.reference_outputs:
         parser.error("MegaMoE requires saved matching layered eager outputs")
     # The pull-native Mega path is selected only through the connector extra
     # config below; the current AFD build reads no Mega environment variable.
     faulthandler.dump_traceback_later(60)
     os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
+    # Rows are the pull source capacity: the layout bounds it by 65535/topk, and the
+    # connector requires rows >= max_num_batched_tokens. A dispatch carries
+    # max_num_batched_tokens // tp tokens, so the row budget is tokens times tp.
     capacity = 256 if args.tile_boundary else 16
-    os.environ["BATCH_SIZE_FACTOR"] = str(capacity / 262144)
+    receive_capacity = min(max(capacity, max(args.lengths or [capacity]) * max(args.attn_ranks, 1)),
+                           65535 // args.top_k)
+    os.environ["BATCH_SIZE_FACTOR"] = str(receive_capacity / 262144)
     os.environ["HCCL_BUFFSIZE"] = "64"
     ensure_cam_async_ops_available()
     rank = int(os.environ["RANK"])
@@ -217,7 +229,7 @@ def main():
                 model_type="deepseek_v4",
             ),
         ),
-        scheduler_config=SimpleNamespace(max_num_batched_tokens=capacity),
+        scheduler_config=SimpleNamespace(max_num_batched_tokens=receive_capacity),
         parallel_config=SimpleNamespace(
             enable_dbo=False,
             use_ubatching=False,
@@ -454,7 +466,7 @@ def main():
                 rows = int(((ids >= local * EXPERTS)
                             & (ids < (local + 1) * EXPERTS)).sum())
                 expected.append((source, layer_id,
-                                 (rows - 1) % capacity + 1 if rows else 0))
+                                 (rows - 1) % receive_capacity + 1 if rows else 0))
                 continue
             chunks = (
                 2 if sparse and 2 * tokens > capacity and rank == args.attn_ranks else 1

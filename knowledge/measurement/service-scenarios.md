@@ -63,8 +63,14 @@ Archive warmup/measured JSONL and before-warmup/before/after Prometheus text.
 Recompute summaries from these raw files during acceptance and resume auditing.
 Both scenarios must finish if selected; a failure cannot be replaced by a favorable
 matrix point. Agent context and reports retain per-DP TTFT and both TPOT scopes.
+When a recipe freezes `service.max_regression_pct`, matrix TTFT p50 and selected
+scenario TTFT/TPOT p50 and throughput metrics block promotion if any regression
+exceeds the limit. One service run per side is a screen: an apparent regression
+becomes INCONCLUSIVE and needs a fresh model rerun before promotion. Raw request
+and counter evidence remains mandatory.
+
 The scenarios measure integration behavior; they do not prove actual DBO, graph
 replay or physical compute/communication overlap. Use separate device evidence
 for those claims. The native primary metric and promotion thresholds stay frozen;
-service scenario comparisons are auxiliary unless a future frozen policy explicitly
-makes them the objective. Never claim model improvement from a native-only PASS.
+service scenario comparisons are not the primary gain objective. Never claim model
+improvement from a native-only PASS.

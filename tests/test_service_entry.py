@@ -39,6 +39,7 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     assert services["ffn"]["environment"]["VLLM_PLUGINS"] == "ascend,afd"
     assert services["ffn"]["environment"]["VLLM_USE_V2_MODEL_RUNNER"] == "1"
     assert services["ffn"]["environment"]["AFD_ASYNC_CAM_LAYERED_GMM"] == "1"
+    assert services["ffn"]["environment"]["BATCH_SIZE_FACTOR"] == "0.125"
     for service in services.values():
         command = service["command"]
         assert command[command.index('--data-parallel-rpc-port') + 1] == str(19282 + int(service['role'] == 'ffn'))
@@ -73,6 +74,19 @@ def test_service_rejects_removed_async_configuration_before_starting():
     result = invoke("plan", "--repo", "/work/target", "--comm", "async", "--moe-ubatching", "on")
     assert result.returncode == 2
     assert "no async_moe_ubatching field" in result.stderr
+
+
+def test_pull_plan_checks_checkpoint_topk_source_capacity(tmp_path):
+    weights = tmp_path / "weights"
+    weights.mkdir()
+    (weights / "config.json").write_text('{"num_experts_per_tok": 8}')
+    common = ("plan", "--repo", str(tmp_path / "target"), "--model", "v4-flash",
+              "--model-path", str(weights), "--device", ",".join(map(str, range(16))),
+              "--comm", "async", "--ffn-mega-moe", "on", "--test", "smoke")
+    bad = invoke(*common, "--max-batched-tokens", "32768")
+    assert bad.returncode == 2 and "top-k uint16 source row limit" in bad.stderr
+    good = invoke(*common, "--max-batched-tokens", "32764")
+    assert good.returncode == 0, good.stderr
 
 
 def test_pinned_service_waits_for_actual_models_http(monkeypatch):

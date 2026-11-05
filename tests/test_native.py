@@ -49,6 +49,22 @@ def test_native_requires_complete_loaded_identity_and_measurements(tmp_path):
             fixture_result(log, 3, IDENTITY, False, 1, 1)
 
 
+def test_native_result_checks_frozen_custom_lengths(tmp_path):
+    data = result(mega=True)
+    data['reports'][0]['timing'] = [
+        {'case': index, 'layer': layer, 'sparse': sparse, 'tokens': tokens,
+         'transaction_us': 100}
+        for index, (layer, sparse, tokens) in enumerate(
+            [(2, False, 128), (5, True, 128), (2, False, 512), (5, True, 512)])]
+    log = tmp_path / 'stdout.log'
+    log.write_text(json.dumps(data))
+    assert fixture_result(log, 3, IDENTITY, True, 1, 1, lengths='128,512') == data
+    data['reports'][0]['timing'][-1]['tokens'] = 511
+    log.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match='workload mismatch'):
+        fixture_result(log, 3, IDENTITY, True, 1, 1, lengths='128,512')
+
+
 def test_paired_summary_keeps_slow_samples_and_regressions():
     observations = [
         {"phase": "pair-0-layered", "result": result(value=100)},

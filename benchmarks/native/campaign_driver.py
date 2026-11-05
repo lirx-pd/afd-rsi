@@ -52,7 +52,8 @@ args = [sys.executable, "-m", "torch.distributed.run", "--standalone",
         "--local-experts", str(settings["experts"]), "--attn-ranks", str(settings["attn_ranks"])]
 if settings.get("lengths"):
     # Deployed lengths, so the transaction reflects the real matrix.
-    args += ["--lengths", str(settings["lengths"])]
+    args += ["--lengths", settings["lengths"] if isinstance(settings["lengths"], str)
+             else ",".join(map(str, settings["lengths"]))]
 if settings["per_group"]:
     args.append("--per-group")
 env = runtime_env(repo, settings["devices"])
@@ -64,7 +65,8 @@ def launch(name, argv, *, mega, repeats, reference_run=False):
         raise RuntimeError(f"native {name} failed: {process['status']}")
     result = fixture_result(output / name / "stdout.log", plan["ranks"], expected, mega,
                             settings["attn_ranks"], repeats, reference_run,
-                            full_graph=settings.get("execution", "eager") == "graph" and not reference_run)
+                            full_graph=settings.get("execution", "eager") == "graph" and not reference_run,
+                            lengths=settings.get("lengths"))
     assert artifact_identity(repo) == expected
     verify_source(repo, lock)
     return result
@@ -107,7 +109,7 @@ if sys.argv[1] == "profile":
         if process['status'] != 'completed' or not process['cleanup_complete']:
             raise RuntimeError('pipeline diagnostic failed; inspect pipeline-process')
         fixture_result(output / 'pipeline-process/stdout.log', plan['ranks'], diagnostic_expected,
-                       True, settings['attn_ranks'], 0)
+                       True, settings['attn_ranks'], 0, lengths=settings.get('lengths'))
         assert artifact_identity(diagnostic_repo) == diagnostic_expected
         verify_source(diagnostic_repo, read_json(output / 'diagnostic-build/source.lock.json'))
         write_json(output / 'traces/pipeline/identity.json', {
@@ -153,18 +155,17 @@ def densify(native, argv, settings):
         dense_argv[dense_argv.index("--repeats") + 1] = str(dense)
         denser = launch("transaction-dense", dense_argv, mega=True, repeats=dense)
         dense_spread = case_spread(denser)
-        # More repetitions can make a pass noisier, so keep the quieter sample set
-        # rather than assuming density is better. The threshold itself never moves.
+        # Use the declared denser rerun, never choose the quieter result after seeing both.
         record.update(dense_repeats=dense, dense_spread_pct=dense_spread,
                       why=f"first pass spread {spread:.2f}% exceeds {limit:.2f}%",
-                      resolved=(min(spread, dense_spread) <= limit))
-        if dense_spread < spread:
-            native = denser
-            record["used"] = "dense"
-        else:
-            record["used"] = "configured"
-            record["kept"] = "the denser pass was noisier"
+                      resolved=dense_spread <= limit)
+        native = denser
+        record["used"] = "dense"
+    else:
+        record["resolved"] = spread <= limit
     write_json(output / "adaptive-repeats.json", record)
+    if not record["resolved"]:
+        raise RuntimeError("native timing spread exceeds the configured limit; preserve both trials")
     return native
 
 
@@ -175,11 +176,22 @@ assert all(digest(Path(name)) == value for name, value in reference_files.items(
 artifacts = {name: digest(build_dir / name) for name in plan["artifacts"]}
 result = {key: plan[key] for key in ("backend", "workload_id", "scope", "unit", "metric")}
 result["ranks"] = []
+if measured:
+    primary = next(report for report in native["reports"] if report["rank"] == plan["primary_rank"])
+    cases = {}
+    for sample in primary["timing"]:
+        key = (sample["case"], sample["layer"], sample["sparse"], sample["tokens"])
+        cases.setdefault(key, []).append(sample["transaction_us"])
+    result["case_metrics"] = [
+        {"case": case, "layer": layer, "sparse": sparse, "tokens": tokens,
+         "median_us": statistics.median(values), "samples_us": values}
+        for (case, layer, sparse, tokens), values in sorted(cases.items())
+    ]
 if sys.argv[1] == "profile":
     result["profiling"] = analyze_profile(output / "traces", settings["attn_ranks"], plan["ranks"])
 for report in native["reports"]:
     samples = [s["transaction_us"] for s in report["timing"]]
-    # The primary metric is the serialized seven-case transaction suite mean.
+    # The primary metric is the configured serialized transaction suite mean.
     value = statistics.mean(samples) if samples else None
     result["ranks"].append({"rank": report["rank"], "source_hash": lock["hash"], "artifacts": artifacts,
                             "checks": {"native_reference": True, "actual_loaded_identity": True,

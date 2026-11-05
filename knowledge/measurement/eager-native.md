@@ -21,12 +21,22 @@ Default cases: H256/I512, E_local4, two FFN TP1, top-k2, two layer IDs, 7/16/129
 tokens and sparse/empty expert work. Optional wide shapes retain synthetic
 weights and do not establish real model/topology correctness. Two Attention
 sources remain serialized by harness barriers, not simultaneous incoming fan-in.
+The current plugin exposes `LayeredFFNWeights` through
+`get_async_cam_layered_weights()`. Keep that seam aligned with the target before
+running; an import or connector-plan success is not device validation.
 
 Attention NPU events measure complete DS->FFN->CR transactions in one clock
 domain. Host output validation follows the ending event. Disable FFN's per-work
 host observations during timing; use separate diagnostic/profiler runs. Keep
 all samples and per-case regressions. No kernel-time or service-throughput claim
 can be derived from these transaction timings.
+Campaign results retain each primary Attention rank case's samples and median.
+Recipes freeze `native.max_case_regression_pct`; a favorable suite mean cannot
+pass if a case's paired median gain breaches that limit. Case timing is still a
+serialized Attention DS→FFN→CR transaction, not isolated FFN kernel time.
+If a timing pass exceeds the configured case spread limit, the denser rerun is
+used; unresolved spread stops the benchmark as incomplete. Both runs remain
+archived, and the evaluator does not select the quieter run after observing it.
 
 Missing ranks, actual-library mismatches, changed source/artifacts, malformed
 or nonfinite samples and incomplete cleanup invalidate the attempt. Failed

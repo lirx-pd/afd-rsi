@@ -161,7 +161,7 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
 
 
 def fixture_result(path: Path, ranks: int, expected: dict, mega: bool, attn_ranks: int,
-                   repeats: int, reference: bool = False, *, full_graph=False) -> dict:
+                   repeats: int, reference: bool = False, *, full_graph=False, lengths=None) -> dict:
     records = []
     for line in path.read_text().splitlines():
         try:
@@ -177,8 +177,13 @@ def fixture_result(path: Path, ranks: int, expected: dict, mega: bool, attn_rank
             or any(not isinstance(r, dict) or type(r.get("rank")) is not int for r in reports)
             or {r["rank"] for r in reports} != set(range(ranks))):
         raise ValueError("native rank evidence incomplete")
-    cases = [(2, False, 7), (5, True, 7), (2, False, 7), (5, False, 16),
-             (2, True, 16), (5, True, 129), (2, False, 129)]
+    if lengths:
+        sizes = lengths.split(",") if isinstance(lengths, str) else lengths
+        cases = [(layer, slot == 1, int(tokens)) for tokens in sizes
+                 for slot, layer in enumerate((2, 5))]
+    else:
+        cases = [(2, False, 7), (5, True, 7), (2, False, 7), (5, False, 16),
+                 (2, True, 16), (5, True, 129), (2, False, 129)]
     for report in reports:
         if report.get("cleanup_complete") is not True or report.get("mega_moe") is not mega:
             raise ValueError("native mode/cleanup evidence incomplete")

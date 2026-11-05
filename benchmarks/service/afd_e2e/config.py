@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -307,7 +308,7 @@ def from_args(args) -> Case:
     async_mode = args.comm == "async"
     v4 = args.model == "v4-flash"
     if v4 and async_mode:
-        default_model_len, default_batched_tokens = 32768, 32768
+        default_model_len, default_batched_tokens = 32768, 32764 if args.ffn_mega_moe == "on" else 32768
     elif v4:
         default_model_len, default_batched_tokens = 8192, 1024
     elif async_mode:
@@ -386,6 +387,16 @@ def validate(case: Case) -> None:
         raise ValueError("--ffn-mega-moe is the async pull protocol; it needs --comm async")
     if case.ffn_mega_moe and case.baseline:
         raise ValueError("--ffn-mega-moe measures AFD splitting; the baseline does not use it")
+    if case.ffn_mega_moe:
+        if case.max_batched_tokens > 262144:
+            raise ValueError("Pull receive capacity cannot exceed 262144 rows")
+        if case.max_batched_tokens % case.attention_tp:
+            raise ValueError("Pull max-batched-tokens must be divisible by Attention TP")
+        model_config = Path(case.model_path) / "config.json"
+        if model_config.is_file():
+            topk = json.loads(model_config.read_text()).get("num_experts_per_tok")
+            if type(topk) is int and topk > 0 and case.max_batched_tokens // case.attention_tp > 65535 // topk:
+                raise ValueError("Pull dispatch exceeds the model top-k uint16 source row limit")
     tests = case.tests
     if (
         "perf" in tests
