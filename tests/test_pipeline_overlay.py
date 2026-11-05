@@ -83,10 +83,21 @@ def test_missing_anchor_fails_before_writing_either_file(tmp_path, monkeypatch):
 
 
 PULL = Path('csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel')
+PROTOCOL = Path('csrc/npu/ascend_kernels/utils/op_kernel/afd_pull_protocol.h')
 
-PULL_SOURCE = '''#include "afd_mega_moe_pull_pipeline.h"
+PULL_SOURCE = '''#include "afd_pull_protocol.h"
+#include "afd_mega_moe_pull_pipeline.h"
 
 namespace AfdNativeMega {
+template <class Plan>
+__aicore__ inline void Compute(
+    GM_ADDR scales, int64_t layer, bool second, Resource &resource) {
+        if (second) {
+            if (index == 0 || SyncExpert(index - 1, round.activeCount)) CrossCoreWaitFlag<2>(ACT_READY);
+        } else {
+            CrossCoreWaitFlag<2>(index / FLAG_SETS);
+        }
+}
 template <class Plan>
 __aicore__ inline void Process(GM_ADDR state, GM_ADDR scratch) {
     const Cam::NativeMegaWorkspace w(1, 2, 3, 4, 5);
@@ -98,6 +109,8 @@ __aicore__ inline void Process(GM_ADDR state, GM_ADDR scratch) {
             if (id == 0) {
                 Cam::Pull::Transport rx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
                 rx.PrepareRound(scratch + w.batch, scratch + w.counts, c[10]);
+                const auto modelLayer = rx.Read(scratch + w.batch + 16);
+                int64_t slot = -1;
                 rx.Write(scratch + w.layer, slot);
             }
             pipe.Reset();
@@ -135,32 +148,85 @@ __aicore__ inline void Process(GM_ADDR state, GM_ADDR scratch) {
 }
 '''
 
+PULL_PIPELINE = '''template <class Plan>
+__aicore__ inline void Combine(GM_ADDR scratch, const Cam::NativeMegaWorkspace &w,
+    const Cam::AfdMegaMoePullNativeTilingData &t, const ReceiveRound &round, GM_ADDR biases,
+    int64_t layer, Resource &resource) {
+    const uint32_t h = t.config[1];
+            for (; sync <= index; ++sync) CrossCoreWaitFlag<2>(sync / FLAG_SETS);
+                output.Tile(raw, bias[e * h], scales, row, rows, coord.n() * CUBE_N, h, t.routedScale);
+                rowTx.Pump(ExpertRowTx::PUMP_ROWS);
+            output.DrainLocal();
+            SyncAll<true>();
+            rowTx.Enqueue(groupBegin,groupRows,e);
+            rowTx.Pump(ExpertRowTx::PUMP_ROWS);
+    for (; sync < round.activeCount; ++sync) CrossCoreWaitFlag<2>(sync / FLAG_SETS);
+    output.Finalize();
+    rowTx.Finalize();
+}
+'''
+
+PULL_PROTOCOL = '''class Transport {
+    __aicore__ bool Select() {
+                    if (commit < expected) { ready = false; break; }
+                        Fail(source, -2); return false;
+                        Fail(source, -3); return false;
+                    if (Read(header + COMMIT * ALIGNMENT) != commit) { ready = false; break; }
+    }
+    __aicore__ void PrepareRound(GM_ADDR batch, GM_ADDR groupCounts, uint64_t capacity) {
+        const bool continuing = ReadState(SOURCE) >= 0;
+        Select();
+        if (continuing) LoadSnapshot(batch);
+        else LoadMetadata();
+        if (!ReadState(FAILURE)) {
+            for (uint32_t s = 0; s < shape_.tp; ++s) {
+            }
+        }
+        if (ReadState(FAILURE)) {
+            ClearMetadata();
+        }
+        const uint64_t end = begin + capacity < total ? begin + capacity : total;
+            groups.SetValue(e, group);
+        }
+        SaveMetadata(batch, groupCounts);
+        Fence<AscendC::HardEvent::MTE3_S>();
+    }
+
+    // Called only by the control owner
+};
+'''
+
 
 def pull_checkout(tmp_path, source=PULL_SOURCE):
     target = tmp_path / PULL
     target.mkdir(parents=True)
     (target / 'afd_mega_moe_pull_native.cpp').write_text(source)
-    (target / 'afd_mega_moe_pull_pipeline.h').write_text('// pipeline header\n')
+    (target / 'afd_mega_moe_pull_pipeline.h').write_text(PULL_PIPELINE)
+    protocol = tmp_path / PROTOCOL
+    protocol.parent.mkdir(parents=True)
+    protocol.write_text(PULL_PROTOCOL)
     return target / 'afd_mega_moe_pull_native.cpp'
 
 
 def test_pull_native_overlay_names_every_stage_of_a_round(tmp_path, monkeypatch):
     """The pull kernel is instrumented per stage instead of being skipped."""
     monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/native'))
-    from pipeline_trace import PULL_STAGES, eligible, instrument
+    from pipeline_trace import PULL_STAGES, PULL_SUBSTAGES, eligible, instrument
     path = pull_checkout(tmp_path)
     assert eligible(tmp_path) == 'pull'
     instrument(tmp_path)
     text = path.read_text()
-    codes = sorted({int(code) for code in __import__('re').findall(r'trace\.Begin\((\d+)', text)})
-    assert codes == sorted(PULL_STAGES), 'every declared stage is instrumented'
-    assert text.count('trace.Begin(') == text.count('trace.End(')
+    protocol = (tmp_path / PROTOCOL).read_text()
+    pipeline = (tmp_path / PULL / 'afd_mega_moe_pull_pipeline.h').read_text()
+    combined = text + protocol + pipeline
+    codes = {int(code) for code in __import__('re').findall(r'trace\.Begin\((\d+)', combined)}
+    assert codes == set(PULL_STAGES) | set(PULL_SUBSTAGES)
     assert text.count('trace.Finish()') == 1 and text.count('++traceRound') == 1
     # The tail lives past the workspace the executor allocated.
     assert 'AfdTrace::Phase trace(scratch + w.bytes)' in text
-    # Order inside one round: pull, activation, combine run after the two cube calls.
-    for stage in ('41', '43', '45'):
-        assert f'trace.Begin({stage}, traceRound)' in text
+    assert protocol.index('trace.Begin(60, traceRound)') < protocol.index('Select(trace, traceRound)')
+    assert pipeline.index('trace.Begin(70, traceRound)') < pipeline.index('output.Tile(')
+    assert pipeline.index('trace.Begin(71, traceRound)') < pipeline.index('rowTx.Pump(')
     assert text.index('trace.End(44, traceRound, traceGmm2)') < text.index('trace.Begin(48, traceRound)')
 
 
@@ -172,3 +238,5 @@ def test_pull_native_overlay_refuses_an_unexpected_layout(tmp_path, monkeypatch)
     with pytest.raises(ValueError, match='unsupported MegaMoe diagnostic source'):
         instrument(tmp_path)
     assert 'AfdTrace' not in path.read_text()
+    assert (tmp_path / PROTOCOL).read_text() == PULL_PROTOCOL
+    assert (tmp_path / PULL / 'afd_mega_moe_pull_pipeline.h').read_text() == PULL_PIPELINE

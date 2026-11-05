@@ -113,6 +113,24 @@ def test_stage_shares_exclude_the_dispatch_wait(tmp_path):
     assert named_stage_cycles({}) == []
 
 
+def test_pull_substages_keep_nested_waits_out_of_parent_totals():
+    from afd_rsi.native import named_stage_cycles, named_substage_cycles
+    totals = {'40': 100, '45': 50, '47': 300, '60': 80, '61': 30,
+              '62': 10, '65': 5, '66': 5, '70': 20, '71': 10, '72': 5, '73': 5}
+    top = {row['stage']: row for row in named_stage_cycles(totals)}
+    assert top['round_prepare']['core_cycles'] == 100
+    assert top['round_prepare']['active_share_pct'] == pytest.approx(66.67, abs=0.01)
+    detail = named_substage_cycles(totals)
+    stages = {row['stage']: row for row in detail['stages']}
+    assert stages['rx_select']['parent_share_pct'] == 80
+    assert stages['rx_header_validation']['parent'] == 'rx_select'
+    assert detail['residual_cycles']['rx_select'] == 50
+    assert detail['residual_cycles']['round_prepare'] == 0
+    assert detail['residual_cycles']['combine'] == 10
+    with pytest.raises(ValueError, match='exceeds rx_select'):
+        named_substage_cycles({**totals, '61': 81})
+
+
 def test_profiler_requires_device_kernel_evidence_on_both_ffn_ranks(tmp_path):
     for rank in (1, 2):
         path = tmp_path / f"rank-{rank}" / "kernel_details.csv"

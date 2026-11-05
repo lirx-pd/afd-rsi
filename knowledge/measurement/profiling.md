@@ -52,7 +52,7 @@ instrumentation and controlled experiments before stronger bottleneck claims.
 
 Campaign profile additionally creates a separate A3 diagnostic build with bounded
 per-core GetSystemCycle records. An owning scratch allocation reserves 72 tails,
-512 records per core and a checked guard. Overflow, missing cores, malformed
+2048 records per core and a checked guard. Overflow, missing cores, malformed
 intervals or incorrect diagnostic outputs block the profile phase. This eager
 seven-case diagnostic is explicitly distinct from FULL replay timing.
 Stage IDs 0..6 are RECEIVED, PRE1, G1, PRE2, G2, OUTPUT, SENT;
@@ -85,12 +85,20 @@ source, not permission to emit partial instrumentation. Entry and validation
 intervals must pair in the kernel entry scope; never match the helper's layerId.
 Retain diagnostic compiler stdout/stderr and process receipts in result archives.
 
-The pull-native target has its own overlay over `afd_mega_moe_pull_native.cpp`.
-It records one interval per stage of a receive round: `round_prepare`, `sync_in`,
-`gmm1`, `pull_rows`, `activation`, `gmm2`, `combine`, `round_complete`,
-`sync_out` (codes 40..48). Only nine selected cores record; every core writes the
-header the decoder requires. Report these stage names when a proposal has to name
-a bottleneck, because one fused device task cannot. Summed stage cycles cover the
-instrumented cores only, so they order attention and are not critical-path
-latency. The instrumented tree is a separate diagnostic build; timed artifacts
-stay uninstrumented.
+The pull-native overlay records the top-level receive round: `round_prepare`,
+`pull_rows`, `gmm1`, `activation`, `gmm2`, `combine`, `round_complete`,
+`sync_in`, `sync_out` and `rx_decode` (codes 40..49). Eight selected cores record
+events; every core writes the header the decoder requires. The nested breakdown
+adds `rx_select` (60), its `rx_header_validation` (61), `rx_metadata` (62),
+`rx_commit_check` (63), `rx_group_plan` (64), `rx_publish` (65), `rx_layer_map`
+(66), `output_local` (70), `tx_remote` (71), `output_sync` (72),
+`output_wait_gmm2` (73), and GMM input waits (74..75). The report keeps parent
+and child cycle sums separate and gives each child's share of its parent;
+`residual_cycles` contains unmarked work and trace overhead. `rx_select` spans
+source polling plus header checks. Its residual after `rx_header_validation`
+is polling, state reads and instrumentation overhead, not a pure wait timer.
+`tx_remote` includes the final DMA drain; earlier `Pump` intervals can enqueue
+asynchronous copies. Compare events on the same core. Summed intervals are not
+critical-path latency, and `active_share_pct` excludes only `sync_in`, leaving
+other waits inside. The instrumented tree is a separate eager diagnostic build;
+production timing and graph replay stay uninstrumented.

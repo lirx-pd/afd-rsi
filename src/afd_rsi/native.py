@@ -19,7 +19,15 @@ MEGA_KERNELS = ("afd_mega_moe_pull_native", "afd_mega_moe_comm")
 # the frozen foundation, so the controller keeps its own copy of the code names.
 PULL_STAGE_NAMES = {40: 'round_prepare', 41: 'pull_rows', 42: 'gmm1', 43: 'activation',
                     44: 'gmm2', 45: 'combine', 46: 'round_complete', 47: 'sync_in',
-                    48: 'sync_out'}
+                    48: 'sync_out', 49: 'rx_decode'}
+PULL_SUBSTAGE_NAMES = {
+    60: ('round_prepare', 'rx_select'), 61: ('rx_select', 'rx_header_validation'),
+    62: ('round_prepare', 'rx_metadata'), 63: ('round_prepare', 'rx_commit_check'),
+    64: ('round_prepare', 'rx_group_plan'), 65: ('round_prepare', 'rx_publish'),
+    66: ('round_prepare', 'rx_layer_map'), 70: ('combine', 'output_local'),
+    71: ('combine', 'tx_remote'), 72: ('combine', 'output_sync'),
+    73: ('combine', 'output_wait_gmm2'), 74: ('gmm1', 'gmm1_input_wait'),
+    75: ('gmm2', 'gmm2_activation_wait')}
 MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
 
 from . import skills
@@ -301,9 +309,10 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
                 'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
                 'device trace alone cannot separate Cube, Vector, MTE or communication time; the '
                 'instrumented diagnostic names those stages when a pipeline trace is present. '
-                'Its share_pct includes the Attention dispatch wait (sync_in, reported separately) and '
-                'active_share_pct excludes it, so compare stages on active shares and per-core sums '
-                'rather than treating either as critical-path latency. '
+                'active_share_pct excludes only sync_in; rx_select, GMM and output intervals can '
+                'still contain waits. Child intervals are nested diagnostics, not additional '
+                'kernel time. Compare each child with its parent on the same core rather than '
+                'treating summed spans as critical-path latency. '
                 'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
             'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
                 'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
@@ -336,6 +345,7 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
                             for start, end, code, sequence in core['events'] if sequence in (0, 1, 2, 3, 4)]))
         summaries.append(dict(rank=rank, transactions=len(transactions), summed_core_cycles=totals,
                               named_stages=named_stage_cycles(totals),
+                              substage_breakdown=named_substage_cycles(totals),
                               first_transaction=transactions[0]['work'], selected_cores=selected))
     return dict(identity=identities, ffn_ranks=summaries,
                 scope='instrumented eager diagnostic of seven-case fixture; not promotion timing',
@@ -349,9 +359,8 @@ def named_stage_cycles(totals: dict) -> list:
 
     Two shares are reported. ``share_pct`` covers every instrumented cycle, which
     is dominated by ``sync_in`` because the FFN idles until Attention dispatches.
-    ``active_share_pct`` drops that wait, so the remaining stages answer "where
-    does the FFN spend its own work". Neither is critical-path latency: they are
-    per-core cycle sums.
+    ``active_share_pct`` drops only ``sync_in``. It still includes source polling,
+    GMM dependency waits and output drains; neither share is critical-path latency.
     """
     known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
     total = sum(known.values())
@@ -372,6 +381,31 @@ def named_stage_cycles(totals: dict) -> list:
                      'active_share_pct': None,
                      'note': 'Attention dispatch wait; excluded from active shares'})
     return rows
+
+
+def named_substage_cycles(totals: dict) -> dict | None:
+    """Report nested intervals separately so parent and child time is never added twice."""
+    if not any(str(code) in totals for code in PULL_SUBSTAGE_NAMES):
+        return None
+    known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
+    known.update({name: int(totals.get(str(code), 0))
+                  for code, (_, name) in PULL_SUBSTAGE_NAMES.items()})
+    rows = []
+    for code, (parent, name) in PULL_SUBSTAGE_NAMES.items():
+        cycles = known[name]
+        if cycles > known[parent]:
+            raise ValueError(f'pipeline substage {name} exceeds {parent}')
+        if cycles:
+            rows.append({'stage': name, 'parent': parent, 'core_cycles': cycles,
+                         'parent_share_pct': round(100 * cycles / known[parent], 2)})
+    residual = {}
+    for parent in dict.fromkeys(parent for parent, _ in PULL_SUBSTAGE_NAMES.values()):
+        children = sum(known[name] for p, name in PULL_SUBSTAGE_NAMES.values() if p == parent)
+        if children > known[parent]:
+            raise ValueError(f'pipeline children exceed {parent}')
+        residual[parent] = known[parent] - children
+    return {'stages': rows, 'residual_cycles': residual,
+            'note': 'Residual includes unmarked work and trace overhead; rx_select residual also includes polling.'}
 
 
 def write_report(output: Path, summary: dict):
