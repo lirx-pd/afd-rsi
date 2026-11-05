@@ -86,52 +86,52 @@ PULL = Path('csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel')
 
 PULL_SOURCE = '''#include "afd_mega_moe_pull_pipeline.h"
 
-extern "C" __global__ __aicore__ void afd_mega_moe_pull_native(
-    GM_ADDR anchor, GM_ADDR state, GM_ADDR scratch, GM_ADDR completion) {
-    if (TILING_KEY_IS(1)) {
-        const Cam::NativeMegaWorkspace w(1, 2, 3, 4, 5);
-        Resource resource;
-        TPipe pipe;
-        const uint32_t id = GetBlockIdx();
-        do {
-            if ASCEND_IS_AIV {
-                if (id == 0) {
-                    Cam::Pull::Transport rx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
-                    rx.PrepareRound(scratch + w.batch, scratch + w.counts, c[10]);
-                    rx.Write(scratch + w.layer, slot);
-                }
-                pipe.Reset();
+namespace AfdNativeMega {
+template <class Plan>
+__aicore__ inline void Process(GM_ADDR state, GM_ADDR scratch) {
+    const Cam::NativeMegaWorkspace w(1, 2, 3, 4, 5);
+    Resource resource;
+    TPipe pipe;
+    const uint32_t id = GetBlockIdx();
+    do {
+        if ASCEND_IS_AIV {
+            if (id == 0) {
+                Cam::Pull::Transport rx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
+                rx.PrepareRound(scratch + w.batch, scratch + w.counts, c[10]);
+                rx.Write(scratch + w.layer, slot);
             }
-            SyncAll<false>();
-            const auto layer = Load(state, Cam::Pull::FAILURE) ? -1 : Load(scratch + w.layer);
-            if (layer >= 0 && layer < c[13]) {
-                const ReceiveRound round(scratch, w, c[6]);
-                if (round.total) {
-                    if ASCEND_IS_AIC {
-                        Compute(scratch, w, t, round, w13, s13, layer, false, resource);
-                        Compute(scratch, w, t, round, w2, s2, layer, true, resource);
-                    }
-                    if ASCEND_IS_AIV {
-                        PullAndPrepare(scratch, w, t, round, resource);
-                        Activate(scratch, w, t, round, b13, layer, resource);
-                        Combine(scratch, w, t, round, b2, layer, resource);
-                    }
+            pipe.Reset();
+        }
+        SyncAll<false>();
+        const auto layer = Load(state, Cam::Pull::FAILURE) ? -1 : Load(scratch + w.layer);
+        if (layer >= 0 && layer < c[13]) {
+            const ReceiveRound round(scratch, w, c[6]);
+            if (round.total) {
+                if ASCEND_IS_AIC {
+                    Compute<Plan>(scratch, w, t, round, w13, s13, layer, false, resource);
+                    Compute<Plan>(scratch, w, t, round, w2, s2, layer, true, resource);
                 }
-            }
-            SyncAll<false>();
-            if ASCEND_IS_AIV { pipe.Reset(); }
-            if ASCEND_IS_AIV {
-                if (id == 0) {
-                    Cam::Pull::Transport tx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
-                    if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);
-                    tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));
+                if ASCEND_IS_AIV {
+                    PullAndPrepare<Plan>(scratch, w, t, round, resource);
+                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource);
+                    Combine<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b2 : s2, layer, resource);
                 }
             }
-            // All GMM/epilogue events have drained before scratch and flag slots are reused.
-            SyncAll<false>();
-            if ASCEND_IS_AIV { pipe.Reset(); }
-        } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);
-    }
+        }
+        SyncAll<false>();
+        if ASCEND_IS_AIV { pipe.Reset(); }
+        if ASCEND_IS_AIV {
+            if (id == 0) {
+                Cam::Pull::Transport tx(state, PullShape(t), c[7], t.aivNum, pipe, 0);
+                if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);
+                tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));
+            }
+        }
+        // All GMM/epilogue events have drained before scratch and flag slots are reused.
+        SyncAll<false>();
+        if ASCEND_IS_AIV { pipe.Reset(); }
+    } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);
+}
 }
 '''
 
@@ -167,7 +167,7 @@ def test_pull_native_overlay_names_every_stage_of_a_round(tmp_path, monkeypatch)
 def test_pull_native_overlay_refuses_an_unexpected_layout(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/native'))
     from pipeline_trace import instrument
-    source = PULL_SOURCE.replace('                        Activate(scratch, w, t, round, b13, layer, resource);\n', '')
+    source = PULL_SOURCE.replace('                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource);\n', '')
     path = pull_checkout(tmp_path, source)
     with pytest.raises(ValueError, match='unsupported MegaMoe diagnostic source'):
         instrument(tmp_path)

@@ -137,63 +137,63 @@ def instrument_pull(repo):
                         '#include "afd_mega_moe_pull_pipeline.h"\n'
                         + PULL_TRACE_CLASS.replace('__RECORDS__', str(TRACE_RECORDS))
                                            .replace('__STRIDE__', str(TRACE_STRIDE)))
-    s = replace_checked(s, '        const uint32_t id = GetBlockIdx();\n',
-                        '        const uint32_t id = GetBlockIdx();\n'
-                        '        ::AfdTrace::Phase trace(scratch + w.bytes);\n'
-                        '        uint32_t traceRound = 0;\n')
+    s = replace_checked(s, '    const uint32_t id = GetBlockIdx();\n',
+                        '    const uint32_t id = GetBlockIdx();\n'
+                        '    ::AfdTrace::Phase trace(scratch + w.bytes);\n'
+                        '    uint32_t traceRound = 0;\n')
     # Round entry: the AIV leader reads batch metadata and resolves the layer slot.
-    s = replace_checked(s, '            if ASCEND_IS_AIV {\n                if (id == 0) {\n'
-                           '                    Cam::Pull::Transport rx(',
-                        '            const auto tracePrepare = trace.Begin(40, traceRound);\n'
-                        '            if ASCEND_IS_AIV {\n                if (id == 0) {\n'
-                        '                    Cam::Pull::Transport rx(')
-    s = replace_checked(s, '                pipe.Reset();\n            }\n            SyncAll<false>();',
-                        '                pipe.Reset();\n            }\n'
-                        '            trace.End(40, traceRound, tracePrepare);\n'
-                        '            const auto traceIn = trace.Begin(47, traceRound);\n'
-                        '            SyncAll<false>();\n'
-                        '            trace.End(47, traceRound, traceIn);')
+    s = replace_checked(s, '        if ASCEND_IS_AIV {\n            if (id == 0) {\n'
+                           '                Cam::Pull::Transport rx(',
+                        '        const auto tracePrepare = trace.Begin(40, traceRound);\n'
+                        '        if ASCEND_IS_AIV {\n            if (id == 0) {\n'
+                        '                Cam::Pull::Transport rx(')
+    s = replace_checked(s, '            pipe.Reset();\n        }\n        SyncAll<false>();',
+                        '            pipe.Reset();\n        }\n'
+                        '        trace.End(40, traceRound, tracePrepare);\n'
+                        '        const auto traceIn = trace.Begin(47, traceRound);\n'
+                        '        SyncAll<false>();\n'
+                        '        trace.End(47, traceRound, traceIn);')
     # The two cube calls and the three vector phases of one receive round.
-    s = replace_checked(s, '                        Compute(scratch, w, t, round, w13, s13, layer, false, resource);\n'
-                           '                        Compute(scratch, w, t, round, w2, s2, layer, true, resource);',
-                        '                        const auto traceGmm1 = trace.Begin(42, traceRound);\n'
-                        '                        Compute(scratch, w, t, round, w13, s13, layer, false, resource);\n'
-                        '                        trace.End(42, traceRound, traceGmm1);\n'
-                        '                        const auto traceGmm2 = trace.Begin(44, traceRound);\n'
-                        '                        Compute(scratch, w, t, round, w2, s2, layer, true, resource);\n'
-                        '                        trace.End(44, traceRound, traceGmm2);')
-    s = replace_checked(s, '                        PullAndPrepare(scratch, w, t, round, resource);\n'
-                           '                        Activate(scratch, w, t, round, b13, layer, resource);\n'
-                           '                        Combine(scratch, w, t, round, b2, layer, resource);',
-                        '                        const auto tracePull = trace.Begin(41, traceRound);\n'
-                        '                        PullAndPrepare(scratch, w, t, round, resource);\n'
-                        '                        trace.End(41, traceRound, tracePull);\n'
-                        '                        const auto traceAct = trace.Begin(43, traceRound);\n'
-                        '                        Activate(scratch, w, t, round, b13, layer, resource);\n'
-                        '                        trace.End(43, traceRound, traceAct);\n'
-                        '                        const auto traceCombine = trace.Begin(45, traceRound);\n'
-                        '                        Combine(scratch, w, t, round, b2, layer, resource);\n'
-                        '                        trace.End(45, traceRound, traceCombine);')
+    s = replace_checked(s, '                    Compute<Plan>(scratch, w, t, round, w13, s13, layer, false, resource);\n'
+                           '                    Compute<Plan>(scratch, w, t, round, w2, s2, layer, true, resource);',
+                        '                    const auto traceGmm1 = trace.Begin(42, traceRound);\n'
+                        '                    Compute<Plan>(scratch, w, t, round, w13, s13, layer, false, resource);\n'
+                        '                    trace.End(42, traceRound, traceGmm1);\n'
+                        '                    const auto traceGmm2 = trace.Begin(44, traceRound);\n'
+                        '                    Compute<Plan>(scratch, w, t, round, w2, s2, layer, true, resource);\n'
+                        '                    trace.End(44, traceRound, traceGmm2);')
+    s = replace_checked(s, '                    PullAndPrepare<Plan>(scratch, w, t, round, resource);\n'
+                           '                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource);\n'
+                           '                    Combine<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b2 : s2, layer, resource);',
+                        '                    const auto tracePull = trace.Begin(41, traceRound);\n'
+                        '                    PullAndPrepare<Plan>(scratch, w, t, round, resource);\n'
+                        '                    trace.End(41, traceRound, tracePull);\n'
+                        '                    const auto traceAct = trace.Begin(43, traceRound);\n'
+                        '                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource);\n'
+                        '                    trace.End(43, traceRound, traceAct);\n'
+                        '                    const auto traceCombine = trace.Begin(45, traceRound);\n'
+                        '                    Combine<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b2 : s2, layer, resource);\n'
+                        '                    trace.End(45, traceRound, traceCombine);')
     # Round completion: publish the transaction result back to Attention.
-    s = replace_checked(s, '                    if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);\n'
-                           '                    tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));',
-                        '                    const auto traceComplete = trace.Begin(46, traceRound);\n'
-                        '                    if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);\n'
-                        '                    tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));\n'
-                        '                    trace.End(46, traceRound, traceComplete);')
+    s = replace_checked(s, '                if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);\n'
+                           '                tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));',
+                        '                const auto traceComplete = trace.Begin(46, traceRound);\n'
+                        '                if (layer >= 0 && layer < c[13]) tx.CompleteRound(scratch + w.batch, c[10]);\n'
+                        '                tx.Write(completion, tx.ReadState(Cam::Pull::FAILURE));\n'
+                        '                trace.End(46, traceRound, traceComplete);')
     # Loop-closing barrier, then the per-core header the decoder relies on.
-    s = replace_checked(s, '            // All GMM/epilogue events have drained before scratch and flag slots are reused.\n'
-                           '            SyncAll<false>();\n'
-                           '            if ASCEND_IS_AIV { pipe.Reset(); }\n',
-                        '            // All GMM/epilogue events have drained before scratch and flag slots are reused.\n'
-                        '            const auto traceOut = trace.Begin(48, traceRound);\n'
-                        '            SyncAll<false>();\n'
-                        '            trace.End(48, traceRound, traceOut);\n'
-                        '            ++traceRound;\n'
-                        '            if ASCEND_IS_AIV { pipe.Reset(); }\n')
-    s = replace_checked(s, '        } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);',
-                        '        } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);\n'
-                        '        trace.Finish();')
+    s = replace_checked(s, '        // All GMM/epilogue events have drained before scratch and flag slots are reused.\n'
+                           '        SyncAll<false>();\n'
+                           '        if ASCEND_IS_AIV { pipe.Reset(); }\n',
+                        '        // All GMM/epilogue events have drained before scratch and flag slots are reused.\n'
+                        '        const auto traceOut = trace.Begin(48, traceRound);\n'
+                        '        SyncAll<false>();\n'
+                        '        trace.End(48, traceRound, traceOut);\n'
+                        '        ++traceRound;\n'
+                        '        if ASCEND_IS_AIV { pipe.Reset(); }\n')
+    s = replace_checked(s, '    } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);',
+                        '    } while (!Load(state, Cam::Pull::FAILURE) && Load(state, Cam::Pull::SOURCE) >= 0);\n'
+                        '    trace.Finish();')
     path.write_text(s)
 
 

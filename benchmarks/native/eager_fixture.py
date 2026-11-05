@@ -549,7 +549,8 @@ def main():
                 if args.pipeline_trace_dir:
                     from pipeline_trace import decode
                     assert (trace_guard.cpu() == 165).all(), 'pipeline trace guard overwritten'
-                    rows = trace_tail.cpu().view(torch.int64).reshape(72, 2080).tolist()
+                    rows = trace_tail.cpu().view(torch.int64).reshape(
+                        TRACE_CORES, TRACE_STRIDE // 8).tolist()
                     pipeline_records.append(decode(rows, report['work'][-1]))
                 return
             connector.graph_startup.service_ready()

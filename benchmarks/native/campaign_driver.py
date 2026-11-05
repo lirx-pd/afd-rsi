@@ -99,24 +99,31 @@ if sys.argv[1] == "profile":
     else:
         diagnostic_input = output / 'diagnostic-input'
         copy_source(source, diagnostic_input, inventory(source))
-        instrument(diagnostic_input)
-        diagnostic_repo = build(diagnostic_input, output / 'diagnostic-build', float(os.environ['AFD_RSI_TIMEOUT']))
-        diagnostic_expected = artifact_identity(diagnostic_repo)
-        diagnostic_argv = args + ['--mega-moe', '--reference-outputs', str(reference),
-                                 '--pipeline-trace-dir', str(output / 'traces/pipeline')]
-        process = execute(diagnostic_argv, diagnostic_repo, output / 'pipeline-process',
-                          float(os.environ['AFD_RSI_TIMEOUT']), runtime_env(diagnostic_repo, settings['devices']))
-        if process['status'] != 'completed' or not process['cleanup_complete']:
-            raise RuntimeError('pipeline diagnostic failed; inspect pipeline-process')
-        fixture_result(output / 'pipeline-process/stdout.log', plan['ranks'], diagnostic_expected,
-                       True, settings['attn_ranks'], 0, lengths=settings.get('lengths'))
-        assert artifact_identity(diagnostic_repo) == diagnostic_expected
-        verify_source(diagnostic_repo, read_json(output / 'diagnostic-build/source.lock.json'))
-        write_json(output / 'traces/pipeline/identity.json', {
-            'production_source_hash': lock['hash'], 'diagnostic_artifacts': diagnostic_expected,
-            'diagnostic_source_hash': read_json(output / 'diagnostic-build/source.lock.json')['hash'],
-            'overlay': mode,
-            'mode': 'eager diagnostic only; production timing artifacts unchanged'})
+        try:
+            instrument(diagnostic_input)
+        except ValueError as exc:
+            if not str(exc).startswith('unsupported MegaMoe diagnostic source:'):
+                raise
+            write_json(output / 'traces/pipeline-unsupported.json', {
+                'reason': str(exc), 'production_profile': 'unaffected; kernel_details.csv evidence still applies'})
+        else:
+            diagnostic_repo = build(diagnostic_input, output / 'diagnostic-build', float(os.environ['AFD_RSI_TIMEOUT']))
+            diagnostic_expected = artifact_identity(diagnostic_repo)
+            diagnostic_argv = args + ['--mega-moe', '--reference-outputs', str(reference),
+                                     '--pipeline-trace-dir', str(output / 'traces/pipeline')]
+            process = execute(diagnostic_argv, diagnostic_repo, output / 'pipeline-process',
+                              float(os.environ['AFD_RSI_TIMEOUT']), runtime_env(diagnostic_repo, settings['devices']))
+            if process['status'] != 'completed' or not process['cleanup_complete']:
+                raise RuntimeError('pipeline diagnostic failed; inspect pipeline-process')
+            fixture_result(output / 'pipeline-process/stdout.log', plan['ranks'], diagnostic_expected,
+                           True, settings['attn_ranks'], 0, lengths=settings.get('lengths'))
+            assert artifact_identity(diagnostic_repo) == diagnostic_expected
+            verify_source(diagnostic_repo, read_json(output / 'diagnostic-build/source.lock.json'))
+            write_json(output / 'traces/pipeline/identity.json', {
+                'production_source_hash': lock['hash'], 'diagnostic_artifacts': diagnostic_expected,
+                'diagnostic_source_hash': read_json(output / 'diagnostic-build/source.lock.json')['hash'],
+                'overlay': mode,
+                'mode': 'eager diagnostic only; production timing artifacts unchanged'})
 
 def case_spread(result):
     """Worst per-case relative spread across repetitions, in percent.
