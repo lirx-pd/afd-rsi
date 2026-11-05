@@ -360,6 +360,14 @@ def test_native_manifest_cannot_hide_changed_physical_artifacts(tmp_path):
     for path in (repo / 'afd_plugin/__init__.py', repo / 'afd_plugin/_C_ascend.so', api, kernel):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b'unit-test opaque artifact')
+    entrypoints = repo / 'vllm_afd_plugin.egg-info/entry_points.txt'
+    entrypoints.parent.mkdir(parents=True)
+    entrypoints.write_text('[vllm.general_plugins]\nafd = afd_plugin:register_afd\n')
+    artifact_identity(repo)
+    entrypoints.write_text('[vllm.general_plugins]\nafd = wrong:plugin\n')
+    with pytest.raises(ValueError, match='AFD vLLM plugin entry point'):
+        artifact_identity(repo)
+    entrypoints.write_text('[vllm.general_plugins]\nafd = afd_plugin:register_afd\n')
     manifest = build / 'native/artifacts.json'
     write_json(manifest, artifact_identity(repo))
     locked = campaign.artifacts(build, ['native/artifacts.json'], native=True)

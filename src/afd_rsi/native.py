@@ -1,6 +1,7 @@
 """Native eager/FULL graph experiments on a prepared local Ascend host."""
 
 import argparse
+import configparser
 import csv
 import hashlib
 import json
@@ -38,6 +39,12 @@ def artifact_identity(repo: Path) -> dict:
     if len(bindings) != 1:
         raise ValueError("need exactly one in-place AFD native binding")
     vendor = repo / "afd_plugin/_cann_ops_custom/vendors/afd-plugin"
+    entrypoints = repo / "vllm_afd_plugin.egg-info/entry_points.txt"
+    config = configparser.ConfigParser()
+    if (not config.read(entrypoints)
+            or config.get("vllm.general_plugins", "afd", fallback=None)
+            != "afd_plugin:register_afd"):
+        raise ValueError("isolated build does not expose the AFD vLLM plugin entry point")
     files = [repo / "afd_plugin/__init__.py", *bindings, vendor / "op_api/lib/libcust_opapi.so"]
     kernel_root = vendor / "op_impl/ai_core/tbe/kernel/ascend910_93"
     # One Mega transaction is the pull/FFN kernel plus the comm kernel.
@@ -76,7 +83,8 @@ def toolchain_fingerprint() -> dict:
 
 def build_key(snapshot: dict) -> str:
     return hashlib.sha256(json.dumps(
-        {"source": snapshot["hash"], "toolchain": toolchain_fingerprint()},
+        {"source": snapshot["hash"], "toolchain": toolchain_fingerprint(),
+         "build_recipe": "vllm-entrypoint-1"},
         sort_keys=True).encode()).hexdigest()
 
 
@@ -128,7 +136,7 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
     target = output / "source"
     copy_source(source, target, snapshot)
     write_json(output / "source.lock.json", snapshot)
-    result = execute([sys.executable, "setup.py", "build_ext", "--inplace"], target,
+    result = execute([sys.executable, "setup.py", "egg_info", "build_ext", "--inplace"], target,
                      output / "build", timeout,
                      {"SOC_VERSION": "910c", "MAX_JOBS": "8", "AFD_BUILD_JOBS": "8",
                       "AFD_BUILD_ASCEND_OPS": "1", "AFD_SKIP_ACLNN_BUILD": "0",

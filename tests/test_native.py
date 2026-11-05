@@ -146,13 +146,14 @@ def test_build_snapshot_sets_version_and_preserves_input(monkeypatch, tmp_path):
     observed = {}
 
     def execute(argv, cwd, logs, timeout, env):
-        observed.update(env=env, cwd=cwd)
+        observed.update(env=env, cwd=cwd, argv=argv)
         return {"status": "completed", "cleanup_complete": True}
 
     monkeypatch.setattr(native, "execute", execute)
     monkeypatch.setattr(native, "artifact_identity", lambda repo: IDENTITY)
     target = native.build(source, output, 10)
     assert observed["cwd"] == target and target != source
+    assert observed["argv"][2:4] == ["egg_info", "build_ext"]
     assert observed["env"]["AFD_SKIP_ACLNN_BUILD"] == "0"
     assert observed["env"]["SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM_AFD_PLUGIN"].startswith("0.0.0+rsi.")
     assert (source / "setup.py").read_text() == "# input\n"

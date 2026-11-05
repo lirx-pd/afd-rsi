@@ -16,6 +16,7 @@ from afd_rsi.runner import execute as real_execute
 ROOT = Path(__file__).resolve().parents[1]
 
 ARTIFACTS = {
+    'vllm_afd_plugin.egg-info/entry_points.txt': '[vllm.general_plugins]\nafd = afd_plugin:register_afd\n',
     'afd_plugin/__init__.py': 'plugin',
     'afd_plugin/_C_ascend.so': 'binding',
     'afd_plugin/_cann_ops_custom/vendors/afd-plugin/op_api/lib/libcust_opapi.so': 'api',
