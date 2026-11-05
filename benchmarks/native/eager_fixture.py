@@ -591,7 +591,8 @@ def main():
                                 3
                             )
                             session._graph_output.fill_(123)
-            runner._graph_receiver_exited = True
+            if not args.mega_moe:
+                runner._graph_receiver_exited = True
         except Exception as exc:
             errors.append(exc)
             print(json.dumps({"rank": rank, "service_error": repr(exc)}), flush=True)
@@ -706,7 +707,7 @@ def main():
         # Production teardown for the pull protocol: drain the window, publish
         # pull_stopped, and only then allow shutdown. The Attention side publishes
         # pull_quiet from its own close(), so both run after the barrier above.
-        if args.mega_moe and not args.full_graph:
+        if args.mega_moe:
             runner.drain()
             runner.session.finish_receiver()
             runner._graph_receiver_exited = True
