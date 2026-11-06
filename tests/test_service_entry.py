@@ -70,6 +70,37 @@ def test_service_requires_explicit_target_repo():
     assert "explicit --repo" in result.stderr
 
 
+def test_gsm8k_probe_checks_dependencies_before_startup(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/service'))
+    from afd_e2e import probe
+
+    monkeypatch.setattr(probe, 'check_ports', lambda *args: None)
+    args = SimpleNamespace(api_host='127.0.0.1', ports=(), nic=None,
+                           model=tmp_path / 'missing', devices='0',
+                           gsm8k=True, local_dataset=False)
+    def missing(name):
+        raise ModuleNotFoundError(f"No module named '{name}'")
+    monkeypatch.setattr(probe.importlib, 'import_module', missing)
+    with pytest.raises(RuntimeError, match='GSM8K requires lm_eval'):
+        probe.probe(args)
+    args.gsm8k = False
+    assert probe.probe(args)['requested_devices'] == ['0']
+
+
+def test_preflight_requests_gsm8k_only_for_accuracy_run(tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/service'))
+    from afd_e2e.cli import parser
+    from afd_e2e.config import from_args
+    from afd_e2e.runner import _preflight_command
+
+    base = ['run', '--model', 'v4-flash', '--model-path', '/prepared/model',
+            '--repo', str(tmp_path), '--device', ','.join(map(str, range(16)))]
+    accuracy = from_args(parser().parse_args(base + ['--test', 'gsm8k']))
+    smoke = from_args(parser().parse_args(base + ['--test', 'smoke']))
+    assert '--gsm8k' in _preflight_command(accuracy, accuracy.devices)
+    assert '--gsm8k' not in _preflight_command(smoke, smoke.devices)
+
+
 def test_service_rejects_removed_async_configuration_before_starting():
     result = invoke("plan", "--repo", "/work/target", "--comm", "async", "--moe-ubatching", "on")
     assert result.returncode == 2

@@ -161,10 +161,18 @@ def request_context(run, plan, best, records, number, router=None):
                     snippets.append({'file': name, 'tail': file.read_text(errors='replace')[-4000:]})
     total = plan['search']['max_rounds']
     deep_rounds = 1 if total == 1 else min(total - 1, (2 * total + 2) // 3)
+    global_redesign = number == plan['search'].get('global_redesign_round')
     strategy = {
-        'mode': 'deep' if number <= deep_rounds else 'incremental',
+        'mode': 'global-redesign' if global_redesign else 'deep' if number <= deep_rounds else 'incremental',
         'round': number, 'max_rounds': total, 'deep_rounds': deep_rounds,
-        'guidance': ('Prioritize substantial source-backed bottleneck changes, including tile scheduling, '
+        'guidance': ('Analyze the full Attention-to-FFN critical path: source readiness, RX/pull, packing and '
+            'quantization, GMM1, activation, GMM2, output/TX, synchronization and overlap. Separate producer '
+            'waits from intrinsic work. Compare architectural alternatives and propose one cohesive redesign '
+            'across allowed files; replacing a kernel or adding a new implementation is permitted. Do not '
+            'default to a local tuning change. Preserve protocol, graph, quantization and numerical contracts; '
+            'state exact missing evidence if no safe redesign can be justified.'
+            if global_redesign else
+            'Prioritize substantial source-backed bottleneck changes, including tile scheduling, '
             'buffer lifetimes or coordinated tiling. A coherent hypothesis may need multiple allowed files. '
             'Prove ownership, synchronization and caller compatibility; do not shrink a justified change to one line.'
             if number <= deep_rounds else
@@ -199,7 +207,7 @@ def request_context(run, plan, best, records, number, router=None):
                    'When profile evidence exists, cite it and explain a source-backed bottleneck hypothesis. '
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
-                   'Follow the supplied deep/incremental strategy without changing allowed_files or acceptance gates.'}
+                   'Follow the supplied strategy without changing allowed_files or acceptance gates.'}
     if plan['search'].get('models'):
         # Frozen per-stage models; an adapter that owns its policy ignores this.
         context['models'] = plan['search']['models']

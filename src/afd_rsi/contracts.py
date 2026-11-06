@@ -235,7 +235,7 @@ def load_recipe(path: Path) -> dict:
         search = config["search"]
         required = {"max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
         optional = {'goal', 'router', 'explore_max_fraction', 'info_floor', 'margin', 'features',
-                    'provider', 'agent_command', 'models'}
+                    'provider', 'agent_command', 'models', 'global_redesign_round'}
         if not required <= set(search) or set(search) - required - optional:
             raise ValueError("invalid search settings")
         if 'goal' in search and (not isinstance(search['goal'], str) or not search['goal'].strip()):
@@ -244,6 +244,10 @@ def load_recipe(path: Path) -> dict:
         argv_list(search["agent_command"], "agent command")
         for key in ("max_rounds", "max_calls", "max_context_bytes"):
             positive(search[key], key, integer=True)
+        if 'global_redesign_round' in search:
+            positive(search['global_redesign_round'], 'global_redesign_round', integer=True)
+            if search['global_redesign_round'] > search['max_rounds']:
+                raise ValueError('global_redesign_round exceeds max_rounds')
         positive(search["agent_timeout_seconds"], "agent timeout")
         if not isinstance(search["experience_dirs"], list) or not all(isinstance(item, str) and item for item in search["experience_dirs"]):
             raise ValueError("experience_dirs must be a list")

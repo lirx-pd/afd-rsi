@@ -101,3 +101,24 @@ def test_adapter_refreshes_request_in_shared_workspace_across_dispatches(tmp_pat
         module.propose(args)
     assert calls == [(session_dir / 'workspace', 'gpt-6-astra', 1, None),
                      (session_dir / 'workspace', 'gpt-6-astra', 2, SID)]
+
+
+def test_global_redesign_uses_architecture_prompts(tmp_path, monkeypatch):
+    module = adapter()
+    monkeypatch.setattr(module.shutil, 'which', lambda _: 'codex')
+    prompts = []
+
+    def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
+        prompts.append(prompt)
+        value = {'stop': False, 'reason': 'fixture', 'proposals': [{'evidence': ['baseline']}]}
+        write_json(output, value)
+        return value, []
+
+    monkeypatch.setattr(module, 'invoke', invoke)
+    request = tmp_path / 'request.json'
+    write_json(request, {'strategy': {'mode': 'global-redesign'}, 'evidence': [{'id': 'baseline'}]})
+    args = type('Args', (), dict(request=request, output=tmp_path / 'response.json', session_dir=tmp_path))()
+    module.propose(args)
+    assert 'Compare at least two end-to-end architectures' in prompts[0]
+    assert 'Rewriting a kernel or adding a new implementation' in prompts[1]
+    assert 'not a local parameter tweak' in (tmp_path / 'workspace/AGENTS.md').read_text()

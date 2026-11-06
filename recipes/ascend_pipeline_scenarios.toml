@@ -15,7 +15,7 @@ timeout_seconds = 1800
 # hours while its status is polled, so raise this rather than restarting a run.
 budget_seconds = 86400
 min_gain_pct = 2.0
-allowed_files = ["csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel/*", "csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_host/*", "csrc/npu/ascend_kernels/afd_mega_moe_comm/op_kernel/*", "csrc/npu/ascend_kernels/utils/op_kernel/afd_native_mega_workspace.h"]
+allowed_files = ["csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_kernel/*", "csrc/npu/ascend_kernels/afd_mega_moe_pull_native/op_host/*", "csrc/npu/ascend_kernels/afd_mega_moe_comm/op_kernel/*", "csrc/npu/ascend_kernels/utils/op_kernel/afd_native_mega_workspace.h", "csrc/npu/ascend_kernels/utils/op_kernel/afd_pull_protocol.h", "csrc/npu/ascend_kernels/utils/op_kernel/afd_pull_layout.h"]
 artifacts = ["native/artifacts.json"]
 
 [commands]
@@ -62,8 +62,11 @@ goal = "Optimize MegaMoe tile scheduling, expert packing, buffer ownership and c
 agent_command = ["{python}", "{foundation}/benchmarks/agents/codex_agent.py", "--request", "{request}", "--output", "{response}"]
 max_rounds = 9
 max_calls = 9
+# Reserve the first proposal for an end-to-end architecture redesign.
+global_redesign_round = 1
 agent_timeout_seconds = 1200
-max_context_bytes = 524288
+# Leave room for the full pull protocol and layout sources in the redesign request.
+max_context_bytes = 589824
 experience_dirs = []
 
 # Direction routing: category abilities are estimated from measured gain, not raw

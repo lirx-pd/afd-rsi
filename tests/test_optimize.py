@@ -14,6 +14,26 @@ from afd_rsi.runner import owned_alive, stop_owned
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_gsm8k_dependencies_checked_before_campaign_launch(tmp_path):
+    class Executor:
+        base = '/remote'
+        calls = []
+
+        def python(self, *args):
+            self.calls.append(args)
+
+    executor = Executor()
+    optimize.preflight_service_dependencies(
+        tmp_path, {'recipe': '[service]\nargs = ["--test", "smoke,gsm8k", "--dataset-path", "/data"]'}, executor)
+    assert len(executor.calls) == 1
+    assert 'check_gsm8k_dependencies' in executor.calls[0][0]
+    assert executor.calls[0][1:] == ('/remote/controller/benchmarks/service', '1')
+    assert read_json(tmp_path / 'status.json')['activity'] == 'preflight'
+    optimize.preflight_service_dependencies(
+        tmp_path, {'recipe': '[service]\nargs = ["--test", "smoke"]'}, executor)
+    assert len(executor.calls) == 1
+
+
 def fake_codex(tmp_path, monkeypatch):
     script = tmp_path / 'bin/codex'
     script.parent.mkdir()
@@ -91,7 +111,9 @@ def test_strategy_changes_with_rounds(tmp_path):
     # Exercise actual request generation using the normal baseline fixture.
     from afd_rsi import campaign
     recipe=tmp_path/'recipe.toml'
-    recipe.write_text((ROOT/'recipes/cpu_search.toml').read_text().replace('../examples/source',str(ROOT/'examples/source')))
+    recipe.write_text((ROOT/'recipes/cpu_search.toml').read_text()
+                      .replace('../examples/source',str(ROOT/'examples/source'))
+                      .replace('max_rounds = 9', 'max_rounds = 9\nglobal_redesign_round = 1'))
     run=campaign.prepare(recipe,tmp_path/'run',ROOT)
     search.search(run,ROOT,external=True)
     plan=campaign.load(run,ROOT); best=read_json(run/'search/best.json')
@@ -101,9 +123,12 @@ def test_strategy_changes_with_rounds(tmp_path):
     total=plan['search']['max_rounds']
     deep_rounds=1 if total==1 else min(total-1,(2*total+2)//3)
     early=search.request_context(run,plan,best,[],1)
+    middle=search.request_context(run,plan,best,[],2)
     late=search.request_context(run,plan,best,[],deep_rounds+1)
     assert deep_rounds+1<=total, 'the fixture budget must reserve an incremental round'
-    assert early['strategy']['mode']=='deep'
+    assert early['strategy']['mode']=='global-redesign'
+    assert 'Compare architectural alternatives' in early['strategy']['guidance']
+    assert middle['strategy']['mode']=='deep'
     assert late['strategy']['mode']=='incremental'
     assert early['allowed_files']==late['allowed_files']==plan['allowed_files']
     assert early['objective']==late['objective']
@@ -134,7 +159,7 @@ def test_status_checks_wrapper_not_finished_child(tmp_path, monkeypatch):
 def test_interrupted_proposer_is_not_retried(tmp_path,monkeypatch):
     from afd_rsi.evidence import digest
     job=tmp_path/'job';job.mkdir()
-    write_json(job/'job.json',{'executor':'local'})
+    write_json(job/'job.json',{'executor':'local','recipe':''})
     write_json(job/'status.json',{'phase':0,'status':'running'})
     request=tmp_path/'request.json';write_json(request,{'finite':'fixture'})
     pending={'call':1,'request':'request.json','response':'proposal.json','request_hash':digest(request)}

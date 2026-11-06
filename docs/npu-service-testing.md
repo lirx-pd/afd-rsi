@@ -25,7 +25,10 @@
 
 使用已安装并匹配的 CANN、torch-npu、vLLM、vLLM-Ascend、待测 afd-plugin、
 CAM/Layered/MegaMoe 算子、模型权重；httpx 用于 HTTP 请求。GSM8K 需要
-lm_eval==0.4.12 及对应数据。工具不会安装或替换推理依赖。
+lm_eval==0.4.12、datasets==4.4.1 及对应数据；使用本地 Parquet 数据时还需要
+pyarrow==21.0.0 和 PyYAML。启用 GSM8K 时，`optimize` 会在部署框架后、启动算子基线前
+用执行端 Python 检查依赖；服务预检也会在模型启动前用 `--python` 指定的解释器再次导入，
+缺失即失败。工具不会安装或替换推理依赖。
 
 `--python` 选择预检和测试 Python，`--vllm-bin` 选择实际服务 CLI，两者必须
 属于所验证的环境。必须显式传 `--repo` 指定被测 checkout。它负责 Python 路径

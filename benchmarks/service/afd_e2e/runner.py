@@ -214,6 +214,10 @@ def _preflight_command(case: Case, devices: tuple[str, ...]) -> tuple[str, ...]:
     ]
     if nic:
         probe_cmd.extend(("--nic", nic))
+    if "gsm8k" in case.tests:
+        probe_cmd.append("--gsm8k")
+        if case.dataset_path:
+            probe_cmd.append("--local-dataset")
     return tuple(probe_cmd)
 
 

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import importlib.metadata
 import json
 import socket
+import sys
 from pathlib import Path
 
 
@@ -18,10 +20,23 @@ def check_ports(host: str, ports: tuple[int, ...]) -> None:
             endpoint.bind((host, port))
 
 
+def check_gsm8k_dependencies(local_dataset: bool) -> None:
+    modules = ("lm_eval", "datasets", "httpx")
+    if local_dataset:
+        modules += ("pyarrow.parquet", "yaml")
+    for name in modules:
+        try:
+            importlib.import_module(name)
+        except ImportError as exc:
+            raise RuntimeError(f"GSM8K requires {name} in {sys.executable}: {exc}") from exc
+
+
 def probe(args) -> dict:
     check_ports(args.api_host, tuple(args.ports))
     if args.nic:
         socket.if_nametoindex(args.nic)
+    if args.gsm8k:
+        check_gsm8k_dependencies(args.local_dataset)
     model = Path(args.model)
     hashes = {}
     config = {}
@@ -88,6 +103,8 @@ def main() -> None:
         "--ports", required=True, type=lambda value: [int(p) for p in value.split(",")]
     )
     parser.add_argument("--nic")
+    parser.add_argument("--gsm8k", action="store_true")
+    parser.add_argument("--local-dataset", action="store_true")
     args = parser.parse_args()
     print("AFD_E2E_PROBE " + json.dumps(probe(args), separators=(",", ":")), flush=True)
 

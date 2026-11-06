@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -24,7 +25,8 @@ from .workspace import copy_source, inventory
 MARKER = 'AFD_RSI_STATUS:'
 TERMINAL = {'finished', 'error'}
 ACTIVITIES = {'auth': '检查 iTASK 登录/权限', 'snapshot': '封存源码和框架', 'task_start': '等待 iTASK 启动/迁移（最多 30 分钟）',
-              'upload': '上传并部署框架', 'collect': '下载并校验结果', 'resume': '恢复后台任务'}
+              'upload': '上传并部署框架', 'preflight': '预检评测依赖',
+              'collect': '下载并校验结果', 'resume': '恢复后台任务'}
 PHASES = {'build': '构建算子', 'correctness': '算子精度验证', 'benchmark': '算子性能比较',
           'profile': '采集 profiling 和内部打点', 'service': '模型服务验收',
           'screening': '候选初筛', 'confirming': '独立复测', 'awaiting_agent': '等待 Agent 提案'}
@@ -392,6 +394,21 @@ def stage(job, config, executor):
     write_json(state, {'base': executor.base, 'payload_sha256': digest(archive)})
 
 
+def preflight_service_dependencies(job, config, executor):
+    args = tomllib.loads(config['recipe']).get('service', {}).get('args', [])
+    tests = [arg.split('=', 1)[1] for arg in args if arg.startswith('--test=')]
+    tests += [args[i + 1] for i, arg in enumerate(args[:-1]) if arg == '--test']
+    if not {'gsm8k', 'all'} & {name.strip() for value in tests for name in value.split(',')}:
+        return
+    local_dataset = any(arg == '--dataset-path' or arg.startswith('--dataset-path=') for arg in args)
+    event(job, 'preparing', activity='preflight')
+    executor.python(
+        'import sys; sys.path.insert(0, sys.argv[1]); '
+        'from afd_e2e.probe import check_gsm8k_dependencies; '
+        'check_gsm8k_dependencies(sys.argv[2] == "1")',
+        executor.base + '/controller/benchmarks/service', str(int(local_dataset)))
+
+
 def remote_status(base, phase):
     run = base / 'campaign'
     state = read_json(run / 'search/state.json') if (run / 'search/state.json').exists() else {}
@@ -594,6 +611,7 @@ def worker(job):
         executor = Executor(config, job)
         try:
             stage(job, config, executor)
+            preflight_service_dependencies(job, config, executor)
             phase = read_json(job / 'status.json').get('phase', 0)
             previous = None
             while True:

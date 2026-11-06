@@ -82,13 +82,13 @@ DEFAULT_KEY_ENV = 'DEEPSEEK_API_KEY'
 DEFAULT_MAX_CHARS = 200_000
 
 SYSTEM_RULES = (
-    'Propose a minimal candidate patch using only the supplied evidence and repository-local knowledge.\n'
+    'Propose a complete candidate patch using only the supplied evidence and repository-local knowledge.\n'
     'Do not change files, gates, validators, budgets, or knowledge. Do not read credentials or external repositories.\n'
     'Return one JSON object matching the supplied schema and nothing else.\n'
     'The evidence array must contain only exact IDs from the request, such as baseline, never explanations.\n'
     'The current request is authoritative; older history and profiling may be stale.\n'
     'Label a hypothesis as a hypothesis.\n'
-    'Follow strategy: early deep changes may span allowed files; late changes should be localized.\n'
+    'Follow strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
     'Choose up to three distinct proposals; stop when there is no justified change.'
 )
 
@@ -100,7 +100,7 @@ ANALYSIS_TASK = (
 )
 
 CODE_TASK = (
-    'Implement only the justified hypotheses from your analysis as minimal complete patches. Preserve their evidence '
+    'Implement only the justified hypotheses from your analysis as complete patches. Preserve their evidence '
     'IDs and explain any implementation limits. Return stop=true if no safe complete patch can be produced.'
 )
 

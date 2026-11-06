@@ -63,6 +63,7 @@ def main():
 
 def propose(args):
     request = json.loads(args.request.read_text())
+    global_redesign = request.get('strategy', {}).get('mode') == 'global-redesign'
     executable = shutil.which('codex')
     if not executable:
         raise ValueError('Codex CLI is not installed; use an authenticated proposer host and file exchange')
@@ -80,14 +81,17 @@ def propose(args):
     (workspace / 'analysis.json').unlink(missing_ok=True)
     (workspace / 'request.json').write_text(json.dumps(request, ensure_ascii=False, indent=2) + '\n')
     (workspace / 'AGENTS.md').write_text(
-        'Propose a minimal candidate patch using only request.json evidence and repository-local knowledge.\n'
+        'Propose a complete candidate patch using only request.json evidence and repository-local knowledge.\n'
         'Do not change files, gates, validators, budgets, or knowledge. Do not read credentials or external repositories.\n'
         'Return JSON matching the supplied schema. Analysis omits patches; coding supplies complete git-apply unified diffs.\n'
         'The evidence array must contain only exact IDs from request.json, such as baseline, never explanations.\n'
         'This conversation persists across rounds. The current request.json is authoritative; old source and evidence may be stale.\n'
         'Label a hypothesis as a hypothesis.\n'
-        'Follow request.strategy: early deep changes may span allowed files; late changes should be localized.\n'
-        'Choose up to three distinct proposals; stop when there is no justified change.\n')
+        'Follow request.strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
+        'Choose up to three distinct proposals; stop when there is no justified change.\n'
+        + ('For this global-redesign round, analyze the whole pipeline and choose one coherent architecture, '
+           'not a local parameter tweak. Large source changes are allowed when the evidence supports them.\n'
+           if global_redesign else ''))
     schema = args.output.parent / 'proposal.schema.json'
     contract = json.loads(Path(__file__).with_name('proposal.schema.json').read_text())
     if request.get('proposal_requirements'):
@@ -108,12 +112,18 @@ def propose(args):
     analysis_schema = args.output.parent / 'analysis.schema.json'
     analysis_schema.write_text(json.dumps(analysis_contract) + '\n')
     analysis_path = args.output.parent / 'analysis.json'
-    analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
+    analysis_prompt = (
         'Read request.json and AGENTS.md. Analyze evidence, profiling and history. '
         'Choose falsifiable optimization hypotheses and controlled experiments. '
         'When proposal_requirements is present, provide the complete experiment and required evidence IDs; '
         'use measured waits/stages, explain how the source change hides or removes them, and predict an observable '
-        'change with a rejection criterion. Stop rather than guess. Do not write patches.',
+        'change with a rejection criterion. Stop rather than guess. Do not write patches.')
+    if global_redesign:
+        analysis_prompt += (' Compare at least two end-to-end architectures across RX/pull, packing, GMM1, '
+            'activation, GMM2 and output/TX. Choose one cohesive redesign; distinguish source-readiness waits '
+            'from FFN work and do not stop merely because earlier local tweaks failed.')
+    analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
+        analysis_prompt,
         'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events', session)
     (workspace / 'analysis.json').write_text(json.dumps(analysis) + '\n')
     (args.output.parent / 'usage.json').write_text(json.dumps({'turns': usages}) + '\n')
@@ -128,10 +138,15 @@ def propose(args):
                     or not all(isinstance(v, str) and v.strip() for v in experiment.values())
                     or not set(requirements['required_evidence_ids']) <= set(proposal['evidence'])):
                 raise ValueError('analysis lacks a falsifiable experiment or required incumbent evidence; no coding call')
+    code_prompt = ('Read request.json, AGENTS.md and analysis.json. Implement only the justified hypotheses '
+        'as complete patches. Preserve their evidence IDs and explain any implementation limits. '
+        'Return stop=true if no safe complete patch can be produced.')
+    if global_redesign:
+        code_prompt += (' Implement the selected coherent redesign, including all affected allowed files and '
+            'synchronization contracts. Rewriting a kernel or adding a new implementation is permitted; '
+            'do not shrink the architecture to a local tweak merely to minimize the diff.')
     _, code_usages = invoke(executable, workspace, schema, args.output,
-        'Read request.json, AGENTS.md and analysis.json. Implement only the justified hypotheses '
-        'as minimal complete patches. Preserve their evidence IDs and explain any implementation limits. '
-        'Return stop=true if no safe complete patch can be produced.',
+        code_prompt,
         'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
     (args.output.parent / 'usage.json').write_text(json.dumps({'turns': usages + code_usages}) + '\n')
 
