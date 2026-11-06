@@ -108,3 +108,18 @@ exclude all of `rx_select` except header validation, including some FFN selectio
 work. Without code 60 the FFN shares are unavailable. These are per-core sums,
 not request or kernel latency. The instrumented tree is a separate eager diagnostic build;
 production timing and graph replay stay uninstrumented.
+
+`overlap` compares sampled Cube/Vector, Vector/Vector and Cube/Cube core pairs
+within the same receive round. The entry (`sync_in`) and exit (`sync_out`)
+barrier spans bound the offset between the two core clocks; their intersection
+gives a range, not an exact alignment. Overlap is reported as a minimum and
+maximum over that range, conditional on equal clock rates and a stable offset
+within the round. Inconsistent or missing barriers make the pair unavailable.
+These assumptions are not independent clock calibration. GMM comparisons also
+report overlap after removing marked input or activation waits, when those wait
+markers exist. `pull_rows` covers Pull/RX and packing; compare it with GMM1 to
+see potential prefetch/compute overlap. Activation may still wait internally. `tx_remote` represents
+enqueue and drain calls, not the lifetime of asynchronous DMA on the link.
+Intervals describe sampled call spans, not Cube/Vector hardware occupancy,
+complete critical-path latency, or proof of performance gain. Rounds are
+aggregated across captured fixture cases; consult raw records for context.

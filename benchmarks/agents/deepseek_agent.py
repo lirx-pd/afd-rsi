@@ -96,7 +96,8 @@ ANALYSIS_TASK = (
     'Analyze evidence, profiling and history. Choose falsifiable optimization hypotheses and controlled experiments. '
     'When proposal_requirements is present, provide the complete experiment and required evidence IDs; use measured '
     'waits/stages, explain how the source change hides or removes them, and predict an observable change with a '
-    'rejection criterion. Stop rather than guess. Do not write patches.'
+    'rejection criterion. Account for stage overlap and unhidden work; do not add concurrent durations. '
+    'Stop rather than guess. Do not write patches.'
 )
 
 CODE_TASK = (

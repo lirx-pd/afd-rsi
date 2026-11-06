@@ -64,6 +64,11 @@ RX/pull, packing, GMM, activation and output/TX path after source readiness and 
 replace or add allowed kernel files as one coherent design. Do not mistake a
 producer wait for an FFN hotspot, or a large diff for a measured speedup; the same numerical,
 native and model-service gates apply.
+Compare FFN stage overlap and internal waits before using a stage's cycle share
+as a priority: a large concurrent stage may already be hidden. Sampled-core
+overlap bounds and TX call spans are diagnostic, not a full critical path or
+asynchronous communication utilization; validate any masking hypothesis using
+unprofiled native and model-service measurements.
 
 Under operator-first, proposals require experiment.bottleneck, mechanism,
 prediction, falsification and risk. Cite baseline measurements and the incumbent

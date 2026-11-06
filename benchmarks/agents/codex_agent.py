@@ -117,7 +117,8 @@ def propose(args):
         'Choose falsifiable optimization hypotheses and controlled experiments. '
         'When proposal_requirements is present, provide the complete experiment and required evidence IDs; '
         'use measured waits/stages, explain how the source change hides or removes them, and predict an observable '
-        'change with a rejection criterion. Stop rather than guess. Do not write patches.')
+        'change with a rejection criterion. Account for measured stage overlap and remaining unhidden work; '
+        'do not add concurrent stage durations. Stop rather than guess. Do not write patches.')
     if global_redesign:
         analysis_prompt += (' Compare at least two FFN architectures across RX/pull, packing, GMM1, '
             'activation, GMM2 and output/TX. Choose one cohesive redesign using FFN work after source readiness; '

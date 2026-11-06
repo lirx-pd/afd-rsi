@@ -32,6 +32,7 @@ MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
 
 from . import skills
 from .evidence import digest, read_json, write_json
+from .pipeline_overlap import analyze_overlap
 from .runner import execute
 from .workspace import copy_source, inventory
 
@@ -303,13 +304,14 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
         summaries.append({'rank': rank, 'device_task_total_us': total, 'top_kernels': top})
     pipeline = directory / 'pipeline'
     internal = analyze_pipeline(pipeline, attn_ranks, ranks) if pipeline.exists() else None
-    return {'pipeline': internal, 'scope': 'native synthetic seven-case transactions; separate profiled execution',
+    return {'pipeline': internal, 'scope': 'configured native synthetic transactions; separate profiled execution',
             'evidence': evidence, 'ffn_ranks': summaries,
             'analysis': 'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
                 'device trace alone cannot separate Cube, Vector, MTE or communication time; the '
                 'instrumented diagnostic names those stages when a pipeline trace is present. '
                 'Use FFN active shares after excluding source readiness and sync_in, not raw kernel '
-                'duration or source polling, to prioritize FFN work. FFN stages can contain internal waits. '
+                'duration or source polling. Inspect the bounded sampled-core overlap and dependency waits '
+                'before selecting a bottleneck; FFN stage sums overlap and are not elapsed time. '
                 'Child intervals are nested diagnostics, not additional '
                 'kernel time. Compare each child with its parent on the same core rather than '
                 'treating summed spans as critical-path latency. '
@@ -345,13 +347,14 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
                             for start, end, code, sequence in core['events'] if sequence in (0, 1, 2, 3, 4)]))
         summaries.append(dict(rank=rank, transactions=len(transactions), summed_core_cycles=totals,
                               ffn_execution=ffn_execution_cycles(totals),
+                              overlap=analyze_overlap(transactions),
                               named_stages=named_stage_cycles(totals),
                               substage_breakdown=named_substage_cycles(totals),
                               first_transaction=transactions[0]['work'], selected_cores=selected))
     return dict(identity=identities, ffn_ranks=summaries,
-                scope='instrumented eager diagnostic of seven-case fixture; not promotion timing',
+                scope='instrumented eager diagnostic of configured native fixture; not promotion timing',
                 warning='Per-core cycles include waits. Selected events are [start,end,code,sequence], '
-                    'relative to each core entry; cross-core clocks are not aligned. '
+                    'relative to each core entry; overlap uses barrier-bounded clock offsets with explicit assumptions. '
                     'Summed spans are neither critical-path latency nor PMU activity.')
 
 

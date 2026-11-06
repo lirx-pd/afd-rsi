@@ -315,3 +315,17 @@ def test_internal_pipeline_trace_rejects_overflow_and_missing_cores(tmp_path, mo
     (tmp_path / 'rank-1.json').write_text(json.dumps([transaction]))
     with pytest.raises(ValueError, match='incomplete pipeline cores'):
         analyze_pipeline(tmp_path, 1, 2)
+
+
+def test_pipeline_summary_contains_cross_core_overlap(tmp_path):
+    from afd_rsi.native import analyze_pipeline
+    cores = [dict(core=index, start=0, end=300, events=[]) for index in range(72)]
+    cores[0]['events'] = [[100, 110, 47, 0], [120, 160, 43, 0], [190, 200, 48, 0]]
+    cores[48]['events'] = [[95, 105, 47, 0], [115, 125, 74, 0],
+                           [115, 155, 42, 0], [185, 195, 48, 0]]
+    write_json(tmp_path / 'identity.json', {})
+    write_json(tmp_path / 'rank-1.json', [{'work': {}, 'cores': cores}])
+    profile = analyze_pipeline(tmp_path, 1, 2)
+    pair = profile['ffn_ranks'][0]['overlap']['pairs'][0]
+    assert pair['stages']['gmm1_activation']['phase_overlap_cycles'] == [30, 40]
+    assert pair['stages']['gmm1_activation']['overlap_without_marked_gmm_wait_cycles'] == [20, 30]
