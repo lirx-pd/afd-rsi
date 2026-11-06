@@ -52,6 +52,7 @@ PULL_SUBSTAGES = {
     73: ('combine', 'output_wait_gmm2'),
     74: ('gmm1', 'gmm1_input_wait'),
     75: ('gmm2', 'gmm2_activation_wait'),
+    76: ('rx_select', 'rx_source_wait'),
 }
 
 
@@ -251,7 +252,15 @@ def instrument_pull(repo):
         '#ifdef AFD_TRACE_PULL_DIAGNOSTIC\n'
         '        ::AfdTrace::Phase &trace, uint32_t traceRound\n'
         '#endif\n'
-        '    ) {')
+        '    ) {\n'
+        '#ifdef AFD_TRACE_PULL_DIAGNOSTIC\n'
+        '        const auto sourceWait = trace.Begin(76, traceRound);\n'
+        '#endif')
+    protocol = replace_checked(protocol, '                if (!ready) continue;',
+        '                if (!ready) continue;\n'
+        '#ifdef AFD_TRACE_PULL_DIAGNOSTIC\n'
+        '                trace.End(76, traceRound, sourceWait);\n'
+        '#endif')
     protocol = replace_checked(protocol,
         '                    if (commit < expected) { ready = false; break; }',
         '                    if (commit < expected) { ready = false; break; }\n'

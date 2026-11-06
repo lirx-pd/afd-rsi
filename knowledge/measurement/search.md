@@ -59,10 +59,10 @@ not override that score. Do not describe an unselected proposal as an experiment
 
 Unified background execution and deep-to-incremental strategy are specified in
 [orchestration](orchestration.md). The controller still owns all acceptance.
-When a recipe reserves `global_redesign_round`, that dispatch compares the full
-source-readiness, RX/pull, packing, GMM, activation and output/TX path and may
+When a recipe reserves `global_redesign_round`, that dispatch compares the FFN
+RX/pull, packing, GMM, activation and output/TX path after source readiness and may
 replace or add allowed kernel files as one coherent design. Do not mistake a
-producer wait or a large diff for a measured speedup; the same numerical,
+producer wait for an FFN hotspot, or a large diff for a measured speedup; the same numerical,
 native and model-service gates apply.
 
 Under operator-first, proposals require experiment.bottleneck, mechanism,

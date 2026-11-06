@@ -92,13 +92,19 @@ events; every core writes the header the decoder requires. The nested breakdown
 adds `rx_select` (60), its `rx_header_validation` (61), `rx_metadata` (62),
 `rx_commit_check` (63), `rx_group_plan` (64), `rx_publish` (65), `rx_layer_map`
 (66), `output_local` (70), `tx_remote` (71), `output_sync` (72),
-`output_wait_gmm2` (73), and GMM input waits (74..75). The report keeps parent
+`output_wait_gmm2` (73), GMM input waits (74..75), and `rx_source_wait` (76).
+The latter ends when a complete source is ready and contains header validation.
+The report keeps parent
 and child cycle sums separate and gives each child's share of its parent;
 `residual_cycles` contains unmarked work and trace overhead. `rx_select` spans
 source polling plus header checks. Its residual after `rx_header_validation`
 is polling, state reads and instrumentation overhead, not a pure wait timer.
 `tx_remote` includes the final DMA drain; earlier `Pump` intervals can enqueue
 asynchronous copies. Compare events on the same core. Summed intervals are not
-critical-path latency, and `active_share_pct` excludes only `sync_in`, leaving
-other waits inside. The instrumented tree is a separate eager diagnostic build;
+critical-path latency. `active_share_pct` and `ffn_core_cycles` exclude `sync_in`
+and the source-readiness interval except measured header validation; FFN internal
+dependency waits remain included. Older traces without code 76 conservatively
+exclude all of `rx_select` except header validation, including some FFN selection
+work. Without code 60 the FFN shares are unavailable. These are per-core sums,
+not request or kernel latency. The instrumented tree is a separate eager diagnostic build;
 production timing and graph replay stay uninstrumented.

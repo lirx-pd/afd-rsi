@@ -119,6 +119,7 @@ def test_global_redesign_uses_architecture_prompts(tmp_path, monkeypatch):
     write_json(request, {'strategy': {'mode': 'global-redesign'}, 'evidence': [{'id': 'baseline'}]})
     args = type('Args', (), dict(request=request, output=tmp_path / 'response.json', session_dir=tmp_path))()
     module.propose(args)
-    assert 'Compare at least two end-to-end architectures' in prompts[0]
+    assert 'Compare at least two FFN architectures' in prompts[0]
+    assert 'exclude Attention submission waits' in prompts[0]
     assert 'Rewriting a kernel or adding a new implementation' in prompts[1]
     assert 'not a local parameter tweak' in (tmp_path / 'workspace/AGENTS.md').read_text()

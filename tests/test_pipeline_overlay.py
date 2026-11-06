@@ -172,6 +172,7 @@ PULL_PROTOCOL = '''class Transport {
                         Fail(source, -2); return false;
                         Fail(source, -3); return false;
                     if (Read(header + COMMIT * ALIGNMENT) != commit) { ready = false; break; }
+                if (!ready) continue;
     }
     __aicore__ void PrepareRound(GM_ADDR batch, GM_ADDR groupCounts, uint64_t capacity) {
         const bool continuing = ReadState(SOURCE) >= 0;
@@ -225,6 +226,7 @@ def test_pull_native_overlay_names_every_stage_of_a_round(tmp_path, monkeypatch)
     # The tail lives past the workspace the executor allocated.
     assert 'AfdTrace::Phase trace(scratch + w.bytes)' in text
     assert protocol.index('trace.Begin(60, traceRound)') < protocol.index('Select(trace, traceRound)')
+    assert protocol.index('trace.Begin(76, traceRound)') < protocol.index('if (!ready) continue;') < protocol.index('trace.End(76, traceRound, sourceWait)')
     assert pipeline.index('trace.Begin(70, traceRound)') < pipeline.index('output.Tile(')
     assert pipeline.index('trace.Begin(71, traceRound)') < pipeline.index('rowTx.Pump(')
     assert text.index('trace.End(44, traceRound, traceGmm2)') < text.index('trace.Begin(48, traceRound)')

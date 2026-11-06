@@ -89,7 +89,7 @@ def propose(args):
         'Label a hypothesis as a hypothesis.\n'
         'Follow request.strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
         'Choose up to three distinct proposals; stop when there is no justified change.\n'
-        + ('For this global-redesign round, analyze the whole pipeline and choose one coherent architecture, '
+        + ('For this global-redesign round, analyze the whole FFN pipeline after input readiness and choose one coherent architecture, '
            'not a local parameter tweak. Large source changes are allowed when the evidence supports them.\n'
            if global_redesign else ''))
     schema = args.output.parent / 'proposal.schema.json'
@@ -119,9 +119,9 @@ def propose(args):
         'use measured waits/stages, explain how the source change hides or removes them, and predict an observable '
         'change with a rejection criterion. Stop rather than guess. Do not write patches.')
     if global_redesign:
-        analysis_prompt += (' Compare at least two end-to-end architectures across RX/pull, packing, GMM1, '
-            'activation, GMM2 and output/TX. Choose one cohesive redesign; distinguish source-readiness waits '
-            'from FFN work and do not stop merely because earlier local tweaks failed.')
+        analysis_prompt += (' Compare at least two FFN architectures across RX/pull, packing, GMM1, '
+            'activation, GMM2 and output/TX. Choose one cohesive redesign using FFN work after source readiness; '
+            'exclude Attention submission waits and do not stop merely because earlier local tweaks failed.')
     analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
         analysis_prompt,
         'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events', session)

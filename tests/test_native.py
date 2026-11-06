@@ -102,13 +102,17 @@ def test_native_report_does_not_turn_consistency_into_performance_pass(tmp_path)
 def test_stage_shares_exclude_the_dispatch_wait(tmp_path):
     """The FFN idles until Attention dispatches; that wait must not hide the work."""
     from afd_rsi.native import named_stage_cycles
-    totals = {'47': 8700, '40': 1200, '41': 50, '43': 60, '42': 30, '45': 40, '44': 20}
+    totals = {'47': 8700, '40': 1200, '60': 1100, '61': 100,
+              '41': 50, '43': 60, '42': 30, '45': 40, '44': 20}
     rows = {row['stage']: row for row in named_stage_cycles(totals)}
     assert rows['sync_in']['share_pct'] == pytest.approx(100 * 8700 / 10100, abs=0.1)
     assert rows['sync_in']['active_share_pct'] is None
+    ranked = named_stage_cycles({'40': 100, '60': 90, '76': 90, '45': 50, '47': 300})
+    assert [row['stage'] for row in ranked] == ['combine', 'round_prepare', 'sync_in']
     # Active shares answer where the FFN's own cycles go.
-    assert rows['round_prepare']['active_share_pct'] == pytest.approx(100 * 1200 / 1400, abs=0.1)
-    assert rows['activation']['active_share_pct'] == pytest.approx(100 * 60 / 1400, abs=0.1)
+    assert rows['round_prepare']['ffn_core_cycles'] == 200
+    assert rows['round_prepare']['active_share_pct'] == pytest.approx(50, abs=0.1)
+    assert rows['activation']['active_share_pct'] == pytest.approx(15, abs=0.1)
     assert sum(row['share_pct'] for row in rows.values()) == pytest.approx(100.0, abs=0.2)
     assert named_stage_cycles({}) == []
 
@@ -119,7 +123,7 @@ def test_pull_substages_keep_nested_waits_out_of_parent_totals():
               '62': 10, '65': 5, '66': 5, '70': 20, '71': 10, '72': 5, '73': 5}
     top = {row['stage']: row for row in named_stage_cycles(totals)}
     assert top['round_prepare']['core_cycles'] == 100
-    assert top['round_prepare']['active_share_pct'] == pytest.approx(66.67, abs=0.01)
+    assert top['round_prepare']['active_share_pct'] == pytest.approx(50, abs=0.01)
     detail = named_substage_cycles(totals)
     stages = {row['stage']: row for row in detail['stages']}
     assert stages['rx_select']['parent_share_pct'] == 80
@@ -129,6 +133,26 @@ def test_pull_substages_keep_nested_waits_out_of_parent_totals():
     assert detail['residual_cycles']['combine'] == 10
     with pytest.raises(ValueError, match='exceeds rx_select'):
         named_substage_cycles({**totals, '61': 81})
+
+
+def test_ffn_shares_keep_post_ready_selection_and_internal_waits():
+    from afd_rsi.native import ffn_execution_cycles, named_stage_cycles, named_substage_cycles
+    totals = {'40': 100, '60': 80, '61': 30, '76': 60, '45': 50, '47': 300}
+    execution = ffn_execution_cycles(totals)
+    assert execution['source_boundary'] == 'ready'
+    assert execution['excluded_source_core_cycles'] == 30
+    assert execution['excluded_sync_in_core_cycles'] == 300
+    assert execution['stage_core_cycles']['round_prepare'] == 70
+    assert execution['total_core_cycles'] == 120
+    rows = {row['stage']: row for row in named_stage_cycles(totals)}
+    assert rows['round_prepare']['active_share_pct'] == pytest.approx(58.33)
+    assert rows['sync_in']['active_share_pct'] is None
+    stages = {row['stage']: row for row in named_substage_cycles(totals)['stages']}
+    assert stages['rx_header_validation']['parent'] == 'rx_source_wait'
+    assert ffn_execution_cycles({'40': 100, '47': 300})['available'] is False
+    assert named_stage_cycles({'40': 100})[0]['active_share_pct'] is None
+    with pytest.raises(ValueError, match='invalid nested'):
+        ffn_execution_cycles({**totals, '76': 20})
 
 
 def test_profiler_requires_device_kernel_evidence_on_both_ffn_ranks(tmp_path):

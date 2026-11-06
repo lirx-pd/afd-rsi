@@ -27,7 +27,7 @@ PULL_SUBSTAGE_NAMES = {
     66: ('round_prepare', 'rx_layer_map'), 70: ('combine', 'output_local'),
     71: ('combine', 'tx_remote'), 72: ('combine', 'output_sync'),
     73: ('combine', 'output_wait_gmm2'), 74: ('gmm1', 'gmm1_input_wait'),
-    75: ('gmm2', 'gmm2_activation_wait')}
+    75: ('gmm2', 'gmm2_activation_wait'), 76: ('rx_select', 'rx_source_wait')}
 MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
 
 from . import skills
@@ -305,16 +305,16 @@ def analyze_profile(directory: Path, attn_ranks: int, ranks: int) -> dict:
     internal = analyze_pipeline(pipeline, attn_ranks, ranks) if pipeline.exists() else None
     return {'pipeline': internal, 'scope': 'native synthetic seven-case transactions; separate profiled execution',
             'evidence': evidence, 'ffn_ranks': summaries,
-            'analysis': 'Rank tasks by summed device duration. Investigate the largest tasks first. '
-                'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
+            'analysis': 'The all-Mega transaction is one fused pull-native kernel plus its comm kernel, so the '
                 'device trace alone cannot separate Cube, Vector, MTE or communication time; the '
                 'instrumented diagnostic names those stages when a pipeline trace is present. '
-                'active_share_pct excludes only sync_in; rx_select, GMM and output intervals can '
-                'still contain waits. Child intervals are nested diagnostics, not additional '
+                'Use FFN active shares after excluding source readiness and sync_in, not raw kernel '
+                'duration or source polling, to prioritize FFN work. FFN stages can contain internal waits. '
+                'Child intervals are nested diagnostics, not additional '
                 'kernel time. Compare each child with its parent on the same core rather than '
                 'treating summed spans as critical-path latency. '
                 'Unequal FFN work is intentional in sparse cases; rank totals do not prove imbalance.',
-            'next_step': 'Use source tiling, tails, buffers and synchronization to propose a minimal falsifiable hypothesis. '
+            'next_step': 'Use FFN pull, tiling, tails, buffers and internal synchronization to propose a falsifiable hypothesis. '
                 'Preserve producers/consumers and validate numerics, GSM8K and unprofiled timings. '
                 'HTTP prefill TTFT is a separate service metric; do not attribute it to this trace without evidence.'}
 
@@ -344,6 +344,7 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
                     events=[[start-core['start'], end-core['start'], code, sequence]
                             for start, end, code, sequence in core['events'] if sequence in (0, 1, 2, 3, 4)]))
         summaries.append(dict(rank=rank, transactions=len(transactions), summed_core_cycles=totals,
+                              ffn_execution=ffn_execution_cycles(totals),
                               named_stages=named_stage_cycles(totals),
                               substage_breakdown=named_substage_cycles(totals),
                               first_transaction=transactions[0]['work'], selected_cores=selected))
@@ -354,32 +355,49 @@ def analyze_pipeline(directory: Path, attn_ranks: int, ranks: int) -> dict:
                     'Summed spans are neither critical-path latency nor PMU activity.')
 
 
-def named_stage_cycles(totals: dict) -> list:
-    """Name the pull-native stage codes so a proposal can address a stage.
+def ffn_execution_cycles(totals: dict) -> dict:
+    """Remove source readiness and entry barriers from summed per-core spans."""
+    if '40' not in totals or '60' not in totals:
+        return {'available': False, 'reason': 'source selection trace is missing'}
+    prepare, select = int(totals['40']), int(totals['60'])
+    header = int(totals.get('61', 0))
+    wait = int(totals.get('76', select))
+    if not 0 <= header <= wait <= select <= prepare:
+        raise ValueError('invalid nested source readiness intervals')
+    excluded = wait - header
+    stages = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()
+              if name != 'sync_in'}
+    stages['round_prepare'] -= excluded
+    return {'available': True, 'stage_core_cycles': stages,
+            'total_core_cycles': sum(stages.values()),
+            'excluded_sync_in_core_cycles': int(totals.get('47', 0)),
+            'excluded_source_core_cycles': excluded,
+            'source_boundary': 'ready' if '76' in totals else 'legacy_select',
+            'note': 'Summed per-core spans include FFN internal waits, not wall latency. '
+                    'The source interval also includes polling overhead; legacy traces conservatively '
+                    'exclude selection work outside header validation. sync_in is an entry barrier.'}
 
-    Two shares are reported. ``share_pct`` covers every instrumented cycle, which
-    is dominated by ``sync_in`` because the FFN idles until Attention dispatches.
-    ``active_share_pct`` drops only ``sync_in``. It still includes source polling,
-    GMM dependency waits and output drains; neither share is critical-path latency.
-    """
+
+def named_stage_cycles(totals: dict) -> list:
+    """Report raw spans and FFN shares without source readiness or entry barriers."""
     known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
     total = sum(known.values())
     if not total:
         return []
-    waiting = known.pop('sync_in', 0)
-    active = total - waiting
+    execution = ffn_execution_cycles(totals)
+    active = execution.get('total_core_cycles', 0)
+    stages = execution.get('stage_core_cycles', {})
     rows = []
-    for name, cycles in sorted(known.items(), key=lambda item: -item[1]):
+    order = sorted(known.items(), key=lambda item: (
+        item[0] == 'sync_in', -stages.get(item[0], 0) if execution['available'] else -item[1]))
+    for name, cycles in order:
         if not cycles:
             continue
         rows.append({'stage': name, 'core_cycles': cycles,
                      'share_pct': round(100 * cycles / total, 2),
-                     'active_share_pct': round(100 * cycles / active, 2) if active else 0.0})
-    if waiting:
-        rows.append({'stage': 'sync_in', 'core_cycles': waiting,
-                     'share_pct': round(100 * waiting / total, 2),
-                     'active_share_pct': None,
-                     'note': 'Attention dispatch wait; excluded from active shares'})
+                     'ffn_core_cycles': stages.get(name) if execution['available'] else None,
+                     'active_share_pct': (round(100 * stages[name] / active, 2)
+                                          if active and name in stages else None)})
     return rows
 
 
@@ -390,8 +408,11 @@ def named_substage_cycles(totals: dict) -> dict | None:
     known = {name: int(totals.get(str(code), 0)) for code, name in PULL_STAGE_NAMES.items()}
     known.update({name: int(totals.get(str(code), 0))
                   for code, (_, name) in PULL_SUBSTAGE_NAMES.items()})
+    parents = dict(PULL_SUBSTAGE_NAMES)
+    if '76' in totals:
+        parents[61] = ('rx_source_wait', 'rx_header_validation')
     rows = []
-    for code, (parent, name) in PULL_SUBSTAGE_NAMES.items():
+    for code, (parent, name) in parents.items():
         cycles = known[name]
         if cycles > known[parent]:
             raise ValueError(f'pipeline substage {name} exceeds {parent}')
@@ -399,13 +420,13 @@ def named_substage_cycles(totals: dict) -> dict | None:
             rows.append({'stage': name, 'parent': parent, 'core_cycles': cycles,
                          'parent_share_pct': round(100 * cycles / known[parent], 2)})
     residual = {}
-    for parent in dict.fromkeys(parent for parent, _ in PULL_SUBSTAGE_NAMES.values()):
-        children = sum(known[name] for p, name in PULL_SUBSTAGE_NAMES.values() if p == parent)
+    for parent in dict.fromkeys(parent for parent, _ in parents.values()):
+        children = sum(known[name] for p, name in parents.values() if p == parent)
         if children > known[parent]:
             raise ValueError(f'pipeline children exceed {parent}')
         residual[parent] = known[parent] - children
     return {'stages': rows, 'residual_cycles': residual,
-            'note': 'Residual includes unmarked work and trace overhead; rx_select residual also includes polling.'}
+            'note': 'Residual includes unmarked work and trace overhead; source readiness includes polling.'}
 
 
 def write_report(output: Path, summary: dict):

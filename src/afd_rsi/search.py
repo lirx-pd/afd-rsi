@@ -165,9 +165,9 @@ def request_context(run, plan, best, records, number, router=None):
     strategy = {
         'mode': 'global-redesign' if global_redesign else 'deep' if number <= deep_rounds else 'incremental',
         'round': number, 'max_rounds': total, 'deep_rounds': deep_rounds,
-        'guidance': ('Analyze the full Attention-to-FFN critical path: source readiness, RX/pull, packing and '
-            'quantization, GMM1, activation, GMM2, output/TX, synchronization and overlap. Separate producer '
-            'waits from intrinsic work. Compare architectural alternatives and propose one cohesive redesign '
+        'guidance': ('Analyze FFN execution after Attention source readiness: RX/pull, packing and '
+            'quantization, GMM1, activation, GMM2, output/TX, synchronization and overlap. Exclude Attention '
+            'submission waits from FFN hotspot rankings. Compare architectural alternatives and propose one cohesive redesign '
             'across allowed files; replacing a kernel or adding a new implementation is permitted. Do not '
             'default to a local tuning change. Preserve protocol, graph, quantization and numerical contracts; '
             'state exact missing evidence if no safe redesign can be justified.'
@@ -205,6 +205,9 @@ def request_context(run, plan, best, records, number, router=None):
                    'Validators, gates, framework and original source are immutable. Hypotheses are not measured facts. '
                    'Only a confirmed PASS replaces best. Avoid already tested patches and failed approaches. '
                    'When profile evidence exists, cite it and explain a source-backed bottleneck hypothesis. '
+                   'For FFN profiling use active shares and FFN execution spans after excluding Attention readiness '
+                   'and sync_in; do not optimize or rank the deliberate producer wait as FFN work. '
+                   'If the source-wait breakdown is unavailable, do not infer FFN hotspots from raw kernel duration. '
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
                    'Follow the supplied strategy without changing allowed_files or acceptance gates.'}
