@@ -54,6 +54,11 @@ failure is not proof that the remote experiment stopped. Keep remote data and
 inspect receipts before recovery. Downloaded archives and their file hashes are
 checked before reporting completion. Oversized transfers fail visibly and leave
 raw evidence on the execution host. Task shutdown/deletion is never automatic.
+Controller failures publish the child exit status, stderr detail and command
+receipt path. When failure evidence fits the transfer bound, it is archived and
+downloaded with the same hash checks as successful results. An archive failure
+is recorded separately without replacing the original cause. Preparing a proposal
+request is shown as its own stage, not as the last completed baseline profile.
 
 
 The status viewer distinguishes a live worker, an unrecorded worker exit, unknown

@@ -305,6 +305,44 @@ def test_results_include_diagnostic_compiler_logs_without_build_sources(tmp_path
         assert not any(name.endswith('secret.o') for name in names)
 
 
+def test_remote_failure_publishes_root_error_and_downloadable_evidence(tmp_path, monkeypatch):
+    import tarfile
+    from afd_rsi import campaign
+    (tmp_path / 'campaign').mkdir()
+    (tmp_path / 'drivers/0').mkdir(parents=True)
+    monkeypatch.setattr(campaign, 'load', lambda *_: dict(expires_at=time.time() + 60, timeout_seconds=10))
+    def failed(argv, cwd, output, *args):
+        write_json(output / 'process.json', dict(status='failed', cleanup_complete=True, exit_code=2))
+        (output / 'stderr.log').write_text('afd-rsi: request metadata exceeds the frozen context budget\n')
+        return read_json(output / 'process.json')
+    monkeypatch.setattr(optimize, 'execute', failed)
+    with pytest.raises(RuntimeError, match='request metadata exceeds'):
+        optimize.remote_run(tmp_path, '0')
+    failure = read_json(tmp_path / 'drivers/0/exit.json')
+    assert failure['code'] == 1 and failure['results_sha256'] == digest(tmp_path / 'results.tar.gz')
+    class Executor:
+        base = str(tmp_path)
+        def fetch(self, source, target):
+            import shutil
+            shutil.copyfile(source, target)
+    job = tmp_path / 'download'
+    job.mkdir()
+    optimize.collect_results(job, Executor(), {'exit': failure})
+    assert 'request metadata exceeds' in (job / 'results/drivers/0/command/stderr.log').read_text()
+    with tarfile.open(job / 'results.tar.gz') as tar:
+        assert 'drivers/0/command/process.json' in tar.getnames()
+
+
+def test_request_preparation_does_not_report_the_last_baseline_profile(tmp_path):
+    write_json(tmp_path / 'campaign/search/state.json', {'active': '0001', 'baseline': 'base'})
+    write_json(tmp_path / 'campaign/attempts/base/progress.json', {
+        'steps': [{'side': 'baseline', 'phase': 'profile', 'trial': 'profile-trial'}]})
+    status = optimize.remote_status(tmp_path, '0')
+    assert status['round_phase'] == 'request' and status['step'] is None
+    view = optimize.describe_status(dict(status='error', progress=status, error='request metadata exceeds'))
+    assert view['stage'] == '准备 Agent 上下文'
+
+
 @pytest.mark.parametrize('client_status', ['completed', 'timeout', 'failed'])
 def test_task_start_preserves_receipt_and_reconciles_ready_pod(tmp_path, monkeypatch, client_status):
     calls = []

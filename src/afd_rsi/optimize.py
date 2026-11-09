@@ -29,7 +29,8 @@ ACTIVITIES = {'auth': '检查 iTASK 登录/权限', 'snapshot': '封存源码和
               'collect': '下载并校验结果', 'resume': '恢复后台任务'}
 PHASES = {'build': '构建算子', 'correctness': '算子精度验证', 'benchmark': '算子性能比较',
           'profile': '采集 profiling 和内部打点', 'service': '模型服务验收',
-          'screening': '候选初筛', 'confirming': '独立复测', 'awaiting_agent': '等待 Agent 提案'}
+          'screening': '候选初筛', 'confirming': '独立复测', 'request': '准备 Agent 上下文',
+          'awaiting_agent': '等待 Agent 提案'}
 
 
 def describe_status(value, worker_alive=True):
@@ -425,6 +426,8 @@ def remote_status(base, phase):
             record = read_json(path)
             result['round_phase'] = record.get('phase')
             attempt = record.get('confirmation') if record.get('phase') == 'confirming' else record.get('screen', attempt)
+        else:
+            result['round_phase'] = 'request'
     if attempt and (run / 'attempts' / attempt / 'progress.json').exists():
         progress = read_json(run / 'attempts' / attempt / 'progress.json')
         if progress['steps']:
@@ -434,6 +437,8 @@ def remote_status(base, phase):
             if summary.exists():
                 service = read_json(summary)
                 result['step']['service'] = {key: service.get(key) for key in ('stage', 'test_results', 'elapsed_seconds')}
+    if result['round_phase'] in ('request', 'awaiting_agent'):
+        result['step'] = None
     exit_path = base / 'drivers' / phase / 'exit.json'
     result['exit'] = read_json(exit_path) if exit_path.exists() else None
     if (run / 'plan.lock.json').exists():
@@ -467,6 +472,18 @@ def pack_results(base):
     if (base / 'results.tar.gz').stat().st_size >= 95_000_000:
         raise ValueError('results exceed cp limit; raw results remain on execution host')
     return digest(base / 'results.tar.gz')
+
+
+def collect_results(job, executor, status):
+    executor.fetch(executor.base + '/results.tar.gz', job / 'results.tar.gz')
+    if digest(job / 'results.tar.gz') != status['exit']['results_sha256']:
+        raise ValueError('downloaded result archive changed')
+    with tarfile.open(job / 'results.tar.gz') as tar:
+        manifest = json.load(tar.extractfile('results.manifest.json'))
+        for name, value in manifest.items():
+            if hashlib.sha256(tar.extractfile(name).read()).hexdigest() != value:
+                raise ValueError('result archive evidence changed')
+        tar.extractall(job / 'results', filter='data')
 
 
 def remote_action(action, directory, phase='0'):
@@ -508,7 +525,11 @@ def remote_run(base, phase):
             # Publish the command receipt before status consumers inspect its liveness.
             write_json(directory / 'process.json', result)
             if result['status'] != 'completed' or not result['cleanup_complete']:
-                raise RuntimeError('executor failed; inspect command receipt and recover via resume')
+                stderr = directory / 'command/stderr.log'
+                detail = stderr.read_text(errors='replace')[-4000:].strip() if stderr.exists() else ''
+                raise RuntimeError(f'executor {result["status"]} (exit {result.get("exit_code")}); '
+                                   f'inspect {directory / "command/process.json"}'
+                                   + (f': {detail}' if detail else ''))
             state = read_json(run / 'search/state.json')
             archive_hash = None
             if state['status'] != 'running':
@@ -527,7 +548,12 @@ def remote_run(base, phase):
                 archive_hash = pack_results(base)
             write_json(directory / 'exit.json', {'code': 0, 'results_sha256': archive_hash})
         except BaseException as error:
-            write_json(directory / 'exit.json', {'code': 1, 'error': str(error)})
+            failure = {'code': 1, 'error': str(error)}
+            try:
+                failure['results_sha256'] = pack_results(base)
+            except Exception as archive_error:
+                failure['archive_error'] = str(archive_error)
+            write_json(directory / 'exit.json', failure)
             raise
 
 
@@ -636,6 +662,8 @@ def worker(job):
                     time.sleep(config['poll_seconds'])
                     continue
                 if status['exit']['code']:
+                    if status['exit'].get('results_sha256'):
+                        collect_results(job, executor, status)
                     if config['retry_remote']:
                         config['retry_remote'] = False
                         write_json(job / 'job.json', config)
@@ -645,15 +673,7 @@ def worker(job):
                     raise RuntimeError(status['exit'].get('error', 'execution failed'))
                 if status['state'].get('status') != 'running':
                     event(job, 'running', phase=phase, activity='collect', progress=status)
-                    executor.fetch(executor.base + '/results.tar.gz', job / 'results.tar.gz')
-                    if digest(job / 'results.tar.gz') != status['exit']['results_sha256']:
-                        raise ValueError('downloaded result archive changed')
-                    with tarfile.open(job / 'results.tar.gz') as tar:
-                        manifest = json.load(tar.extractfile('results.manifest.json'))
-                        for name, value in manifest.items():
-                            if hashlib.sha256(tar.extractfile(name).read()).hexdigest() != value:
-                                raise ValueError('result archive evidence changed')
-                        tar.extractall(job / 'results', filter='data')
+                    collect_results(job, executor, status)
                     event(job, 'finished', phase=phase, progress=status)
                     return
                 pending = status['pending']

@@ -483,6 +483,20 @@ def test_required_sdk_and_allowed_source_cannot_be_trimmed_or_sent_over_budget(t
     assert json.loads(output.read_text())['needs_context']
 
 
+def test_prompt_defaults_to_frozen_transport_budget(tmp_path, monkeypatch):
+    module, transport, args, output = prepare(tmp_path, monkeypatch, analysis_json(), code_json())
+    request = json.loads(args.request.read_text())
+    request.update(max_context_bytes=2097152, allowed_files=['protocol.h'],
+                   source_files={'protocol.h': '// protocol'},
+                   dependency_context={'files': {'mc2/mm.hpp': {'content': 'x' * 250000}}})
+    args.request.write_text(json.dumps(request))
+    monkeypatch.delenv('AFD_RSI_DEEPSEEK_MAX_CHARS', raising=False)
+    module.propose(args)
+    assert len(transport.payloads) == 2
+    assert not json.loads(output.read_text())['stop']
+    assert 'protocol.h' in transport.payloads[0]['messages'][1]['content']
+
+
 def test_deepseek_missing_implementation_contract_skips_coding(tmp_path, monkeypatch):
     module, transport, args, output = prepare(tmp_path, monkeypatch,
         analysis_json(stop=True, proposals=[], needs_context=['SDK Finalize']))

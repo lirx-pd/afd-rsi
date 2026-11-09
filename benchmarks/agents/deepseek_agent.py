@@ -20,7 +20,7 @@ ever written into a campaign, a request, or the repository:
     AFD_RSI_DEEPSEEK_MAX_TOKENS      output budget for both stages (analysis default 32768)
     AFD_RSI_DEEPSEEK_MAX_TOKENS_ANALYSIS / _CODE   per-stage output budget
     AFD_RSI_DEEPSEEK_TOKEN_CAP       ceiling for the truncated-reply escalation, default 65536
-    AFD_RSI_DEEPSEEK_MAX_CHARS       prompt budget in characters, default 200000
+    AFD_RSI_DEEPSEEK_MAX_CHARS       prompt budget in characters; defaults to frozen request limit, else 200000
 
 Neither the endpoint nor the credential has a built-in value: an invented default is
 how a campaign ends up calling a host that never serves the requested model. Run
@@ -556,7 +556,8 @@ def propose(args):
     analysis_item['required'].remove('patch')
     del analysis_item['properties']['patch']
 
-    budget = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS') or DEFAULT_MAX_CHARS)
+    budget = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS')
+                 or request.get('max_context_bytes') or DEFAULT_MAX_CHARS)
     view, _ = truncate(request, budget)
     if view.get('missing_context'):
         write_json(args.output, dict(stop=True, reason='; '.join(view['missing_context']),

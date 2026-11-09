@@ -116,6 +116,29 @@ def load_experiences(run, plan):
     return list({identity(record): record for record in records}.values())
 
 
+def profile_context(profiling):
+    """Bound display timelines; measured totals and overlap still use every raw event."""
+    view = copy.deepcopy(profiling)
+    for rank in (view.get('pipeline') or {}).get('ffn_ranks', []):
+        for core in rank.get('selected_cores', []):
+            events = core.get('events', [])
+            if len(events) <= 128:
+                continue
+            stages = {}
+            for index, event in enumerate(events):
+                stages.setdefault(event[2], []).append(index)
+            chosen = {index for indices in stages.values() for index in (indices[0], indices[-1])}
+            if len(chosen) > 128:
+                raise ValueError('too many stage types for the request timeline sample')
+            remaining = [index for index in range(len(events)) if index not in chosen]
+            slots = 128 - len(chosen)
+            chosen.update(remaining[i * len(remaining) // slots] for i in range(slots))
+            core.update(events=[events[i] for i in sorted(chosen)],
+                        events_total=len(events), events_omitted=len(events) - len(chosen),
+                        sampling='first/last occurrence of every stage, then evenly spaced events; full trace archived')
+    return view
+
+
 def request_context(run, plan, best, records, number, router=None):
     source = run / best['source']
     evidence = [{'id': 'baseline', 'facts': {'source_hash': best['source_hash'],
@@ -146,8 +169,13 @@ def request_context(run, plan, best, records, number, router=None):
             if manifest_hash != item['artifacts'].get('native/artifacts.json'):
                 raise ValueError('dependency context artifact identity differs from the completed build')
         if item.get('profiling'):
+            profile = profile_context(item['profiling'])
+            profile['pipeline_trace_files'] = [
+                {'file': item['trial'] + '/' + name, 'sha256': sha}
+                for name, sha in item.get('profile_files', {}).items()
+                if '/pipeline/rank-' in name and name.endswith('.json')]
             evidence.append({'id': 'profile-incumbent', 'facts': {
-                'source_hash': best['source_hash'], **item['profiling']}})
+                'source_hash': best['source_hash'], **profile}})
     for index, record in enumerate(records):
         evidence.append({'id': f'history-{index}', 'facts': {
             key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment')
@@ -208,6 +236,7 @@ def request_context(run, plan, best, records, number, router=None):
                'provider': provider,
                'provider_hash': digest(run / 'foundation' / provider),
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],
+               'max_context_bytes': plan['search']['max_context_bytes'],
                'max_response_bytes': plan['search']['max_context_bytes'] * 2,
                'source_hash': best['source_hash'], 'allowed_files': plan['allowed_files'],
                'execution': {key: plan.get(key) for key in ('ranks', 'primary_rank', 'repetitions', 'native', 'service')},
@@ -314,7 +343,7 @@ def request_context(run, plan, best, records, number, router=None):
     if not knowledge:
         context['knowledge'] = ''
     if size() > limit:
-        raise ValueError('request metadata exceeds the frozen context budget')
+        raise ValueError(f'request metadata exceeds the frozen context budget: {size()} > {limit} bytes')
     # Logs use only space left after source, measured facts and local knowledge.
     for snippet in reversed(snippets):
         context['logs'].insert(0, snippet)

@@ -34,6 +34,48 @@ def test_profile_ranks_duration_analysis_and_raw_identity(tmp_path):
         analyze_profile(tmp_path, 1, 3)
 
 
+def test_request_timeline_is_bounded_without_changing_measured_facts():
+    import copy
+    events = [[i, i + 1, 61 if i % 10 else 79, i % 5] for i in range(12000)]
+    profile = {'pipeline': {'ffn_ranks': [dict(rank=1, summed_core_cycles={'61': 10800, '79': 1200},
+        overlap={'raw_bounds': [10, 20]}, selected_cores=[dict(core=0, events=events)])]}}
+    original = copy.deepcopy(profile)
+    view = search.profile_context(profile)
+    assert profile == original
+    rank = view['pipeline']['ffn_ranks'][0]
+    assert rank['summed_core_cycles'] == original['pipeline']['ffn_ranks'][0]['summed_core_cycles']
+    assert rank['overlap'] == {'raw_bounds': [10, 20]}
+    core = rank['selected_cores'][0]
+    assert len(core['events']) == 128 and core['events_total'] == 12000 and core['events_omitted'] == 11872
+    assert len({tuple(event) for event in core['events']}) == 128
+    for stage in (61, 79):
+        all_stage = [event for event in events if event[2] == stage]
+        assert all_stage[0] in core['events'] and all_stage[-1] in core['events']
+
+
+def test_request_with_verbose_profile_fits_frozen_budget(tmp_path):
+    recipe = tmp_path / 'recipe.toml'
+    recipe.write_text((ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source')))
+    run = campaign.prepare(recipe, tmp_path / 'run', ROOT)
+    plan = campaign.load(run, ROOT)
+    plan['search']['max_context_bytes'] = 2097152
+    attempt = run / 'attempts/qualification'
+    write_json(attempt / 'baseline.json', {'observations': []})
+    events = [[i, i + 1, 61 if i % 10 else 79, i % 5] for i in range(12000)]
+    profile = {'pipeline': {'ffn_ranks': [dict(rank=1, overlap={'bounds': [10, 20]},
+        selected_cores=[dict(core=i, events=events) for i in (0, 4, 8, 28)])]}}
+    assert len(json.dumps(profile, indent=2).encode()) > plan['search']['max_context_bytes']
+    write_json(attempt / 'progress.json', {'steps': [{'result': {'profiling': profile}}]})
+    best = dict(source='workspaces/baseline', source_hash=plan['source_snapshot']['hash'],
+                confirmation=None, baseline=attempt.name)
+    request = search.request_context(run, plan, best, [], 1)
+    write_json(tmp_path / 'request.json', request)
+    assert (tmp_path / 'request.json').stat().st_size <= plan['search']['max_context_bytes']
+    assert request['max_context_bytes'] == 2097152
+    raw = read_json(attempt / 'progress.json')['steps'][0]['result']['profiling']
+    assert raw == profile
+
+
 @pytest.mark.parametrize('value', ['nan', 'inf', '0', '-1'])
 def test_profile_rejects_unusable_device_duration(tmp_path, value):
     traces(tmp_path)

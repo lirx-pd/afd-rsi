@@ -66,6 +66,11 @@ Request summaries retain selected cores through sequences 1..4, covering the
 first reuse of the original two-slot diagnostic target. Historical profiles retain
 phase totals and raw archive identities; detailed timelines stay in the archived
 observations.
+Before model dispatch, each selected core is limited to 128 displayed events,
+retaining the first and last occurrence of every stage and evenly spaced remaining
+events. Counts, FFN stage/wait totals and overlap bounds still use the complete raw
+trace. The request reports omitted counts and raw trace hashes/paths; do not treat
+the displayed sample as a complete schedule or recompute phase totals from it.
 Current profile timelines, source dependencies and knowledge precede log tails
 in the context budget. The limit includes the actual indented request file.
 The diagnostic source and binary identities are archived separately; production
