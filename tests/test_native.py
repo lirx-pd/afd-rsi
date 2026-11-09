@@ -117,6 +117,17 @@ def test_stage_shares_exclude_the_dispatch_wait(tmp_path):
     assert named_stage_cycles({}) == []
 
 
+def test_activation_breakdown_separates_dependency_sync_body_and_drain():
+    from afd_rsi.native import named_substage_cycles
+    result = named_substage_cycles({'43': 100, '77': 30, '78': 20, '79': 35, '80': 5})
+    assert result['residual_cycles']['activation'] == 10
+    stages = {row['stage']: row['core_cycles'] for row in result['stages']}
+    assert stages == dict(activation_gmm1_wait=30, activation_sync=20,
+                          activation_body=35, activation_finalize=5)
+    with pytest.raises(ValueError, match='children exceed activation'):
+        named_substage_cycles({'43': 100, '77': 60, '78': 50})
+
+
 def test_pull_substages_keep_nested_waits_out_of_parent_totals():
     from afd_rsi.native import named_stage_cycles, named_substage_cycles
     totals = {'40': 100, '45': 50, '47': 300, '60': 80, '61': 30,

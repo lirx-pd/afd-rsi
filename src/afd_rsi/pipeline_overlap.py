@@ -152,6 +152,7 @@ def analyze_overlap(transactions):
     pairs = []
     cube_vector = (('pull_gmm1', 41, 42, 74), ('pull_gmm2', 41, 44, 75),
                    ('gmm1_activation', 43, 42, 74), ('gmm2_activation', 43, 44, 75),
+                   ('gmm1_activation_body', 79, 42, 74), ('gmm2_activation_body', 79, 44, 75),
                    ('gmm1_output', 70, 42, 74), ('gmm2_output', 70, 44, 75),
                    ('gmm1_tx_calls', 71, 42, 74), ('gmm2_tx_calls', 71, 44, 75))
     for vector, cube in ((0, 48), (4, 60), (8, 71)):
@@ -171,6 +172,7 @@ def analyze_overlap(transactions):
             'assumptions': 'Per-core cycle counters have equal rate and a stable offset within each round; '
                            'consistent barrier bounds do not independently prove clock calibration.',
             'scope': 'Intervals are instrumented call spans, not hardware busy time or a full-rank critical path. '
-                     'GMM marked waits can be removed, but activation and other unmarked waits remain. '
+                     'GMM marked waits can be removed; activation_body excludes marked GMM1 waits and outer '
+                     'barriers when code 79 exists, but still includes internal epilogue synchronization. '
                      'TX intervals cover enqueue and drain calls, not asynchronous link occupancy. '
                      'Round totals aggregate captured cases without token-level attribution.'}

@@ -59,6 +59,16 @@ def test_missing_wait_markers_do_not_claim_wait_was_removed():
     assert stage['overlap_without_marked_gmm_wait_cycles'] is None
 
 
+def test_activation_body_overlap_excludes_outer_wait_and_barriers():
+    vector = [[100, 110, 47, 0], [120, 180, 43, 0], [120, 140, 77, 0],
+              [140, 150, 78, 0], [150, 170, 79, 0], [170, 180, 78, 0], [190, 200, 48, 0]]
+    cube = [[100, 110, 47, 0], [120, 180, 42, 0], [120, 130, 74, 0], [190, 200, 48, 0]]
+    stages = analyze_overlap([transaction(vector, cube)])['pairs'][0]['stages']
+    assert stages['gmm1_activation']['first_span_cycles'] == 60
+    assert stages['gmm1_activation_body']['first_span_cycles'] == 20
+    assert stages['gmm1_activation_body']['overlap_without_marked_gmm_wait_cycles'] == [20, 20]
+
+
 def test_rounds_with_reused_sequence_are_paired_by_barrier_order():
     vector = [[100, 110, 47, 0], [120, 160, 43, 0], [190, 200, 48, 0]]
     cube = [[95, 105, 47, 0], [115, 125, 74, 0], [115, 155, 42, 0], [185, 195, 48, 0]]

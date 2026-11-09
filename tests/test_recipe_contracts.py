@@ -13,6 +13,16 @@ from afd_rsi import contracts
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_pipeline_recipe_covers_model_shape_cohort_boundaries(tmp_path):
+    recipe = tmp_path / 'pipeline.toml'
+    recipe.write_text((ROOT / 'recipes/ascend_pipeline_scenarios.toml').read_text().replace('../../afd-plugin', str(tmp_path)))
+    plan = contracts.load_recipe(recipe)
+    assert (plan['native']['hidden'], plan['native']['intermediate'], plan['native']['experts']) == (4096, 2048, 64)
+    assert plan['native']['lengths'] == [7, 128, 511, 512, 513, 1025]
+    assert len(plan['service']['primary']) == 2
+    assert plan['search']['agent_timeout_seconds'] == 3600
+
+
 def test_dbo_detection_covers_both_spellings():
     assert contracts.dbo_enabled(['--dbo', 'on'])
     assert contracts.dbo_enabled(['--dbo=on'])

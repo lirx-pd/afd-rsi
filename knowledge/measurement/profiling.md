@@ -24,7 +24,7 @@ previous profiling order. Completed profiles are audited and reused on resume.
 A failed or interrupted profile blocks qualification and requires the existing
 NPU health barrier. Do not spend a diagnostic rebuild on each unpromising patch.
 
-The child uses torch_npu.profiler on the same native seven-case workload and
+The child uses torch_npu.profiler on the configured native workload and
 execution mode. Every FFN rank needs its own kernel_details.csv containing actual
 Mega device tasks, with positive finite Duration(us). Archive raw traces,
 process receipts, source/library identities and hashes. Keep profiler execution
@@ -54,7 +54,7 @@ Campaign profile additionally creates a separate A3 diagnostic build with bounde
 per-core GetSystemCycle records. An owning scratch allocation reserves 72 tails,
 2048 records per core and a checked guard. Overflow, missing cores, malformed
 intervals or incorrect diagnostic outputs block the profile phase. This eager
-seven-case diagnostic is explicitly distinct from FULL replay timing.
+fixture diagnostic is explicitly distinct from FULL replay timing.
 Stage IDs 0..6 are RECEIVED, PRE1, G1, PRE2, G2, OUTPUT, SENT;
 7 is activation; 8+stage is dependency wait; 15+stage is arrival fence/drain;
 22+stage is arrival publication; 29 entry, 30 DR setup, 31 metadata validation,
@@ -93,6 +93,12 @@ adds `rx_select` (60), its `rx_header_validation` (61), `rx_metadata` (62),
 `rx_commit_check` (63), `rx_group_plan` (64), `rx_publish` (65), `rx_layer_map`
 (66), `output_local` (70), `tx_remote` (71), `output_sync` (72),
 `output_wait_gmm2` (73), GMM input waits (74..75), and `rx_source_wait` (76).
+Activation adds GMM1 readiness wait (77), outer barriers (78), processing body
+(79), and finalization/drain (80), nested inside stage 43 in both activation paths.
+The body includes scale/metadata operations and may include synchronization
+inside the SDK epilogue; it is not pure Vector arithmetic or hardware busy time.
+Overlap additionally compares code 79 with GMM1/GMM2, retaining the old whole
+activation comparisons for historical traces without the new markers.
 The latter ends when a complete source is ready and contains header validation.
 The report keeps parent
 and child cycle sums separate and gives each child's share of its parent;

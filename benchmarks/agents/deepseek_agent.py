@@ -36,6 +36,7 @@ separately configurable so a future model can replace just one of them.
 """
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -197,7 +198,11 @@ def truncate(request: dict, budget: int) -> tuple[dict, list]:
         dropped.append('knowledge')
 
     while size() > budget and view.get('source_files'):
-        longest = max(view['source_files'], key=lambda name: len(view['source_files'][name]))
+        removable = [name for name in view['source_files'] if not any(
+            fnmatch.fnmatchcase(name, pattern) for pattern in view.get('allowed_files', []))]
+        if not removable:
+            break
+        longest = max(removable, key=lambda name: len(view['source_files'][name]))
         del view['source_files'][longest]
         view.setdefault('omitted_source_files', []).append(longest)
         if 'source_files' not in dropped:
@@ -217,6 +222,10 @@ def truncate(request: dict, budget: int) -> tuple[dict, list]:
         view['context_truncation'] = {
             'dropped': dropped,
             'note': 'Prompt budget was exceeded; the listed parts of the request were omitted.'}
+    if size() > budget:
+        view['missing_context'] = [*view.get('missing_context', []),
+            'Required source, SDK contracts and evidence exceed AFD_RSI_DEEPSEEK_MAX_CHARS; '
+            'raise the prompt budget or use Codex selective file reading']
     return view, dropped
 
 
@@ -346,7 +355,12 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> list[str]:
     missing = required - set(value)
     if missing:
         raise ValueError(f'response is missing {sorted(missing)}')
-    ignored = sorted(set(value) - required)
+    ignored = sorted(set(value) - required - {'needs_context'})
+    missing_context = value.get('needs_context', [])
+    if (not isinstance(missing_context, list)
+            or not all(isinstance(item, str) and item.strip() for item in missing_context)
+            or (missing_context and not value['stop'])):
+        raise ValueError('needs_context requires stop=true and exact missing contracts')
     if type(value['stop']) is not bool or not isinstance(value['reason'], str):
         raise ValueError('stop must be boolean and reason must be a string')
     proposals = value['proposals']
@@ -544,6 +558,11 @@ def propose(args):
 
     budget = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS') or DEFAULT_MAX_CHARS)
     view, _ = truncate(request, budget)
+    if view.get('missing_context'):
+        write_json(args.output, dict(stop=True, reason='; '.join(view['missing_context']),
+                                    proposals=[], needs_context=view['missing_context']))
+        write_json(args.output.parent / 'usage.json', {'turns': []})
+        return
     document = json.dumps(view, ensure_ascii=False)
     deadline = float(request.get('deadline') or 0)
     remaining = deadline - time.time() if deadline else float('inf')

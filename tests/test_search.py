@@ -28,6 +28,19 @@ def proposal(patch=None, category='latency', priority=3):
         'patch': patch or (ROOT / 'examples/faster.patch').read_text()}]}
 
 
+def test_missing_implementation_contract_is_not_optimization_exhaustion(run):
+    search.search(run, ROOT, external=True)
+    respond(run, dict(stop=True, reason='Need SDK Finalize semantics', proposals=[],
+                      needs_context=['utils/block_mmad_w4a4.hpp:Finalize']))
+    search.search(run, ROOT, external=True)
+    state = read_json(run / 'search/state.json')
+    assert state['status'] == 'context_required' and state['calls'] == 1
+    assert read_json(run / 'search/rounds/0001/state.json')['decision'] == 'context_required'
+    assert read_json(run / 'search/best.json')['confirmation'] is None
+    search.search(run, ROOT, external=True)
+    assert read_json(run / 'search/state.json')['calls'] == 1
+
+
 def respond(run, value):
     pending = read_json(run / 'search/pending.json')
     write_json(run / pending['response'], value)

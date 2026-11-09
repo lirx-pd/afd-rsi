@@ -1,9 +1,10 @@
 {
   "type": "object", "additionalProperties": false,
-  "required": ["stop", "reason", "proposals"],
+  "required": ["stop", "reason", "proposals", "needs_context"],
   "properties": {
     "stop": {"type": "boolean"},
     "reason": {"type": "string"},
+    "needs_context": {"type": "array", "items": {"type": "string", "minLength": 1}, "description": "Missing implementation contracts; use stop=true and no proposals. Empty when ready."},
     "proposals": {
       "type": "array", "maxItems": 3,
       "items": {

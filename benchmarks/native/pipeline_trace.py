@@ -53,6 +53,10 @@ PULL_SUBSTAGES = {
     74: ('gmm1', 'gmm1_input_wait'),
     75: ('gmm2', 'gmm2_activation_wait'),
     76: ('rx_select', 'rx_source_wait'),
+    77: ('activation', 'activation_gmm1_wait'),
+    78: ('activation', 'activation_sync'),
+    79: ('activation', 'activation_body'),
+    80: ('activation', 'activation_finalize'),
 }
 
 
@@ -222,7 +226,7 @@ def instrument_pull(repo):
                         '                    PullAndPrepare<Plan>(scratch, w, t, round, resource);\n'
                         '                    trace.End(41, traceRound, tracePull);\n'
                         '                    const auto traceAct = trace.Begin(43, traceRound);\n'
-                        '                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource);\n'
+                        '                    Activate<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b13 : s13, layer, resource, trace, traceRound);\n'
                         '                    trace.End(43, traceRound, traceAct);\n'
                         '                    const auto traceCombine = trace.Begin(45, traceRound);\n'
                         '                    Combine<Plan>(scratch, w, t, round, Plan::kPackedInt4 ? b2 : s2, layer, resource, trace, traceRound);\n'
@@ -337,6 +341,36 @@ def instrument_pull(repo):
         '        trace.End(65, traceRound, publish);\n'
         '#endif\n'
         '    }\n\n    // Called only by the control owner')
+    # Both the imported W4A8 epilogue and the local row path include waits in stage 43.
+    for function in ('ActivateNative', 'Activate'):
+        signature = (f'__aicore__ inline void {function}(GM_ADDR scratch, const Cam::NativeMegaWorkspace &w,\n'
+                     '    const Cam::AfdMegaMoePullNativeTilingData &t, const ReceiveRound &round, GM_ADDR biases,\n'
+                     '    int64_t layer, Resource &resource) {')
+        pipeline = replace_checked(pipeline, signature,
+            signature.replace('Resource &resource) {', 'Resource &resource, ::AfdTrace::Phase &trace, uint32_t traceRound) {'))
+    pipeline = replace_checked(pipeline,
+        '            ActivateNative<Plan>(scratch, w, t, round, biases, layer, resource);',
+        '            ActivateNative<Plan>(scratch, w, t, round, biases, layer, resource, trace, traceRound);')
+    pipeline = replace_checked(pipeline,
+        '        CrossCoreWaitFlag<2>(GMM1_READY);\n        SyncAll<true>();',
+        '        const auto actWait = trace.Begin(77, traceRound);\n'
+        '        CrossCoreWaitFlag<2>(GMM1_READY);\n'
+        '        trace.End(77, traceRound, actWait);\n'
+        '        const auto actSync = trace.Begin(78, traceRound);\n'
+        '        SyncAll<true>();\n'
+        '        trace.End(78, traceRound, actSync);\n'
+        '        const auto actBody = trace.Begin(79, traceRound);', count=2)
+    pipeline = replace_checked(pipeline,
+        '        SyncAll<true>();\n        CrossCoreSetFlag<2, PIPE_MTE3>(ACT_READY);',
+        '        trace.End(79, traceRound, actBody);\n'
+        '        const auto actPublish = trace.Begin(78, traceRound);\n'
+        '        SyncAll<true>();\n'
+        '        trace.End(78, traceRound, actPublish);\n'
+        '        CrossCoreSetFlag<2, PIPE_MTE3>(ACT_READY);', count=2)
+    pipeline = replace_checked(pipeline, '    activation.Finalize();',
+        '    const auto actDrain = trace.Begin(80, traceRound);\n'
+        '    activation.Finalize();\n'
+        '    trace.End(80, traceRound, actDrain);', count=2)
     pipeline = replace_checked(pipeline,
         '    int64_t layer, Resource &resource) {\n    const uint32_t h = t.config[1];',
         '    int64_t layer, Resource &resource, ::AfdTrace::Phase &trace, uint32_t traceRound) {\n'

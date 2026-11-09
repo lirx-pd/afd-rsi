@@ -27,7 +27,9 @@ PULL_SUBSTAGE_NAMES = {
     66: ('round_prepare', 'rx_layer_map'), 70: ('combine', 'output_local'),
     71: ('combine', 'tx_remote'), 72: ('combine', 'output_sync'),
     73: ('combine', 'output_wait_gmm2'), 74: ('gmm1', 'gmm1_input_wait'),
-    75: ('gmm2', 'gmm2_activation_wait'), 76: ('rx_select', 'rx_source_wait')}
+    75: ('gmm2', 'gmm2_activation_wait'), 76: ('rx_select', 'rx_source_wait'),
+    77: ('activation', 'activation_gmm1_wait'), 78: ('activation', 'activation_sync'),
+    79: ('activation', 'activation_body'), 80: ('activation', 'activation_finalize')}
 MEGA_TASK_STEMS = ("afdmegamoepullnative", "afdmegamoecomm", "afdmegamoeffn")
 
 from . import skills
@@ -93,7 +95,7 @@ def toolchain_fingerprint() -> dict:
 def build_key(snapshot: dict) -> str:
     return hashlib.sha256(json.dumps(
         {"source": snapshot["hash"], "toolchain": toolchain_fingerprint(),
-         "build_recipe": "vllm-entrypoint-1"},
+         "build_recipe": "vllm-entrypoint-2-dependency-context"},
         sort_keys=True).encode()).hexdigest()
 
 
@@ -138,6 +140,10 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
         verify_source(target, snapshot)
         if artifact_identity(target) != read_json(output / "artifacts.json"):
             raise ValueError("cached build artifacts changed")
+        from .build_context import PULL_KERNEL, load_context
+        if (target / PULL_KERNEL).is_dir():
+            load_context(output / 'dependencies.json', snapshot['hash'],
+                         read_json(output / 'artifacts.json'), origins=True)
         write_json(output / "build.json", {"status": "reused", "cache_key": key,
                                           "reused_from": str(cached)})
         return target
@@ -156,6 +162,8 @@ def build(source: Path, output: Path, timeout: float, cache_root: Path | None = 
     verify_source(target, snapshot)
     artifacts = artifact_identity(target)
     write_json(output / "artifacts.json", artifacts)
+    from .build_context import capture_context
+    capture_context(target, output / 'dependencies.json', snapshot['hash'], artifacts)
     write_json(output / "build.json", result)
     if cached is not None:
         # Populate only after the hashes above are known to be good. A cache that

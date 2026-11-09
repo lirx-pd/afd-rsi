@@ -57,6 +57,8 @@ def describe_status(value, worker_alive=True):
     code, done = 0, False
     if status == 'error' or (status == 'finished' and state.get('status') == 'baseline_failed'):
         label, code, done = '失败：框架已停止推进', 1, True
+    elif status == 'finished' and state.get('status') == 'context_required':
+        label, code, done = '需要补充依赖上下文：未耗尽优化方向', 1, True
     elif status == 'finished':
         best = progress.get('best') or {}
         label = '已完成：有独立确认的优化候选' if best.get('confirmation') else '已结束：未获得独立确认的改进'

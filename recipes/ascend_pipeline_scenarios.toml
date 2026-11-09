@@ -3,7 +3,7 @@ name = "A3 MegaMoe pipeline: native 64K/mixed prefill and six-way long decode"
 backend = "ascend"
 validation = "operator-first"
 source = "../../afd-plugin"
-workload_id = "a3-w4a8-full-serialized-7case-v1"
+workload_id = "a3-w4a8-full-h4096-i2048-e64-cohort-v2"
 scope = "synthetic-weight-full-transaction-suite-mean"
 unit = "us"
 metric = "transaction_us"
@@ -26,9 +26,14 @@ benchmark = ["{python}", "{foundation}/benchmarks/native/campaign_driver.py", "b
 [native]
 execution = "graph"
 devices = "0,1,2"
-hidden = 256
-intermediate = 512
-experts = 4
+hidden = 4096
+intermediate = 2048
+# The checkpoint has 256 experts: EP4 serves 64 per FFN device.
+# Native top-k2 is a bounded screen; service gates retain native model top-k6.
+experts = 64
+# Twelve transactions: small decode, tile tail, 512-row cohort boundaries,
+# and three cohorts. Each length has balanced dense and hot/empty-rank routes.
+lengths = [7, 128, 511, 512, 513, 1025]
 attn_ranks = 1
 warmups = 1
 repeats = 2
@@ -64,9 +69,9 @@ max_rounds = 9
 max_calls = 9
 # Reserve the first proposal for an end-to-end architecture redesign.
 global_redesign_round = 1
-agent_timeout_seconds = 1200
-# Leave room for the full pull protocol and layout sources in the redesign request.
-max_context_bytes = 589824
+agent_timeout_seconds = 3600
+# Transport bound includes hashed SDK contracts; Codex reads individual files.
+max_context_bytes = 2097152
 experience_dirs = []
 
 # Direction routing: category abilities are estimated from measured gain, not raw

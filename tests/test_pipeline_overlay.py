@@ -148,7 +148,24 @@ __aicore__ inline void Process(GM_ADDR state, GM_ADDR scratch) {
 }
 '''
 
-PULL_PIPELINE = '''template <class Plan>
+PULL_ACTIVATION = '''template <class Plan>
+__aicore__ inline void FUNCTION(GM_ADDR scratch, const Cam::NativeMegaWorkspace &w,
+    const Cam::AfdMegaMoePullNativeTilingData &t, const ReceiveRound &round, GM_ADDR biases,
+    int64_t layer, Resource &resource) {
+NATIVE_CALL
+        CrossCoreWaitFlag<2>(GMM1_READY);
+        SyncAll<true>();
+        activation.Work();
+        SyncAll<true>();
+        CrossCoreSetFlag<2, PIPE_MTE3>(ACT_READY);
+    activation.Finalize();
+}
+'''
+
+PULL_PIPELINE = (PULL_ACTIVATION.replace('FUNCTION', 'ActivateNative').replace('NATIVE_CALL', '')
+    + PULL_ACTIVATION.replace('FUNCTION', 'Activate').replace('NATIVE_CALL',
+        '            ActivateNative<Plan>(scratch, w, t, round, biases, layer, resource);')
+    + '''template <class Plan>
 __aicore__ inline void Combine(GM_ADDR scratch, const Cam::NativeMegaWorkspace &w,
     const Cam::AfdMegaMoePullNativeTilingData &t, const ReceiveRound &round, GM_ADDR biases,
     int64_t layer, Resource &resource) {
@@ -164,7 +181,7 @@ __aicore__ inline void Combine(GM_ADDR scratch, const Cam::NativeMegaWorkspace &
     output.Finalize();
     rowTx.Finalize();
 }
-'''
+''')
 
 PULL_PROTOCOL = '''class Transport {
     __aicore__ bool Select() {

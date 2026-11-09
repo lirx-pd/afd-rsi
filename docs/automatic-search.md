@@ -79,7 +79,11 @@ python benchmarks/agents/deepseek_agent.py --check   # 提案机（可为 Window
 stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数，每次内含至多
 两次模型调用。外部文件交换采用相同流程。模型规则固化在仓库
 `knowledge/measurement/codex-models.md`。修改后的提案器用于新 campaign。
-Ascend 样例给每次提案 1200 秒和 524288 字节上下文；两步模型调用共享超时。
+pipeline 场景配方给每次提案 3600 秒，两步模型调用共享超时。
+请求传输上限为 2 MiB，包含实际构建收集并校验哈希的只读 MC2/Catlass 和生成的
+activation。Codex 工作区把源码、依赖、证据和知识拆成独立文件，通过清单按需读取。
+缺少实现契约时返回 `needs_context`，控制器记录 `context_required` 并停止消耗提案额度；
+修复后启动使用新快照的 campaign，历史请求和已冻结的评估规则保持原样。
 priority=3 为优先、1 为备选，控制器按方向路由的估计能力排序类别，同类别内才比较
 priority。
 

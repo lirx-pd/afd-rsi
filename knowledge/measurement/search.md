@@ -35,6 +35,22 @@ not an enforced token budget; Agent dispatches and wall time are bounded.
 The built-in adapter uses at most two model calls per dispatch; follow the
 [Codex model policy](codex-models.md) for role assignment and audit records.
 
+Native builds capture the CMake-resolved MC2/Catlass include closure and generated
+activation into a read-only dependency bundle bound to source and artifact hashes.
+Build observations seal that bundle; cache reuse checks installed header bytes.
+Repository protocol/layout sources in allowed_files must not be silently trimmed.
+The request transport includes the bundle; Codex materializes individual sources,
+dependencies, evidence and knowledge with a small manifest for selective reading.
+Generic compiler/AscendC includes outside this closure remain explicitly unresolved.
+Before coding, verify completion counts, Finalize, idle-core drains and activation
+slicing required by the chosen design. Return stop=true, proposals=[] and
+needs_context naming missing contracts. The controller reports context_required,
+not exhausted optimization directions, and spends no further dispatch. Repair the
+evidence in a new campaign; frozen historical requests are never rewritten.
+DeepSeek's HTTP adapter cannot read files selectively: its prompt budget must fit
+the required SDK/source/evidence. It preserves allowed sources and SDK contracts
+and returns context_required before any model call when they exceed that budget.
+
 Recover only processes with the trial's ownership tag, matching host and boot.
 Use pidfds rather than signalling a reused numeric PID. Preserve the original
 receipt and write a separate reconciliation record. Verify completed phases and

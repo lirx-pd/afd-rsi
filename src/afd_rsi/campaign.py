@@ -232,6 +232,12 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
         if phase == "build":
             write_json(build / "artifacts.lock.json", actual)
             observation.update(status="valid", artifacts=actual)
+            dependencies = build / 'native/dependencies.json'
+            if dependencies.is_file():
+                from .build_context import load_context
+                load_context(dependencies, identity['hash'], read_json(build / 'native/artifacts.json'))
+                shutil.copyfile(dependencies, output / 'dependencies.json')
+                observation['dependency_context_hash'] = digest(output / 'dependencies.json')
         elif phase != "service":
             data = read_json(result_path)
             value = validate_result(data, plan, identity["hash"], actual, measured=phase == "benchmark")
@@ -266,6 +272,9 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
     if check_runtime and observation["status"] == "valid" and artifacts(build, plan["artifacts"], native="native" in plan) != observation["artifacts"]:
         raise ValueError("completed phase artifacts changed")
     trial = run / observation["trial"]
+    if 'dependency_context_hash' in observation:
+        if digest(trial / 'dependencies.json') != observation['dependency_context_hash']:
+            raise ValueError('compiled dependency context changed')
     for name, value in observation.get("receipts", {}).items():
         if digest(trial / name) != value:
             raise ValueError("completed process receipt changed")

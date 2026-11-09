@@ -14,11 +14,21 @@ prefill TTFT p50 为搜索主指标；`ascend_pipeline_scenarios.toml` 对原生
 六并发 32K→512 decode 的公共窗口 TPOT p50 与 16K/512 混合 prefill TTFT p50
 取等权收益均值。初筛只运行 smoke 与这两项性能场景；独立复测才运行 GSM8K300
 及 64K 重载 prefill。每个候选在初筛和独立复测中各做一次基线/候选服务对照，
-顺序为 AB/BA。H256/I512 合成事务只用于
-数值验证和诊断，其收益不再决定晋升。配方里的 32764 批量上限
+顺序为 AB/BA。pipeline 配方的算子筛选改为 H4096/I2048、64 本地专家，
+长度 7/128/511/512/513/1025；均衡路由下每个 FFN 精确接收相应行数，
+另测集中路由和空 FFN。容量覆盖集中路由的完整 top-k 行数，检验多 cohort 及边界尾部。
+这与当前 checkpoint 的 H/I 和 EP4 每卡专家数对应；轻量用例仍是两 FFN、top-k2，
+真实四 FFN、top-k6 和并发 Attention 由服务门禁覆盖。
+H256/I512 仍可手动用于快速数值诊断。合成事务收益不决定晋升。配方里的 32764 批量上限
 按 TP4、top-k8 的 Pull 路由边界留出一行余量；实际 checkpoint 的 top-k 由
 服务计划读取 `config.json` 再检查。64K 请求使用 chunked prefill，不能作为
 单次 64K Pull 算子样本。
+
+构建阶段保存 CMake 实际解析的 MC2/Catlass 依赖和生成 activation，关联源码/产物
+哈希并核验缓存的头文件。提案分文件读取这些只读契约，allowed_files 内的协议与
+布局源码不再因 3/4 预算被丢弃。缺失契约记录为 `context_required`，分析阶段即停止
+代码生成。activation 诊断细分 GMM1 等待、外层同步、处理主体与收尾，并比较主体
+同 GMM1/GMM2 的重叠；主体可能包含 SDK 内部同步，仍不是纯计算利用率。
 需要观察较长单次事务时，可在新配方冻结 `native.lengths`；驱动和证据验证器
 现在按同一长度列表生成/核验 case，不再把非默认长度误判为 7 个短算例。
 

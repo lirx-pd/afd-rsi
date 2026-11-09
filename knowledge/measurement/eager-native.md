@@ -21,6 +21,15 @@ Default cases: H256/I512, E_local4, two FFN TP1, top-k2, two layer IDs, 7/16/129
 tokens and sparse/empty expert work. Optional wide shapes retain synthetic
 weights and do not establish real model/topology correctness. Two Attention
 sources remain serialized by harness barriers, not simultaneous incoming fan-in.
+The pipeline scenario recipe uses H4096/I2048, 64 local experts and lengths
+7/128/511/512/513/1025. Custom-length dense routes send exactly one row per token
+to each FFN; sparse routes send both rows to two experts on the first FFN, leaving
+the other empty. Capacity reserves the hot rank's top-k rows, so 512-row cohort
+boundaries and multiple cohorts occur inside one receive round. This is twelve
+bounded transactions, not a full shape sweep or evidence for native model routing.
+These H/I and local expert dimensions match the EP4 service's 256-expert checkpoint;
+the lightweight native topology still uses two FFNs and top-k2. Model top-k6,
+all four FFNs and Attention concurrency are qualified by the service gates.
 The current plugin exposes `LayeredFFNWeights` through
 `get_async_cam_layered_weights()`. Keep that seam aligned with the target before
 running; an import or connector-plan success is not device validation.

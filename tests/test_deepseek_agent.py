@@ -468,6 +468,29 @@ def test_missing_credential_fails_before_any_request(tmp_path, monkeypatch):
     assert not output.exists()
 
 
+def test_required_sdk_and_allowed_source_cannot_be_trimmed_or_sent_over_budget(tmp_path, monkeypatch):
+    module, transport, args, output = prepare(tmp_path, monkeypatch, analysis_json())
+    request = json.loads(args.request.read_text())
+    request.update(allowed_files=['protocol.h'], source_files={'protocol.h': 'x' * 1000},
+                   dependency_context={'files': {'mc2/mm.hpp': {'content': 'y' * 1000}}})
+    args.request.write_text(json.dumps(request))
+    monkeypatch.setenv('AFD_RSI_DEEPSEEK_MAX_CHARS', '500')
+    view, _ = module.truncate(request, 500)
+    assert 'protocol.h' in view['source_files']
+    assert view['dependency_context'] == request['dependency_context']
+    module.propose(args)
+    assert transport.payloads == []
+    assert json.loads(output.read_text())['needs_context']
+
+
+def test_deepseek_missing_implementation_contract_skips_coding(tmp_path, monkeypatch):
+    module, transport, args, output = prepare(tmp_path, monkeypatch,
+        analysis_json(stop=True, proposals=[], needs_context=['SDK Finalize']))
+    module.propose(args)
+    assert len(transport.payloads) == 1
+    assert json.loads(output.read_text())['needs_context'] == ['SDK Finalize']
+
+
 def test_session_directory_belongs_to_one_campaign(tmp_path, monkeypatch):
     module, _, args, _ = prepare(tmp_path, monkeypatch, analysis_json(), code_json())
     module.propose(args)

@@ -27,6 +27,7 @@ import torch.distributed as dist
 import torch_npu
 
 from identity import loaded_identity
+from workload import routing_ids
 
 from afd_plugin.compat.npu.ops import ensure_cam_async_ops_available
 from afd_plugin.config import parse_afd_config
@@ -174,9 +175,10 @@ def main():
     os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
     # Rows are the pull source capacity: the layout bounds it by 65535/topk, and the
     # connector requires rows >= max_num_batched_tokens. A dispatch carries
-    # max_num_batched_tokens // tp tokens, so the row budget is tokens times tp.
+    # max_num_batched_tokens // tp tokens. Custom cases reserve the hot rank's
+    # full top-k row count so multi-cohort work stays in one receive round.
     capacity = 256 if args.tile_boundary else 16
-    receive_capacity = min(max(capacity, max(args.lengths or [capacity]) * max(args.attn_ranks, 1)),
+    receive_capacity = min(max(capacity, (2 * max(args.lengths) if args.lengths else capacity) * args.attn_ranks),
                            65535 // args.top_k)
     os.environ["BATCH_SIZE_FACTOR"] = str(receive_capacity / 262144)
     os.environ["HCCL_BUFFSIZE"] = "64"
@@ -261,6 +263,8 @@ def main():
         "rank": rank,
         "per_group": args.per_group,
         "mega_moe": args.mega_moe,
+        "receive_capacity": receive_capacity,
+        "routing": "balanced-dense/hot-sparse" if args.lengths else "legacy-tail",
         "work": [],
     }
     print(json.dumps({"rank": rank, "stage": "connector_created"}), flush=True)
@@ -460,8 +464,7 @@ def main():
                 # exposed metadata describes only its final slice. Chunking it
                 # with the layered table would issue transactions that no
                 # Attention dispatch ever answers.
-                ids = torch.arange(tokens * 2).reshape(tokens, 2).remainder(
-                    2 if sparse else EXPERTS * 2)
+                ids = torch.tensor(routing_ids(tokens, EXPERTS, sparse, balanced=bool(args.lengths)))
                 local = rank - args.attn_ranks
                 rows = int(((ids >= local * EXPERTS)
                             & (ids < (local + 1) * EXPERTS)).sum())
@@ -469,7 +472,7 @@ def main():
                                  (rows - 1) % receive_capacity + 1 if rows else 0))
                 continue
             chunks = (
-                2 if sparse and 2 * tokens > capacity and rank == args.attn_ranks else 1
+                2 if sparse and 2 * tokens > receive_capacity and rank == args.attn_ranks else 1
             )
             rows = 0 if sparse and rank == args.attn_ranks + 1 else None
             expected.extend(
@@ -622,11 +625,7 @@ def main():
                     .expand(-1, HIDDEN)
                     .contiguous()
                 )
-                ids = (
-                    torch.arange(tokens * 2)
-                    .reshape(tokens, 2)
-                    .remainder(2 if sparse else EXPERTS * 2)
-                )
+                ids = torch.tensor(routing_ids(tokens, EXPERTS, sparse, balanced=bool(args.lengths)))
                 hidden = inputs.to(device)
                 route_ids = ids.to(device=device, dtype=torch.int32)
                 route_weights = torch.full((tokens, 2), 0.5, device=device)

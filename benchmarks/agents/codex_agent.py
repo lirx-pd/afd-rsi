@@ -61,6 +61,34 @@ def main():
         propose(args)
 
 
+def write_workspace(workspace, request):
+    """Keep the transport self-contained, but let Codex read individual contracts."""
+    view = json.loads(json.dumps(request))
+    (workspace / 'knowledge.md').unlink(missing_ok=True)
+    for directory in ('source', 'dependencies', 'evidence'):
+        target = workspace / directory
+        if target.exists():
+            shutil.rmtree(target)
+    def save(name, content):
+        target = (workspace / name).resolve()
+        if not target.is_relative_to(workspace.resolve()):
+            raise ValueError('context path escapes proposer workspace')
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+        return name
+    readonly = set(request.get('read_only_source_files', []))
+    for name, content in request.get('source_files', {}).items():
+        view['source_files'][name] = dict(path=save('source/' + name, content), read_only=name in readonly)
+    for name, item in request.get('dependency_context', {}).get('files', {}).items():
+        entry = view['dependency_context']['files'][name]
+        entry['path'] = save('dependencies/' + name, entry.pop('content'))
+    for item in view.get('evidence', []):
+        item['facts_file'] = save('evidence/' + item['id'] + '.json', json.dumps(item.pop('facts', {}), indent=2) + '\n')
+    if view.get('knowledge'):
+        view['knowledge'] = save('knowledge.md', view['knowledge'])
+    (workspace / 'request.json').write_text(json.dumps(view, ensure_ascii=False, indent=2) + '\n')
+
+
 def propose(args):
     request = json.loads(args.request.read_text())
     global_redesign = request.get('strategy', {}).get('mode') == 'global-redesign'
@@ -79,7 +107,7 @@ def propose(args):
     workspace = args.session_dir / 'workspace'
     workspace.mkdir(exist_ok=True)
     (workspace / 'analysis.json').unlink(missing_ok=True)
-    (workspace / 'request.json').write_text(json.dumps(request, ensure_ascii=False, indent=2) + '\n')
+    write_workspace(workspace, request)
     (workspace / 'AGENTS.md').write_text(
         'Propose a complete candidate patch using only request.json evidence and repository-local knowledge.\n'
         'Do not change files, gates, validators, budgets, or knowledge. Do not read credentials or external repositories.\n'
@@ -87,6 +115,10 @@ def propose(args):
         'The evidence array must contain only exact IDs from request.json, such as baseline, never explanations.\n'
         'This conversation persists across rounds. The current request.json is authoritative; old source and evidence may be stale.\n'
         'Label a hypothesis as a hypothesis.\n'
+        'request.json is a manifest: read the named source/dependency files and evidence facts_file as needed.\n'
+        'Avoid dumping the entire workspace; inspect relevant functions and the supplied overlap/wait summaries.\n'
+        'Before choosing a design, verify its completion/Finalize, idle-core drain and activation slicing contracts.\n'
+        'If those contracts are missing, return stop=true, proposals=[], needs_context=[exact missing contracts].\n'
         'Follow request.strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
         'Choose up to three distinct proposals; stop when there is no justified change.\n'
         + ('For this global-redesign round, analyze the whole FFN pipeline after input readiness and choose one coherent architecture, '
@@ -117,7 +149,9 @@ def propose(args):
         'Choose falsifiable optimization hypotheses and controlled experiments. '
         'When proposal_requirements is present, provide the complete experiment and required evidence IDs; '
         'use measured waits/stages, explain how the source change hides or removes them, and predict an observable '
-        'change with a rejection criterion. Account for measured stage overlap and remaining unhidden work; '
+        'change with a rejection criterion. Verify the implementation contracts before selecting a design; '
+        'return needs_context before coding if any required contract is unavailable. '
+        'Account for measured stage overlap and remaining unhidden work; '
         'do not add concurrent stage durations. Stop rather than guess. Do not write patches.')
     if global_redesign:
         analysis_prompt += (' Compare at least two FFN architectures across RX/pull, packing, GMM1, '

@@ -131,8 +131,20 @@ def request_context(run, plan, best, records, number, router=None):
             if key in ('side', 'phase', 'status', 'checks_passed', 'value', 'reason', 'service_metrics')}
             for item in evidence[0]['facts']['observations']]
     incumbent = run / 'attempts' / (best['baseline'] if best['confirmation'] is None else best['confirmation']['attempt'])
+    dependencies = None
     for step in read_json(incumbent / 'progress.json')['steps']:
         item = step.get('result', {})
+        if item.get('dependency_context_hash') and item.get('side') == ('baseline' if best['confirmation'] is None else 'candidate'):
+            path = run / item['trial'] / 'dependencies.json'
+            if digest(path) != item['dependency_context_hash']:
+                raise ValueError('compiled dependency context changed')
+            dependencies = read_json(path)
+            from .build_context import verify_context
+            verify_context(dependencies, best['source_hash'], dependencies['artifacts'])
+            manifest_hash = hashlib.sha256((json.dumps(dependencies['artifacts'], indent=2,
+                ensure_ascii=False, allow_nan=False) + '\n').encode()).hexdigest()
+            if manifest_hash != item['artifacts'].get('native/artifacts.json'):
+                raise ValueError('dependency context artifact identity differs from the completed build')
         if item.get('profiling'):
             evidence.append({'id': 'profile-incumbent', 'facts': {
                 'source_hash': best['source_hash'], **item['profiling']}})
@@ -215,6 +227,15 @@ def request_context(run, plan, best, records, number, router=None):
                    'Fused-kernel duration does not prove an internal hardware bound. Profile timings are diagnostic only. '
                    'Use GSM8K and prefill TTFT evidence; do not equate HTTP TTFT with native synthetic kernel time. '
                    'Follow the supplied strategy without changing allowed_files or acceptance gates.'}
+    if dependencies:
+        context['dependency_context'] = dependencies
+    from .build_context import PULL_KERNEL
+    if (source / PULL_KERNEL).is_dir() and dependencies is None:
+        context['missing_context'] = ['exact compiled MC2/Catlass headers and generated activation; run a new baseline with dependency capture']
+    context['instructions'] += (' Before selecting a redesign, read its GMM completion/Finalize and activation '
+        'contracts from dependency_context. Report stop=true with needs_context naming missing contracts '
+        'before coding; missing dependencies are not evidence that optimization is exhausted. '
+        'A cohort redesign must be tested on native cases with multiple cohorts and boundary tails.')
     if plan['search'].get('models'):
         # Frozen per-stage models; an adapter that owns its policy ignores this.
         context['models'] = plan['search']['models']
@@ -269,13 +290,13 @@ def request_context(run, plan, best, records, number, router=None):
         except UnicodeError:
             continue
         context['source_files'][name] = content
-        if size() > limit * 3 // 4:
+        if size() > limit and name not in allowed:
             del context['source_files'][name]
             context.setdefault('omitted_source_files', []).append(name)
             continue
         if name not in allowed:
             context['read_only_source_files'].append(name)
-        # Resolve only frozen repository files, never SDK headers or another checkout.
+        # Repository closure is separate from the hashed contracts captured by the actual build.
         for include in re.findall(r'^\s*#\s*include\s*"([^"\n]+)"', content, re.MULTILINE):
             local = (source / name).parent.joinpath(include).resolve()
             relative = local.relative_to(source.resolve()).as_posix() if local.is_relative_to(source.resolve()) else None
@@ -354,11 +375,15 @@ def propose(request: Path, output: Path, root: Path, session_dir: Path = None,
 
 
 def validate_proposal(value, evidence_ids, requirements=None):
-    if not isinstance(value, dict) or set(value) != {'stop', 'reason', 'proposals'}:
+    if not isinstance(value, dict) or set(value) - {'needs_context'} != {'stop', 'reason', 'proposals'}:
         raise ValueError('invalid agent response keys')
     if type(value['stop']) is not bool or not isinstance(value['reason'], str) or not value['reason'].strip():
         raise ValueError('agent must provide a stop flag and reason')
     proposals = value['proposals']
+    missing = value.get('needs_context', [])
+    if (not isinstance(missing, list) or not all(isinstance(p, str) and p.strip() for p in missing)
+            or (missing and not value['stop'])):
+        raise ValueError('needs_context requires a stop response and named missing contracts')
     if not isinstance(proposals, list) or len(proposals) > 3 or (not value['stop'] and not proposals) or (value['stop'] and proposals):
         raise ValueError('provide one to three proposals, or stop with no proposals')
     for proposal in proposals:
@@ -565,6 +590,10 @@ def search(run: Path, root: Path, *, external=False):
                 raise ValueError('agent request changed')
             context = read_json(round_dir / 'request.json')
             response = round_dir / 'proposal.json'
+            if context.get('missing_context'):
+                state.update(status='context_required', reason='; '.join(context['missing_context']))
+                _save_state(run, state)
+                break
             if record['phase'] == 'request':
                 if time.time() >= plan['expires_at']:
                     state.update(status='budget_exhausted', reason='Wall time exhausted before model call.')
@@ -609,8 +638,10 @@ def search(run: Path, root: Path, *, external=False):
                             raise ValueError('agent did not complete cleanly')
                     record['response_hash'] = digest(response)
                     if value['stop']:
-                        record.update(phase='decided', decision='stopped', reason=value['reason'])
-                        state.update(status='agent_stopped', reason=value['reason'])
+                        missing = value.get('needs_context', [])
+                        record.update(phase='decided', decision='context_required' if missing else 'stopped',
+                                      reason=value['reason'], needs_context=missing)
+                        state.update(status='context_required' if missing else 'agent_stopped', reason=value['reason'])
                     else:
                         selected, decision = route_proposals(
                             value['proposals'], records, record['parent']['source_hash'], router)
@@ -674,6 +705,8 @@ def search(run: Path, root: Path, *, external=False):
                 _record_ledger(run, plan, round_dir, record, ledger, router)
                 if record['decision'] == 'stopped':
                     state.update(status='agent_stopped', reason=record['reason'])
+                elif record['decision'] == 'context_required':
+                    state.update(status='context_required', reason=record['reason'])
                 state['active'] = None
                 state.pop('dispatch', None)
                 _save_state(run, state)
