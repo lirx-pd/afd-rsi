@@ -18,6 +18,7 @@ from .evidence import digest, read_json, write_json
 from .router import Ledger, Router, normalized_score
 from .runner import execute
 from .workspace import copy_source, inventory
+from .model_recovery import validate_failure, request_hash, ModelExhausted, failure_response, Journal
 
 # Pre-router campaigns and their in-flight requests carry no provider field; the
 # digest they recorded was always this adapter, so keep it as the fallback.
@@ -236,7 +237,7 @@ def request_context(run, plan, best, records, number, router=None, *, strategy=N
                          if len(components) == 1 else 'percent gain')
         if len(components) > 1:
             objective['components'] = components
-    context = {'schema_version': 1, 'model_protocol': 2, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
+    context = {'schema_version': 1, 'model_protocol': 2, 'model_recovery': 1, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
                'provider': provider,
                'provider_hash': digest(run / 'foundation' / provider),
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],
@@ -416,20 +417,53 @@ def propose(request: Path, output: Path, root: Path, session_dir: Path = None,
     remaining = context['deadline'] - time.time()
     if remaining <= 0:
         raise ValueError('campaign budget exhausted before proposal')
+    launch = output
+    if context.get('model_recovery'):
+        output.mkdir(parents=True, exist_ok=True)
+        start_path = output / 'model-start.json'
+        if not start_path.exists():
+            write_json(start_path, dict(request_hash=request_hash(context), deadline=time.time() + context['agent_timeout_seconds']))
+        start = read_json(start_path)
+        if start['request_hash'] != request_hash(context):
+            raise ValueError('proposer launch belongs to another request')
+        remaining = min(remaining, start['deadline'] - time.time())
+        for path in output.glob('launches/*/process.json'):
+            if read_json(path).get('cleanup_complete') is not True:
+                raise ValueError('interrupted proposer cleanup is unverified; refusing duplicate model dispatch')
+        if remaining <= 0:
+            journal = Journal(output, context)
+            stage = 'code' if journal.stage('analysis').get('result') or context.get('debug') else 'analysis'
+            write_json(output / 'proposal.json', failure_response(context, ModelExhausted(stage, 'frozen proposer time budget exhausted')))
+            return output / 'proposal.json'
+        launch = output / 'launches' / uuid.uuid4().hex
     process = execute([sys.executable, str(driver), '--request', str(request),
-                       '--output', str(output / 'proposal.json')], request.parent, output,
+                       '--output', str(output / 'proposal.json')], request.parent, launch,
                       min(context['agent_timeout_seconds'], remaining),
                       session_env(session_dir or output / 'codex-session'))
+    if context.get('model_recovery'):
+        write_json(output / 'process.json', process)
+        for name in ('stderr.log', 'stdout.log'):
+            if (launch / name).exists():
+                shutil.copyfile(launch / name, output / name)
+        if process['status'] in ('timeout', 'interrupted') and process['cleanup_complete']:
+            journal = Journal(output, context)
+            stage = 'code' if journal.stage('analysis').get('result') or context.get('debug') else 'analysis'
+            write_json(output / 'proposal.json', failure_response(context, ModelExhausted(stage, 'proposer interrupted or timed out; completed stages preserved')))
+            return output / 'proposal.json'
     if process['status'] != 'completed' or not process['cleanup_complete']:
         raise ValueError(f'{Path(provider).stem} proposal failed; inspect proposer logs and receipt')
     response = output / 'proposal.json'
     if response.stat().st_size > context['max_response_bytes']:
         raise ValueError('proposer response exceeds the frozen request bound')
-    validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
+    value = validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
+    if value.get('model_failure'):
+        validate_failure(value, context)
     return response
 
 
 def validate_proposal(value, evidence_ids, requirements=None):
+    if isinstance(value, dict) and 'model_failure' in value:
+        return validate_failure(value)
     if not isinstance(value, dict) or set(value) - {'needs_context'} != {'stop', 'reason', 'proposals'}:
         raise ValueError('invalid agent response keys')
     if type(value['stop']) is not bool or not isinstance(value['reason'], str) or not value['reason'].strip():
@@ -615,8 +649,9 @@ def _lesson(run, plan, round_dir, record):
                 for path in trial.rglob('*'):
                     if path.is_file():
                         evidence[str(path.relative_to(run))] = digest(path)
-    for name in ('request.json', 'proposal.json', 'change.patch', 'usage.json',
-                 'debug/request.json', 'debug/proposal.json', 'debug/change.patch', 'debug/usage.json'):
+    for name in ('request.json', 'proposal.json', 'change.patch', 'usage.json', 'model-state.json', 'model-analysis-complete.json', 'model-code-complete.json',
+                 'debug/request.json', 'debug/proposal.json', 'debug/change.patch', 'debug/usage.json',
+                 'debug/model-state.json', 'debug/model-analysis-complete.json', 'debug/model-code-complete.json'):
         path = round_dir / name
         if path.is_file():
             evidence[str(path.relative_to(run))] = digest(path)
@@ -698,8 +733,14 @@ def _prepare_adaptive_round(run, plan, state, best, records, router, directory):
                          if entry['record'].get('selected') and entry['record']['parent']['source_hash'] == parent_hash}
                 candidates.extend(adaptive.pending(run, [item], parent_hash, tried))
     slots = adaptive.completion_slots(plan)
+    if any(item['record'].get('decision') == 'model_failed' and not item['record'].get('debug')
+           and item['request']['source_hash'] == best['source_hash']
+           and not any(later['name'] > item['name'] and any(key in later['record'] for key in ('screen', 'confirmation')) for later in items)
+           and (run / 'search/rounds' / item['name'] / 'model-analysis-complete.json').exists() for item in items):
+        slots = 3
     can_call = (state['calls'] < plan['search']['max_calls'] and
                 state.get('model_calls_reserved', 0) + slots <= plan['search']['max_model_calls'])
+    can_call = can_call and not state.get('model_unavailable')
     can_call = can_call and time.time() + 2 * adaptive.confirmation_reserve(plan) + plan['search']['agent_timeout_seconds'] < plan['expires_at']
     if time.time() + 2 * adaptive.confirmation_reserve(plan) >= plan['expires_at']:
         state['reason'] = 'Remaining time cannot reserve independent full confirmation.'
@@ -721,6 +762,13 @@ def _prepare_adaptive_round(run, plan, state, best, records, router, directory):
                 result[key] = chosen['record'][key]
         return result
     if not can_call:
+        if state.get('model_unavailable'):
+            exhausted = (state['calls'] >= plan['search']['max_calls'] or
+                         state.get('model_calls_reserved', 0) + slots > plan['search']['max_model_calls'])
+            state['status'] = 'budget_exhausted' if exhausted else 'waiting_model'
+            state['reason'] = ('Frozen model/dispatch budget exhausted. ' if exhausted else
+                'Model response recovery exhausted; completed rounds and best are preserved. ') + state.get('model_error', {}).get('reason', '')
+            return None
         state['reason'] = 'Proposal pool exhausted for this parent and model budget or analysis/confirmation time exhausted.'
         return None
     parent = None if strategy['review_due'] else adaptive.continuation(run, items, rows, best, plan, exploration_used)
@@ -731,10 +779,44 @@ def _prepare_adaptive_round(run, plan, state, best, records, router, directory):
         hypothesis=c['proposal']['hypothesis'], parent_hash=c['parent']['source_hash'])
         for item in items for c in adaptive.pending(run, [item], item['original']['parent']['source_hash'], seen)][:12]
     context['search_feedback'] = rows[-12:]
+    # Reuse an analysis only if no later measurement or input contract changed.
+    for item in reversed(items):
+        if item['record'].get('decision') != 'model_failed' or item['record'].get('debug'):
+            continue
+        origin = run / 'search/rounds' / item['name']
+        if (not (origin / 'model-state.json').exists() or any(later['name'] > item['name'] and
+                any(key in later['record'] for key in ('screen', 'confirmation')) for later in items)):
+            continue
+        old = item['request']
+        keys = ('fingerprint', 'source_hash', 'source_files', 'objective', 'execution', 'allowed_files',
+                'dependency_context', 'proposal_requirements', 'knowledge_files')
+        if any(old.get(key) != context.get(key) for key in keys):
+            continue
+        checkpoint = Journal(origin, old)
+        analysis = checkpoint.cached('analysis')
+        if not analysis or analysis['stop']:
+            continue
+        before = {e['id']: e['facts'] for e in old['evidence']}
+        after = {e['id']: e['facts'] for e in context['evidence']}
+        selected = max(analysis['proposals'], key=lambda p: p['priority'])
+        if any(before.get(key) != after.get(key) or key not in after for key in selected['evidence']):
+            continue
+        context['analysis_seed'] = dict(analysis={**analysis, 'proposals': [selected]},
+            reads=checkpoint.stage('analysis').get('reads'),
+            origin=dict(round=item['name'], request_hash=item['original']['request_hash'],
+                        analysis_sha256=digest(origin / 'model-analysis-complete.json')))
+        break
     def context_size():
         return len((json.dumps(context, indent=2, ensure_ascii=False) + '\n').encode())
     while context['knowledge'] and context_size() > plan['search']['max_context_bytes']:
         context['knowledge'] = context['knowledge'][:-2000]
+    if context.get('analysis_seed'):
+        from .model_protocol import ModelContext
+        previous_files, current_files = ModelContext(old).files, ModelContext(context).files
+        if any(not key.startswith('new:') and (key not in previous_files or key not in current_files or
+               any(previous_files[key][field] != current_files[key][field] for field in ('name', 'sha')))
+               for key in selected.get('files', [])):
+            del context['analysis_seed']
     if context_size() > plan['search']['max_context_bytes']:
         raise ValueError('adaptive feedback exceeds frozen context budget')
     write_json(directory / 'request.json', context)
@@ -785,7 +867,8 @@ def search(run: Path, root: Path, *, external=False):
                 (run / 'search/pending.json').unlink(missing_ok=True)
                 break
             if state['active'] is None:
-                if (time.time() >= plan['expires_at'] or len(state['rounds']) >= settings['max_rounds']
+                count = adaptive.evaluation_count(run, state) if adaptive.enabled(plan) else len(state['rounds'])
+                if (time.time() >= plan['expires_at'] or count >= settings['max_rounds']
                         or (not adaptive.enabled(plan) and state['calls'] >= settings['max_calls'])):
                     state.update(status='budget_exhausted', reason='Frozen wall time, round or Agent-dispatch budget exhausted.')
                     _save_state(run, state)
@@ -801,7 +884,9 @@ def search(run: Path, root: Path, *, external=False):
                 if adaptive.enabled(plan):
                     record = _prepare_adaptive_round(run, plan, state, best, records, router, round_dir)
                     if record is None:
-                        state.update(status='budget_exhausted', active=None)
+                        if state['status'] == 'running':
+                            state['status'] = 'budget_exhausted'
+                        state['active'] = None
                         state['rounds'].pop()
                         _save_state(run, state)
                         break
@@ -862,7 +947,7 @@ def search(run: Path, root: Path, *, external=False):
                         _save_state(run, state)
                         break
                     if adaptive.enabled(plan):
-                        slots = adaptive.completion_slots(plan, kind == 'debug')
+                        slots = adaptive.completion_slots(plan, kind == 'debug' or bool(context.get('analysis_seed')))
                         if state.get('model_calls_reserved', 0) + slots > settings['max_model_calls']:
                             state.update(status='budget_exhausted', reason='Frozen model-completion reservation budget exhausted.')
                             _save_state(run, state)
@@ -891,16 +976,27 @@ def search(run: Path, root: Path, *, external=False):
                                           session_env(run / 'search/codex-session'))
                         record['agent_process'] = process
                         write_json(path, record)
+                if (context.get('model_recovery') and not state['external_agent'] and not response.exists()
+                        and (work_dir / 'agent/process.json').exists()):
+                    receipt = read_json(work_dir / 'agent/process.json')
+                    if receipt['cleanup_complete'] and receipt['status'] in ('timeout', 'interrupted'):
+                        write_json(response, failure_response(context, ModelExhausted('code' if context.get('debug') else 'analysis',
+                            'proposer time budget exhausted; completed device rounds retained')))
                 try:
                     if response.stat().st_size > settings['max_context_bytes'] * 2:
                         raise ValueError('agent response exceeds context bound')
                     value = validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
                     if not state['external_agent']:
                         receipt = read_json(work_dir / 'agent/process.json')
-                        if receipt['status'] != 'completed' or not receipt['cleanup_complete']:
+                        if (receipt['status'] != 'completed' and not value.get('model_failure')) or not receipt['cleanup_complete']:
                             raise ValueError('agent did not complete cleanly')
                     record['response_hash'] = digest(response)
-                    if value['stop']:
+                    if value.get('model_failure'):
+                        validate_failure(value, context)
+                        record.update(phase='decided', decision='model_failed', reason=value['reason'])
+                        state['model_unavailable'] = True
+                        state['model_error'] = dict(round=state['active'], stage=value['model_failure']['stage'], reason=value['reason'])
+                    elif value['stop']:
                         missing = value.get('needs_context', [])
                         record.update(phase='decided', decision='context_required' if missing else 'stopped',
                                       reason=value['reason'], needs_context=missing)
@@ -992,7 +1088,8 @@ def search(run: Path, root: Path, *, external=False):
                 if failure:
                     can_debug = state['calls'] < settings['max_calls'] and time.time() < plan['expires_at']
                     if adaptive.enabled(plan):
-                        can_debug = can_debug and state.get('model_calls_reserved', 0) < settings['max_model_calls']
+                        can_debug = can_debug and not state.get('model_unavailable')
+                        can_debug = can_debug and state.get('model_calls_reserved', 0) + adaptive.completion_slots(plan, True) <= settings['max_model_calls']
                         can_debug = can_debug and time.time() + 2 * adaptive.confirmation_reserve(plan) < plan['expires_at']
                     if can_debug:
                         if _prepare_debug(run, plan, round_dir, record, failure):
@@ -1001,7 +1098,7 @@ def search(run: Path, root: Path, *, external=False):
                                 campaign.recover(run, root)
                             continue
                     else:
-                        record['debug_skipped'] = 'Frozen dispatch or wall-time budget exhausted.'
+                        record['debug_skipped'] = 'Model unavailable or frozen dispatch/wall-time budget exhausted.'
                     write_json(path, record)
                 _lesson(run, plan, round_dir, record)
                 _record_ledger(run, plan, round_dir, record, ledger, router)
@@ -1009,6 +1106,8 @@ def search(run: Path, root: Path, *, external=False):
                     state.update(status='agent_stopped', reason=record['reason'])
                 elif record['decision'] == 'context_required':
                     state.update(status='context_required', reason=record['reason'])
+                elif record['decision'] == 'model_failed' and not adaptive.enabled(plan):
+                    state.update(status='waiting_model', reason=record['reason'])
                 state['active'] = None
                 state.pop('dispatch', None)
                 _save_state(run, state)
@@ -1017,6 +1116,33 @@ def search(run: Path, root: Path, *, external=False):
                     campaign.recover(run, root)
         (run / 'search/pending.json').unlink(missing_ok=True)
         return search_report(run, root)
+
+
+def resume_model(run, root):
+    """Explicit recovery retains the deadline, charged calls and every completed round."""
+    run = run.resolve()
+    with campaign.exclusive(run, recovery=True):
+        plan = campaign.load(run, root)
+        state = read_json(run / 'search/state.json')
+        if state['status'] != 'waiting_model':
+            return False
+        best_candidate(run, root)
+        load_experiences(run, plan)
+        if time.time() >= plan['expires_at'] or state['calls'] >= plan['search']['max_calls']:
+            state.update(status='budget_exhausted', reason='Frozen wall or dispatch budget exhausted; resume cannot refund it.')
+            _save_state(run, state)
+            return False
+        if adaptive.enabled(plan) and state.get('model_calls_reserved', 0) + 3 > plan['search']['max_model_calls']:
+            state.update(status='budget_exhausted', reason='Frozen model-completion budget exhausted; resume cannot refund it.')
+            _save_state(run, state)
+            return False
+        number = state.get('model_resumes', 0) + 1
+        write_json(run / f'search/model-resumes/{number:04d}.json', dict(
+            previous_state=digest(run / 'search/state.json'), best_hash=read_json(run / 'search/best.json')['source_hash'],
+            calls=state['calls'], model_calls_reserved=state.get('model_calls_reserved', 0), at=time.time()))
+        state.update(status='running', model_unavailable=False, model_resumes=number, reason='Explicit model recovery; completed rounds retained.')
+        _save_state(run, state)
+        return True
 
 
 def _routing_summary(run, plan):

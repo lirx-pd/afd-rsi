@@ -21,9 +21,10 @@ from .contracts import load_recipe
 from .evidence import digest, read_json, write_json
 from .runner import execute, host_identity, owned_alive
 from .workspace import copy_source, inventory
+from .model_recovery import resumable as resumable_model, Journal, ModelExhausted, failure_response
 
 MARKER = 'AFD_RSI_STATUS:'
-TERMINAL = {'finished', 'error'}
+TERMINAL = {'finished', 'error', 'waiting_model'}
 ACTIVITIES = {'auth': '检查 iTASK 登录/权限', 'snapshot': '封存源码和框架', 'task_start': '等待 iTASK 启动/迁移（最多 30 分钟）',
               'upload': '上传并部署框架', 'preflight': '预检评测依赖',
               'collect': '下载并校验结果', 'resume': '恢复后台任务'}
@@ -56,7 +57,9 @@ def describe_status(value, worker_alive=True):
             stage = PHASES[progress['round_phase']] + ' / ' + stage
     reason = value.get('error') or state.get('reason', '')
     code, done = 0, False
-    if status == 'error' or (status == 'finished' and state.get('status') == 'baseline_failed'):
+    if status == 'waiting_model':
+        label, done = '等待模型恢复：已完成轮次已保留，可用 optimize resume 续跑', True
+    elif status == 'error' or (status == 'finished' and state.get('status') == 'baseline_failed'):
         label, code, done = '失败：框架已停止推进', 1, True
     elif status == 'finished' and state.get('status') == 'context_required':
         label, code, done = '需要补充依赖上下文：未耗尽优化方向', 1, True
@@ -532,7 +535,7 @@ def remote_run(base, phase):
                                    + (f': {detail}' if detail else ''))
             state = read_json(run / 'search/state.json')
             archive_hash = None
-            if state['status'] != 'running':
+            if state['status'] not in ('running', 'waiting_model'):
                 if (run / 'search/best.json').exists():
                     staging = base / ('export-' + phase)
                     campaign.export(run, staging, root, best=True)
@@ -545,6 +548,8 @@ def remote_run(base, phase):
                         shutil.rmtree(staging)
                     else:
                         staging.rename(destination)
+                archive_hash = pack_results(base)
+            elif state['status'] == 'waiting_model':
                 archive_hash = pack_results(base)
             write_json(directory / 'exit.json', {'code': 0, 'results_sha256': archive_hash})
         except BaseException as error:
@@ -592,7 +597,7 @@ def restart(job, root, reason):
     evidenced upgrade instead of a silent swap.
     """
     status = read_json(job / 'status.json')
-    if status['status'] == 'running' and (job / 'worker.json').exists() \
+    if (job / 'worker.json').exists() \
             and owned_alive(read_json(job / 'worker.json')['tag']):
         raise ValueError('campaign worker is still running')
     if (job / 'restart.json').exists():
@@ -671,6 +676,10 @@ def worker(job):
                         event(job, 'recovering', phase=phase)
                         continue
                     raise RuntimeError(status['exit'].get('error', 'execution failed'))
+                if status['state'].get('status') == 'waiting_model':
+                    collect_results(job, executor, status)
+                    event(job, 'waiting_model', phase=phase, progress=status)
+                    return
                 if status['state'].get('status') != 'running':
                     event(job, 'running', phase=phase, activity='collect', progress=status)
                     collect_results(job, executor, status)
@@ -694,20 +703,23 @@ def worker(job):
                 proposal_dir = round_dir / 'agent'
                 receipt = proposal_dir / 'process.json'
                 adaptive_request = 'knowledge_refs' in read_json(request).get('proposal_requirements', {})
+                context = read_json(request)
+                resume_stage = False
                 retries = 0
                 if proposal_dir.exists():
                     completed = (receipt.exists() and read_json(receipt)['status'] == 'completed'
                                  and read_json(receipt)['cleanup_complete'])
+                    resume_stage = not completed and resumable_model(proposal_dir, context)
                     # A proposer killed by an unavailable gateway is retried; an
                     # ambiguous local interruption still requires inspection.
-                    if not completed and not proposer_unavailable(proposal_dir):
+                    if not completed and not resume_stage and not proposer_unavailable(proposal_dir):
                         raise ValueError('interrupted proposer is not retried or refunded; inspect its owned process receipts')
-                    if not completed and adaptive_request and (proposal_dir / 'usage.json').exists() and read_json(proposal_dir / 'usage.json').get('model_calls', 0):
+                    if not completed and not resume_stage and adaptive_request and (proposal_dir / 'usage.json').exists() and read_json(proposal_dir / 'usage.json').get('model_calls', 0):
                         raise ValueError('adaptive proposer already consumed completions; inspect preserved receipts before any new dispatch')
-                    if not completed:
+                    if not completed and not resume_stage:
                         retries += 1
                         proposal_dir.rename(proposal_dir.with_name(f'agent-retry{retries:02d}'))
-                if not proposal_dir.exists():
+                if not proposal_dir.exists() or resume_stage:
                     # This finite process exits before any device experiment starts.
                     # A proposer outage is retried rather than failing the campaign:
                     # the dispatch is already charged and the work is untouched.
@@ -729,7 +741,20 @@ def worker(job):
                                     session_dir=job / 'codex-session',
                                     provider_override=override)
                             break
-                        except (RuntimeError, ValueError):
+                        except (RuntimeError, ValueError) as error:
+                            if any(marker in str(error) for marker in ('different or duplicate thread', 'checkpoint', 'another request')):
+                                raise
+                            if resumable_model(proposal_dir, context):
+                                start = read_json(proposal_dir / 'model-start.json')
+                                if len(list((proposal_dir / 'launches').iterdir())) < 3 and time.time() < min(start['deadline'], context['deadline']):
+                                    event(job, 'proposing', phase=phase, progress=status,
+                                          reason='Resume completed model stages; previous attempts remain charged')
+                                    continue
+                                journal = Journal(proposal_dir, context)
+                                stage_name = 'code' if journal.stage('analysis').get('result') or context.get('debug') else 'analysis'
+                                write_json(proposal_dir / 'proposal.json', failure_response(context,
+                                    ModelExhausted(stage_name, f'bounded proposer process recovery exhausted: {error}')))
+                                break
                             if adaptive_request and (proposal_dir / 'usage.json').exists() and read_json(proposal_dir / 'usage.json').get('model_calls', 0):
                                 raise
                             reason = proposer_unavailable(proposal_dir)
@@ -747,6 +772,9 @@ def worker(job):
                 usage = proposal_dir / 'usage.json'
                 if usage.is_file():
                     executor.send(usage, executor.base + '/campaign/' + str(Path(pending['response']).with_name('usage.json')))
+                for name in ('model-state.json', 'model-analysis-complete.json', 'model-code-complete.json'):
+                    if (proposal_dir / name).is_file():
+                        executor.send(proposal_dir / name, executor.base + '/campaign/' + str(Path(pending['response']).with_name(name)))
                 # Submit last: the controller may seal evidence as soon as the response appears.
                 executor.send(proposal_dir / 'proposal.json', executor.base + '/campaign/' + pending['response'])
                 phase += 1
@@ -782,6 +810,9 @@ def main(argv=None, root=None):
             if (job / 'worker.json').exists() and owned_alive(read_json(job / 'worker.json')['tag']):
                 return watch(job, follow=options.follow, json_output=options.json)
             config = read_json(job / 'job.json')
+            status = read_json(job / 'status.json')
+            if status['status'] == 'waiting_model':
+                write_json(job / 'status.json', {**status, 'phase': int(status.get('phase', 0)) + 1})
             config['retry_remote'] = True
             write_json(job / 'job.json', config)
             spawn(job)

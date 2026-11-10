@@ -96,7 +96,7 @@ def pending(run, items, parent_hash, seen):
                 or original['parent']['source_hash'] != parent_hash):
             continue
         value = read_json(run / 'search/rounds' / item['name'] / 'proposal.json')
-        if value.get('stop') or original.get('decision') == 'invalid_agent':
+        if value.get('stop') or value.get('model_failure') or original.get('decision') == 'invalid_agent':
             continue
         for index, proposal in enumerate(value['proposals']):
             from .search import identity
@@ -199,5 +199,8 @@ def confirmation_reserve(plan):
 
 
 def completion_slots(plan, debug=False):
-    from .contracts import agent_driver
-    return 1 if debug else 4 if 'deepseek' in agent_driver(plan['search']['agent_command']) else 3
+    return 3 if debug else 6
+
+
+def evaluation_count(run, state):
+    return sum(bool(item['record'].get('selected')) for item in rounds(run, state))

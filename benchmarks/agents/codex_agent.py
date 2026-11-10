@@ -15,6 +15,7 @@ from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 from afd_rsi.model_protocol import ModelContext, MODEL_RULES, DEBUG_EDIT_TASK, code_schema, compact
 from afd_rsi.search_policy import direction_schema
+from afd_rsi.model_recovery import Journal, ModelExhausted, ContextFull, failure_response, seed_analysis, check_size
 
 
 def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
@@ -43,7 +44,11 @@ def invoke(executable, workspace, schema, output, prompt, model, effort, prefix,
         if len(threads) != 1 or (state['thread_id'] and threads[0] != state['thread_id']):
             raise ValueError('Codex returned a different or duplicate thread; refusing context loss')
         write_json(session, {**state, 'thread_id': threads[0]})
+    write_json(prefix.with_suffix('.usage.json'), {'turns': usages})
     if result.returncode:
+        detail = prefix.with_suffix('.stderr.log').read_text(errors='replace').lower()
+        if any(marker in detail for marker in ('context window', 'context_length_exceeded', 'maximum context length')):
+            raise ContextFull('Codex context budget exceeded; reload the complete canonical request in a fresh context')
         raise RuntimeError(f'Codex exited {result.returncode}; inspect {prefix}.stderr.log')
     if not threads or len(usages) != 1:
         raise ValueError('Codex did not report one persistent thread and completed turn')
@@ -61,7 +66,52 @@ def main():
     args.session_dir.mkdir(parents=True, exist_ok=True)
     with (args.session_dir / '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        propose(args)
+        try:
+            propose(args)
+        except ModelExhausted as error:
+            response = failure_response(read_json(args.request), error)
+            write_json(args.output.parent / 'model-failure.json', response)
+            if not read_json(args.request).get('model_recovery'):
+                raise
+            write_json(args.output, response)
+
+
+def recover_stage(journal, stage, call, validate, output, prefix, reset_context):
+    cached = journal.cached(stage)
+    if cached is not None:
+        validate(cached)
+        return cached, []
+    usages = []
+    usage_path = output.parent / 'usage.json'
+    previous = read_json(usage_path).get('turns', []) if usage_path.exists() else []
+    while len(journal.stage(stage)['attempts']) < journal.limit:
+        index = journal.reserve(stage)
+        attempt_prefix = prefix.with_name(prefix.name + (f'-retry{index}' if index else ''))
+        reported = []
+        try:
+            value, reported = call(journal.stage(stage)['hint'], attempt_prefix)
+            write_json(attempt_prefix.with_suffix('.response.json'), value)
+            validate(value)
+        except (ValueError, KeyError, TypeError, RuntimeError) as error:
+            if 'different or duplicate thread' in str(error):
+                raise
+            if attempt_prefix.with_suffix('.usage.json').exists():
+                reported = read_json(attempt_prefix.with_suffix('.usage.json'))['turns']
+            if output.exists():
+                attempt_prefix.with_suffix('.answer.txt').write_bytes(output.read_bytes())
+            journal.rejected(stage, error, truncated=isinstance(error, json.JSONDecodeError) or 'budget' in str(error))
+            if isinstance(error, ContextFull):
+                reset_context(attempt_prefix)
+            if not reported:
+                reported = [dict(stage=stage, attempt=index, usage_unknown=True)]
+            usages += reported
+            write_json(usage_path, {'turns': previous + usages, 'model_calls': len(previous + usages)})
+            continue
+        usages += reported
+        write_json(usage_path, {'turns': previous + usages, 'model_calls': len(previous + usages)})
+        journal.complete(stage, value)
+        return value, usages
+    raise ModelExhausted(stage, journal.stage(stage)['hint'])
 
 
 def write_workspace(workspace, request):
@@ -96,6 +146,9 @@ def write_workspace(workspace, request):
 
 def propose(args):
     request = json.loads(args.request.read_text())
+    journal = Journal(args.output.parent, request) if request.get('model_recovery') else None
+    if journal is not None:
+        seed_analysis(journal, request)
     require_patch_tools(request)
     global_redesign = request.get('strategy', {}).get('mode') == 'global-redesign'
     executable = shutil.which('codex')
@@ -106,7 +159,7 @@ def propose(args):
     campaign = {key: request.get(key) for key in ('fingerprint', 'deadline', 'provider_hash')}
     if session.exists():
         state = read_json(session)
-        if state['campaign'] != campaign or not state['thread_id']:
+        if state['campaign'] != campaign or (not state['thread_id'] and journal is None):
             raise ValueError('Codex session belongs to another campaign or was interrupted before thread capture')
     else:
         write_json(session, {'campaign': campaign, 'thread_id': None})
@@ -115,6 +168,33 @@ def propose(args):
     (workspace / 'analysis.json').unlink(missing_ok=True)
     write_workspace(workspace, request)
     wire = ModelContext(request) if request.get('model_protocol') == 2 else None
+    def call_stage(stage, contract_path, output, prompt, model, prefix, analysis=None):
+        if journal is None:
+            return invoke(executable, workspace, contract_path, output, prompt, model, 'xhigh', prefix, session)
+        def validate(value):
+            from afd_rsi.search import validate_proposal
+            check_size(value, request)
+            if stage == 'analysis':
+                normalized = wire.normalize_analysis(value) if wire is not None else value
+                shaped = {**normalized, 'proposals': [
+                    {**{k: v for k, v in p.items() if k != 'files'}, 'patch': 'analysis only'} for p in normalized['proposals']]}
+                validate_proposal(shaped, {e['id'] for e in request['evidence']}, request.get('proposal_requirements'))
+                if wire is not None and not value['stop']:
+                    wire.coding(normalized, inline=False)
+            else:
+                decoded = wire.decode(value, analysis) if wire is not None else value
+                check_size(decoded, request)
+                validate_proposal(decoded, {e['id'] for e in request['evidence']}, request.get('proposal_requirements'))
+                validate_patches(decoded, request)
+        def reset_context(where):
+            old = read_json(session)
+            write_json(where.with_suffix('.context-reset.json'), dict(
+                previous_session=old, request_hash=journal.request_hash,
+                reason='Provider context window exhausted; current request/code manifest remains authoritative'))
+            write_json(session, {**old, 'thread_id': None})
+        return recover_stage(journal, stage,
+            lambda hint, where: invoke(executable, workspace, contract_path, output,
+                prompt + '\n' + hint, model, 'xhigh', where, session), validate, output, prefix, reset_context)
     if wire is not None:
         view = json.loads(wire.initial(inline=False))
         view['file_paths'] = wire.paths()
@@ -165,11 +245,12 @@ def propose(args):
             view.update(failure=request['debug']['failure'], logs=request.get('logs', []))
             (workspace / 'code.json').write_text(compact(view))
             write_json(schema, code_schema(wire.base, 1))
-        value, usages = invoke(executable, workspace, schema, args.output,
+        value, usages = call_stage('code', schema, args.output,
             ('Read request.json and AGENTS.md. ' + DEBUG_TASK if wire is None
              else 'Read code.json and AGENTS.md. Return id/edits. ' + DEBUG_EDIT_TASK),
-            'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
-        write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+            'gpt-6.1-sol', args.output.parent / 'codex-events', analysis)
+        if journal is None:
+            write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
         if wire is not None:
             value = wire.decode(value, analysis)
             write_json(args.output, value)
@@ -198,10 +279,11 @@ def propose(args):
         analysis_prompt += (' Compare at least two FFN architectures across RX/pull, packing, GMM1, '
             'activation, GMM2 and output/TX. Review failed predictions and choose justified changes after source readiness; '
             'exclude Attention submission waits and do not stop merely because earlier local tweaks failed.')
-    analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
+    analysis, usages = call_stage('analysis', analysis_schema, analysis_path,
         analysis_prompt,
-        'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events', session)
-    write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+        'gpt-6-astra', args.output.parent / 'analysis-events')
+    if journal is None:
+        write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
     if wire is not None:
         analysis = wire.normalize_analysis(analysis)
     (workspace / 'analysis.json').write_text(json.dumps(analysis) + '\n')
@@ -228,11 +310,12 @@ def propose(args):
         code_prompt += (' Implement the selected mechanisms, including all affected allowed files and '
             'synchronization contracts. Rewriting a kernel or adding a new implementation is permitted; '
             'choose scope from evidence and request.strategy, rather than round number.')
-    value, code_usages = invoke(executable, workspace, schema, args.output,
+    value, code_usages = call_stage('code', schema, args.output,
         code_prompt,
-        'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
+        'gpt-6.1-sol', args.output.parent / 'codex-events', analysis)
     usages += code_usages
-    write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+    if journal is None:
+        write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
     try:
         if wire is not None:
             write_json(args.output.parent / 'model-response.json', value)
@@ -240,6 +323,8 @@ def propose(args):
             write_json(args.output, value)
         validate_patches(value, request)
     except ValueError as error:
+        if journal is not None:
+            raise
         write_json(args.output.parent / 'proposal-before-repair.json', value)
         value, repaired_usage = invoke(executable, workspace, schema, args.output,
             'The coding response failed local patch preflight: ' + str(error)

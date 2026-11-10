@@ -51,6 +51,7 @@ from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 from afd_rsi.model_protocol import ModelContext, MODEL_RULES, READ_RULES, EDIT_TASK, DEBUG_EDIT_TASK, code_schema, compact
 from afd_rsi.search_policy import direction_schema, validate_direction
+from afd_rsi.model_recovery import Journal, ModelExhausted, failure_response, seed_analysis, check_size
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
 DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
@@ -69,9 +70,9 @@ class Truncated(ValueError):
 class UsageLog:
     """Token record written after every call, so a failed round keeps its usage."""
 
-    def __init__(self, path=None):
+    def __init__(self, path=None, *, resume=False):
         self.path = Path(path) if path else None
-        self.turns = []
+        self.turns = read_json(self.path)['turns'] if resume and self.path and self.path.exists() else []
 
     def add(self, turn):
         self.turns.append(turn)
@@ -465,7 +466,7 @@ def token_cap() -> int:
     return int(os.environ.get('AFD_RSI_DEEPSEEK_TOKEN_CAP') or DEFAULT_TOKEN_CAP)
 
 
-def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None, wire=None, parent_analysis=None):
+def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None, wire=None, parent_analysis=None, journal=None):
     """One recovery per ordinary stage; a candidate debug gets one coding call."""
     usage = usage or UsageLog()
     model = model_for(stage, request)
@@ -473,12 +474,42 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
     budget = min(token_budget(stage), token_cap())
     payload = {'model': model, 'messages': messages, 'max_tokens': budget, 'stream': False,
                'reasoning_effort': effort, **optional_parameters(model)}
+    if journal is not None:
+        cached = journal.cached(stage)
+        if cached is not None:
+            check_shape(cached, request, analysis=analysis)
+            if wire is not None and analysis and journal.stage(stage).get('reads'):
+                wire.restore_reads(journal.stage(stage)['reads'])
+            if not analysis:
+                validate_patches(cached, request)
+            return cached, {'kind': 'cached'}
+        read = journal.stage(stage).get('read')
+        if read is not None:
+            content = wire.read(read['read'])
+            messages = messages + [dict(role='assistant', content=compact(read)), dict(role='user', content=content)]
     (prefix.parent / f'{prefix.name}.request.json').write_text(
         json.dumps({key: value for key, value in payload.items() if key != 'messages'}) + '\n')
     errors = []
     keys = sorted(schema['properties'])
-    for attempt in range(1 if request.get('debug') else MAX_ATTEMPTS):
-        response = send(payload, timeout, prefix)
+    limit = journal.limit if journal is not None else 1 if request.get('debug') else MAX_ATTEMPTS
+    start = len(journal.stage(stage)['attempts']) if journal is not None else 0
+    for attempt in range(start, limit):
+        if journal is not None:
+            journal.reserve(stage)
+            entry = journal.stage(stage)
+            payload['messages'] = messages + ([dict(role='user', content=entry['hint'])] if entry['hint'] else [])
+            if entry.get('truncated'):
+                payload['max_tokens'] = min(budget * 2, token_cap())
+                if attempt >= 2:
+                    payload['reasoning_effort'] = 'medium' if analysis else 'low'
+        try:
+            response = send(payload, min(timeout, max(.001, journal.state['deadline'] - time.time())) if journal is not None else timeout, prefix)
+        except (RuntimeError, OSError) as error:
+            if journal is None:
+                raise
+            journal.rejected(stage, redact(str(error)))
+            usage.add(dict(model=model, stage=stage, attempt=attempt, error=redact(str(error)), usage_unknown=True))
+            continue
         suffix = '' if attempt == 0 else f'-retry{attempt}'
         (prefix.parent / f'{prefix.name}.response{suffix}.json').write_text(
             json.dumps(response) + '\n')
@@ -488,7 +519,7 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
         text = ''
         if choices:
             text = (choices[0].get('message') or {}).get('content') or ''
-        turn = {'model': model, 'stage': stage, 'effort': effort, 'attempt': attempt,
+        turn = {'model': model, 'stage': stage, 'effort': payload['reasoning_effort'], 'attempt': attempt,
                 'max_tokens': payload['max_tokens'], 'finish_reason': finish,
                 'prompt_tokens': reported.get('prompt_tokens'),
                 'completion_tokens': reported.get('completion_tokens'),
@@ -501,7 +532,7 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
         try:
             if not choices:
                 raise ValueError('response carried no choices')
-            if finish == 'length' and not text.strip():
+            if finish == 'length' and (journal is not None or not text.strip()):
                 raise Truncated(
                     f'output budget {payload["max_tokens"]} was spent before any answer '
                     f'(finish_reason=length)')
@@ -509,7 +540,9 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
             if wire is not None and analysis and 'read' in value:
                 if set(value) != {'read'}:
                     raise ValueError('read must be the only response field')
-                if attempt + 1 >= MAX_ATTEMPTS:
+                if (journal is not None and journal.stage(stage).get('read')) or attempt + 1 >= MAX_ATTEMPTS:
+                    if journal is not None:
+                        raise ValueError('Context read allowance exhausted; use the supplied context and return final analysis JSON')
                     usage.add(turn)
                     return dict(stop=True, reason='Context-read allowance exhausted', proposals=[],
                                 needs_context=['additional SDK/source reads require a new context']), turn
@@ -519,24 +552,38 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                     return dict(stop=True, reason='Requested context exceeds the prompt budget', proposals=[],
                                 needs_context=['raise the prompt budget for the requested implementation contracts']), turn
                 usage.add({**turn, 'kind': 'context_read'})
+                if journal is not None:
+                    journal.stage(stage)['read'] = value
+                    write_json(journal.path, journal.state)
                 payload = {**payload, 'messages': messages + [
                     {'role': 'assistant', 'content': compact(value)},
                     {'role': 'user', 'content': content + '\nReturn the final analysis JSON now; no further reads.'}]}
+                if journal is not None:
+                    messages = payload['messages']
                 continue
             if wire is not None and not analysis:
                 value = wire.decode(value, parent_analysis)
+            if journal is not None:
+                check_size(value, request)
             turn['ignored_keys'] = check_shape(value, request, analysis=analysis)
             if wire is not None and analysis:
                 value = wire.normalize_analysis(value)
                 if not value['stop']:
-                    wire.coding(value, inline=False)
+                    document = wire.coding(value, inline=journal is not None)
+                    if journal is not None and len(document) > wire.max_chars:
+                        raise ValueError('Selected coding context exceeds budget; choose one smaller complete mechanism and fewer files')
             if not analysis:
                 validate_patches(value, request)
             usage.add(turn)
+            if journal is not None:
+                journal.complete(stage, value, reads=wire.reads() if wire is not None else None)
             return value, turn
         except Truncated as error:
             errors.append(str(error))
             usage.add(turn)
+            if journal is not None:
+                journal.rejected(stage, error, truncated=True)
+                continue
             escalated = min(payload['max_tokens'] * 2, token_cap())
             if escalated <= payload['max_tokens']:
                 break
@@ -547,20 +594,28 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
         except (KeyError, IndexError, TypeError, ValueError) as error:
             errors.append(str(error))
             usage.add(turn)
+            if journal is not None:
+                journal.rejected(stage, error)
+                continue
             payload = {**payload, 'messages': messages + [
                 {'role': 'assistant', 'content': text},
                 {'role': 'user', 'content':
                  f'That response was rejected: {error}. Reply with one JSON object and nothing else. '
                  f'It must contain exactly these keys: {keys}. '
                  f'The schema is: {json.dumps(schema)}'}]}
+    if journal is not None:
+        raise ModelExhausted(stage, journal.stage(stage)['hint'])
     raise ValueError(f'DeepSeek {stage} response rejected: {errors[-1]}')
 
 
 def propose_compact(args, request, analysis_contract):
+    journal = Journal(args.output.parent, request) if request.get('model_recovery') else None
+    if journal is not None:
+        seed_analysis(journal, request)
     wire = ModelContext(request)
     wire.max_chars = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS')
                          or request.get('max_context_bytes') or DEFAULT_MAX_CHARS)
-    usage = UsageLog(args.output.parent / 'usage.json')
+    usage = UsageLog(args.output.parent / 'usage.json', resume=journal is not None)
     remaining = float(request.get('deadline') or 0) - time.time() if request.get('deadline') else float('inf')
     limit = min(float(request.get('agent_timeout_seconds') or 600), max(1.0, remaining))
     item = analysis_contract['properties']['proposals']['items']
@@ -582,7 +637,7 @@ def propose_compact(args, request, analysis_contract):
         analysis, _ = ask('analysis', [dict(role='system', content=SYSTEM_RULES + MODEL_RULES + READ_RULES),
             dict(role='user', content=ANALYSIS_TASK + '\n' + document + '\nSchema:' + compact(analysis_contract))],
             analysis_contract, request, timeout=limit, prefix=args.output.parent / 'analysis-events',
-            analysis=True, usage=usage, wire=wire)
+            analysis=True, usage=usage, wire=wire, journal=journal)
         write_json(args.output.parent / 'analysis.json', analysis)
         write_json(saved, wire.reads())
         if analysis['stop']:
@@ -603,7 +658,7 @@ def propose_compact(args, request, analysis_contract):
         dict(role='user', content=(DEBUG_EDIT_TASK if request.get('debug') else EDIT_TASK)
              + '\nReturn id/edits, not patches.\n' + document + '\nSchema:' + compact(contract))],
         contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events', analysis=False,
-        usage=usage, wire=wire, parent_analysis=analysis)
+        usage=usage, wire=wire, parent_analysis=analysis, journal=journal)
     write_json(args.output, code)
 
 
@@ -655,20 +710,21 @@ def propose(args):
     remaining = deadline - time.time() if deadline else float('inf')
     limit = min(float(request.get('agent_timeout_seconds') or 600), max(1.0, remaining))
 
-    usage = UsageLog(args.output.parent / 'usage.json')
+    journal = Journal(args.output.parent, request) if request.get('model_recovery') else None
+    usage = UsageLog(args.output.parent / 'usage.json', resume=journal is not None)
     if request.get('debug'):
         code, _ = ask('code',
             [{'role': 'system', 'content': SYSTEM_RULES},
              {'role': 'user', 'content': f'{DEBUG_TASK}\n\nSchema:\n{json.dumps(contract)}\n\nRequest:\n{document}'}],
             contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events',
-            analysis=False, usage=usage)
+            analysis=False, usage=usage, journal=journal)
         write_json(args.output, code)
         return
     analysis, first = ask('analysis',
         [{'role': 'system', 'content': SYSTEM_RULES},
          {'role': 'user', 'content': f'{ANALYSIS_TASK}\n\nSchema:\n{json.dumps(analysis_contract)}\n\nRequest:\n{document}'}],
         analysis_contract, request, timeout=limit, prefix=args.output.parent / 'analysis-events',
-        analysis=True, usage=usage)
+        analysis=True, usage=usage, journal=journal)
     write_json(args.output.parent / 'analysis.json', analysis)
     if analysis['stop']:
         args.output.write_text(json.dumps(analysis) + '\n')
@@ -686,7 +742,7 @@ def propose(args):
              {'role': 'user', 'content': f'{CODE_TASK}\n\nSchema:\n{json.dumps(contract)}\n\nAnalysis:\n'
                                          f'{json.dumps(analysis, ensure_ascii=False)}\n\nRequest:\n{document}'}],
             contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events',
-            analysis=False, usage=usage)
+            analysis=False, usage=usage, journal=journal)
         args.output.write_text(json.dumps(code) + '\n')
 
 
@@ -822,6 +878,12 @@ def main():
     handle = exclusive_lock(args.session_dir / '.lock')
     try:
         propose(args)
+    except ModelExhausted as error:
+        response = failure_response(read_json(args.request), error)
+        write_json(args.output.parent / 'model-failure.json', response)
+        if not read_json(args.request).get('model_recovery'):
+            raise
+        write_json(args.output, response)
     finally:
         handle.close()
 

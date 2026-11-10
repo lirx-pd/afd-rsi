@@ -34,7 +34,7 @@
 候选额度；恢复不重置额度。best 更新后旧分支不自动延续。
 
 `max_rounds` 是候选轮数，`max_calls` 是 Agent 派发上限；新增 `max_model_calls`
-按适配器最坏 completion 次数预留（Codex 3、DeepSeek 4、debug 1），保守预留不返还。
+按最坏尝试次数预留（普通分析加编码 6、debug 或缓存分析后的编码 3），保守预留不返还。
 实际 usage 另外汇报，缺失 usage 显式显示未知。开启新候选前按冻结阶段超时预留筛选和
 完整独立确认时间。token 用量仅观测，没有承诺硬 token 上限。
 
@@ -320,3 +320,26 @@ benchmark/同权限模型进程不构成安全沙箱；哈希用于检测漂移�
 
 新 Ascend 配方默认启用 `validation="operator-first"`：初筛只测算子，独立复测重复原生
 门槛后才做最终服务和 profile。旧 full 配方保持原流程，详见 [分层验证](staged-validation.md)。
+
+## 模型超预算、无效响应和续跑
+
+新请求每个模型阶段提供初次尝试加两次响应修复。编码失败复用成功分析，提示逐步收紧为
+一个候选、简短实验说明与最短有效修改；不把截断的长回复再完整发回模型。只有明确上下文
+窗口错误才允许 Codex 记录后重建会话；当前完整请求、源码、SDK 和 code manifest 仍保留。
+阶段检查点绑定请求与结果哈希，尝试在调用前原子预留，进程中断不返还调用。
+
+三次仍失败时记录 model_failed，不作为性能负收益。控制器先跑完当前 best 下可复用候选，
+再进入 waiting_model，后台任务保留全部已完成轮次、基线、best 与 partial results。
+模型恢复后执行：
+
+```bash
+PYTHONPATH=src python3 -m afd_rsi optimize resume runs/JOB
+# 直接运行 controller 的 campaign：
+PYTHONPATH=src python3 -m afd_rsi resume runs/CAMPAIGN
+```
+
+源、工作负载、门槛、SDK、引用事实和文件 ID 均相同，且没有后续设备实验时，可以复用
+失败派发中的成功分析，只重试一个候选的编码。代码、依赖或证据变了就重新分析。
+新编码派发继续计费；恢复不会增加 max_calls、max_model_calls 或原 wall-time 预算。
+预算用尽正常结束，完整晋升仍需要两次独立 PASS。真实源/哈希不一致或进程清理状态不明
+不会被当作模型格式错误吞掉。旧冻结控制器不自动迁移，更换 proposer 要通过 restart 留证。

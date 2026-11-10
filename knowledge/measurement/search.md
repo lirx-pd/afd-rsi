@@ -37,8 +37,8 @@ share a candidate-count quota, floor(max_rounds * explore_max_fraction).
 Incomplete or incorrect candidates cannot become exploration parents.
 
 `max_rounds` bounds candidate rounds; `max_calls` bounds proposal/debug dispatches.
-`max_model_calls` reserves at most three returned completions for ordinary Codex,
-four for DeepSeek, and one for code-only debug before dispatch. Conservative
+`max_model_calls` reserves at most six model attempts for an ordinary dispatch
+and three for code-only debug or a sealed analysis continuation before dispatch. Conservative
 reservations are never refunded after interruption; actual usage is separately
 reported, with absent usage explicitly unknown. Before opening another candidate,
 reserve screening and independent confirmation using frozen phase ceilings.
@@ -85,10 +85,9 @@ exchange may separate the proposer from the executor, but it cannot change the
 frozen workload, timeout or acceptance rules. Preserve raw model events and the
 submitted proposal alongside experiment evidence. Token usage is an observation,
 not an enforced token budget; Agent dispatches and wall time are bounded.
-Ordinary dispatches analyze once and then code. Codex allows one extra coding
-call if local patch application fails; DeepSeek allows one recovery per stage,
-shared by context reads, output truncation, schema and patch failures (at most four completions
-per ordinary dispatch). Retry prompts name response properties, not schema keys.
+New requests declare model_recovery=1: each analysis/code stage gets an initial
+attempt and at most two focused response repairs. A validated analysis is sealed
+and reused while coding recovers. Legacy requests retain their prior adapter limits. Retry prompts name response properties, not schema keys.
 The proposer host needs Git for disposable-copy patch preflight. No preflight
 modifies the original checkout or replaces the controller's allowed-file checks.
 Follow the
@@ -172,3 +171,33 @@ communication/computation stages, ownership, waits and lifetimes being changed.
 No profile duration alone proves physical overlap. Preserve this experiment in
 history so a failed prediction affects the next direction, not just the patch.
 The controller validates structure and evidence IDs, not the truth of a hypothesis.
+
+## Model response recovery
+
+Model format, output-length and transient provider faults do not count as failed
+performance directions. Raw responses, usage and stage reservations remain in
+model-state.json and per-attempt files. Reserve each attempt before calling;
+resume cannot reset its counter or original stage deadline. Partial as well as
+empty finish_reason=length responses are retried with one concise proposal and
+no repeated source/SDK text. DeepSeek's last truncation recovery requests less
+reasoning effort; Codex retains its fixed model/effort policy. An explicit Codex
+context-window error may reset the conversation only after recording the old
+session and retaining the complete canonical request/code manifests.
+
+A fully exhausted stage emits a request-bound model_failure receipt. The
+controller seals it, continues usable pending candidates, and then enters
+waiting_model instead of framework error. The worker exits cleanly after archiving
+partial results. Use optimize resume JOB, or resume RUN for a direct controller.
+Resume audits best and experiences; it preserves the baseline, completed rounds,
+attempt IDs, call reservations and wall deadline. Exhausted budgets end normally
+without granting more calls. A model-only failed round does not consume a device
+candidate slot. Genuine source/integrity/cleanup failures still fail closed.
+
+Successful analysis and read SDK ranges may seed a new paid coding dispatch only
+when source, workload, gate and dependency contracts match, cited facts and file
+IDs still match their frozen bytes, and no later device experiment occurred.
+Choose one previously analyzed proposal to keep recovery small. Otherwise analyze
+again. Upload stage checkpoints before submitting the response so the controller
+can seal their hashes; do not export a temporary best-export during waiting_model.
+Old frozen controllers are not silently migrated; framework snapshots and gates
+remain immutable. Upgrade a proposer only through the recorded restart override.

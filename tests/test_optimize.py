@@ -38,7 +38,7 @@ def fake_codex(tmp_path, monkeypatch):
     script = tmp_path / 'bin/codex'
     script.parent.mkdir()
     script.write_text(f'''#!{sys.executable}
-import sys,json
+import sys,json,os
 from pathlib import Path
 root=Path(sys.argv[sys.argv.index('--cd')+1])
 request=json.loads((root/'request.json').read_text())
@@ -59,7 +59,7 @@ if 'edits' in fields:
     view=json.loads((root/'code.json').read_text())
     old=(root/view['file_paths']['s0']).read_text()
     result.update(base=view['base'],proposals=[{{'id':0,'edits':[{{'file':'s0','old':old,'new':old.replace('10.0','8.0')}}]}}])
-Path(sys.argv[sys.argv.index('--output-last-message')+1]).write_text(json.dumps(result))
+Path(sys.argv[sys.argv.index('--output-last-message')+1]).write_text('{{' if code and os.environ.get('AFD_RSI_TEST_BAD_CODE') == '1' else json.dumps(result))
 print(json.dumps({{'type':'thread.started','thread_id':'12345678-1234-4234-8234-123456789abc'}}))
 print(json.dumps({{'type':'turn.completed','usage':{{'input_tokens':1,'output_tokens':1}}}}))
 ''')

@@ -64,7 +64,7 @@ def test_pool_survives_exhausted_model_budget_and_resume(tmp_path, monkeypatch):
     monkeypatch.setattr(search, '_start_attempt', original)
     search.search(run, ROOT)
     state = read_json(run / 'search/state.json')
-    assert state['calls'] == 1 and state['model_calls_reserved'] == 3
+    assert state['calls'] == 1 and state['model_calls_reserved'] == 6
     assert len(state['rounds']) == 3 and records(run)[2]['decision'] == 'promoted'
     assert digest(run / 'search/rounds/0001/state.json') == first
     assert search.best_candidate(run, ROOT)['confirmation'] is not None
@@ -141,7 +141,7 @@ def test_model_reservation_crash_cannot_charge_twice(tmp_path, monkeypatch):
     monkeypatch.setattr(search, '_save_state', original)
     search.search(run, ROOT, external=True)
     state = read_json(run / 'search/state.json')
-    assert state['calls'] == 1 and state['model_calls_reserved'] == 3
+    assert state['calls'] == 1 and state['model_calls_reserved'] == 6
 
 
 def test_information_gate_uses_valid_evaluations_and_empirical_uncertainty():
@@ -215,7 +215,7 @@ def test_debug_reservation_and_original_pool_survive_resume(tmp_path, monkeypatc
     respond(run, choices[:1])
     search.search(run, ROOT)
     state = read_json(run / 'search/state.json')
-    assert state['calls'] == 2 and state['model_calls_reserved'] == 4
+    assert state['calls'] == 2 and state['model_calls_reserved'] == 9
     assert records(run)[0]['debug']['decision'] == 'rejected'
     assert records(run)[1]['reuse']['batch'] == '0001'
     assert search.best_candidate(run, ROOT)['confirmation'] is not None

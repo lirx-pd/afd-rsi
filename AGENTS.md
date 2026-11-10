@@ -36,3 +36,10 @@ idempotent on resume. Patch parents and performance comparison baselines are
 distinct for exploration; only independently confirmed winners replace best.
 Use local skills as evidence-backed starting points, while allowing justified
 new mechanisms without automatically editing the frozen knowledge snapshot.
+
+Model response recovery is distinct from candidate implementation debug. New
+requests may repair each model stage twice, with attempts reserved before calls.
+Reuse sealed analysis only under matching source/contracts/evidence/file IDs.
+Exhausted model recovery drains pending candidates before waiting_model; explicit
+resume retains all completed rounds, charged calls and the original deadline.
+Never reinterpret model/provider faults as measured performance regressions.

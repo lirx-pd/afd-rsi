@@ -111,6 +111,9 @@ def main(argv=None) -> int:
             from .search import search
             run = args.run.resolve()
             if args.action == "search" or (run / "search/state.json").is_file():
+                if args.action == "resume":
+                    from .search import resume_model
+                    resume_model(run, root)
                 print(search(run, root, external=getattr(args, "external_agent", False)))
                 if (run / "search/pending.json").exists():
                     print((run / "search/pending.json").read_text())
