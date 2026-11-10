@@ -1,5 +1,58 @@
 # Frozen search and experience rules
 
+New Ascend recipes declare `policy="adaptive-v1"`. The original sealed request
+and response of each proposal batch form a persistent candidate pool. Each
+selected candidate gets its own round state, isolated source and attempts;
+unselected proposals are reused without another model dispatch. Resume verifies
+request/response hashes, selected proposal membership, parent identity and the
+comparison baseline. Completed phases and charged calls are never repeated.
+Model budget exhaustion does not discard pending candidates that fit the test budget.
+
+Use the [direction catalog](../performance/search-directions.json) and the local
+performance skills as starting points, not a whitelist. Every adaptive proposal
+names direction.id, mechanism, step (1 local, 2 coordinated, 3 architectural),
+refs, use and next. Cite exact frozen knowledge paths and explain applicability,
+extension or a source-backed new mechanism. Individual referenced skill and
+knowledge bodies remain available as read-only context file IDs even if the
+optional combined knowledge text is trimmed. New ideas do not automatically
+change frozen knowledge or acceptance gates. Historical native improvements
+are not current model-service evidence.
+
+Adaptive scope follows measured gain trends, not round number. The first
+analysis and a changed incumbent get a global diagnosis. Three consecutive
+valid sub-threshold/noise-limited results across at least two mechanisms trigger
+a global review in place of the next analysis. The review cursor is bound to
+its baseline and valid evaluation count, so unchanged evidence cannot repeatedly
+trigger review. Candidate compile, numerical or environment failures are not
+performance observations. Recent gain momentum is a small-sample ranking
+heuristic, not a causal gradient or a measured hardware bound.
+
+A valid slower intermediate may supply patch source for one continuation when
+`direction.next` specifies a concrete mechanism, cumulative primary regression
+is at most 5 percent, and exploration budget remains. The continuation has depth
+two from the qualified best. Patch parent and comparison baseline are separate:
+all screening/confirmation gains compare directly with qualified best, and only
+two complete PASS results replace it. Information selections and continuations
+share a candidate-count quota, floor(max_rounds * explore_max_fraction).
+Incomplete or incorrect candidates cannot become exploration parents.
+
+`max_rounds` bounds candidate rounds; `max_calls` bounds proposal/debug dispatches.
+`max_model_calls` reserves at most three returned completions for ordinary Codex,
+four for DeepSeek, and one for code-only debug before dispatch. Conservative
+reservations are never refunded after interruption; actual usage is separately
+reported, with absent usage explicitly unknown. Before opening another candidate,
+reserve screening and independent confirmation using frozen phase ceilings.
+The original wall deadline remains authoritative. There is no hard token budget.
+`info_floor=0` disables information exploration; a positive value must be at most
+0.25 and also needs more than six valid candidate evaluations and empirical
+score-scale variability (three recent observations per considered direction).
+Unknown directions have no invented confidence bound. Repeats, confirmation and
+failed implementation attempts do not add extra valid evaluation counts.
+
+Recipes without policy retain the legacy rules below. Their frozen snapshots
+and historical fingerprints are not migrated. The CPU adaptive recipe is a
+controller fixture; it makes no accelerator performance claim.
+
 The Agent proposes hypotheses and complete unified diffs. The controller alone
 applies allowed-file patches to isolated source copies, builds, validates and
 accepts them. Never edit validators, gates, the original checkout or this

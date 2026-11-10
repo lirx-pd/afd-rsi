@@ -17,10 +17,15 @@ EXPERIMENT = dict(bottleneck='Synthetic latency field is 10.', mechanism='Reduce
 @pytest.fixture
 def staged(tmp_path, monkeypatch, request):
     candidate_ms = getattr(request, 'param', None)
+    adaptive = isinstance(candidate_ms, dict)
+    if adaptive:
+        candidate_ms = candidate_ms['latency']
     recipe = tmp_path / 'recipe.toml'
     text = (ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source'))
     text = text.replace('backend = "cpu-synthetic"', 'backend = "cpu-synthetic"\nvalidation = "operator-first"')
     text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 1')
+    if adaptive:
+        text = text.replace('[search]', '[search]\npolicy = "adaptive-v1"')
     text += '\n[service]\nrepo = "."\nargs = ["--test", "smoke"]\ntimeout_seconds = 10\ncleanup_seconds = 1\n'
     if candidate_ms is not None:
         text += 'primary = { id = "point-000", metric = "ttft_p50_ms" }\n'
@@ -56,6 +61,9 @@ def respond(run, patch=None):
     proposal = dict(hypothesis='Synthetic latency decreases.', category='fixture', evidence=['baseline'], priority=3,
                     patch=patch or (ROOT / 'examples/faster.patch').read_text(), experiment=EXPERIMENT)
     pending = read_json(run / 'search/pending.json')
+    if 'knowledge_refs' in read_json(run / pending['request']).get('proposal_requirements', {}):
+        proposal['direction'] = dict(id='novel-method', mechanism='fixture service improvement', step=2,
+            refs=['skills/ascendc-perf-optimize/SKILL.md'], use='extend: synthetic service fixture', next='')
     write_json(run / pending['response'], dict(stop=False, reason='CPU fixture only.', proposals=[proposal]))
 
 
@@ -368,3 +376,17 @@ def test_operator_gate_resume_does_not_repeat_native_trials(staged, monkeypatch)
     write_json(final / 'progress.json', progress)
     with pytest.raises(ValueError, match='phases missing'):
         campaign.audit_attempt(run, final, ROOT)
+
+
+@pytest.mark.parametrize('staged', [{'latency': 80}], indirect=True)
+def test_adaptive_search_keeps_service_objective_and_fresh_confirmation(staged):
+    run, calls = staged
+    search.search(run, ROOT, external=True)
+    patch = (ROOT / 'examples/faster.patch').read_text().replace('+{"synthetic_us": 8.0', '+{"synthetic_us": 12.0')
+    respond(run, patch)
+    search.search(run, ROOT)
+    best = search.best_candidate(run, ROOT)
+    assert best['confirmation'] is not None and len(calls) == 4
+    screen = read_json(run / 'attempts' / best['screen']['attempt'] / 'verdict.json')
+    assert screen['native_gain_pct'] < 0 and screen['gain_pct'] == pytest.approx(20)
+    assert best['screen']['attempt'] != best['confirmation']['attempt']

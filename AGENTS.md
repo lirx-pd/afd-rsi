@@ -27,4 +27,12 @@ profiling interpretation and optimization planning use `gpt-6-astra` with
 The frozen controller runs experiments directly. The proposal adapter analyzes
 first, then generates patches. A candidate compile/runtime/numerical failure may
 receive one code-only debug dispatch within the frozen budget, followed by fresh
-screening and confirmation. Do not call a model for clean performance rejections.
+screening and confirmation. Clean performance rejections never receive code-only
+debug. Adaptive search reuses sealed pending proposals first and may schedule
+evidence-driven analysis/global review within the frozen budget.
+
+Keep adaptive candidate selection, dispatch reservations and attempt identities
+idempotent on resume. Patch parents and performance comparison baselines are
+distinct for exploration; only independently confirmed winners replace best.
+Use local skills as evidence-backed starting points, while allowing justified
+new mechanisms without automatically editing the frozen knowledge snapshot.

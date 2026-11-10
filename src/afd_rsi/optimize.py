@@ -693,6 +693,7 @@ def worker(job):
                 event(job, 'proposing', phase=phase, progress=status)
                 proposal_dir = round_dir / 'agent'
                 receipt = proposal_dir / 'process.json'
+                adaptive_request = 'knowledge_refs' in read_json(request).get('proposal_requirements', {})
                 retries = 0
                 if proposal_dir.exists():
                     completed = (receipt.exists() and read_json(receipt)['status'] == 'completed'
@@ -701,6 +702,8 @@ def worker(job):
                     # ambiguous local interruption still requires inspection.
                     if not completed and not proposer_unavailable(proposal_dir):
                         raise ValueError('interrupted proposer is not retried or refunded; inspect its owned process receipts')
+                    if not completed and adaptive_request and (proposal_dir / 'usage.json').exists() and read_json(proposal_dir / 'usage.json').get('model_calls', 0):
+                        raise ValueError('adaptive proposer already consumed completions; inspect preserved receipts before any new dispatch')
                     if not completed:
                         retries += 1
                         proposal_dir.rename(proposal_dir.with_name(f'agent-retry{retries:02d}'))
@@ -727,6 +730,8 @@ def worker(job):
                                     provider_override=override)
                             break
                         except (RuntimeError, ValueError):
+                            if adaptive_request and (proposal_dir / 'usage.json').exists() and read_json(proposal_dir / 'usage.json').get('model_calls', 0):
+                                raise
                             reason = proposer_unavailable(proposal_dir)
                             if not reason or time.monotonic() >= deadline:
                                 raise
@@ -739,6 +744,10 @@ def worker(job):
                             event(job, 'proposing', phase=phase, progress=status,
                                   proposer_retry=retries, reason=reason, delay=delay)
                             time.sleep(delay)
+                usage = proposal_dir / 'usage.json'
+                if usage.is_file():
+                    executor.send(usage, executor.base + '/campaign/' + str(Path(pending['response']).with_name('usage.json')))
+                # Submit last: the controller may seal evidence as soon as the response appears.
                 executor.send(proposal_dir / 'proposal.json', executor.base + '/campaign/' + pending['response'])
                 phase += 1
                 event(job, 'submitted', phase=phase, progress=status)

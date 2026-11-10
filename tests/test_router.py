@@ -307,3 +307,21 @@ def test_fingerprint_only_tracks_routing_when_a_recipe_declares_it():
                                                      'info_floor': 0.0, 'margin': 0.02,
                                                      'explore_max_fraction': 0.25}})
     assert changed != declared, 'different weights must not reuse the same experience'
+
+
+def test_ledger_interrupted_replacement_preserves_complete_prefix(tmp_path, monkeypatch):
+    from afd_rsi import evidence
+    ledger = ledger_at(tmp_path)
+    ledger.add(category='first', features={}, score=.5, decision='rejected', foundation_hash='f0')
+    before = ledger.path.read_bytes()
+    original = evidence.os.replace
+    def interrupt(*args):
+        raise KeyboardInterrupt()
+    monkeypatch.setattr(evidence.os, 'replace', interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        ledger.add(category='next', features={}, score=.6, decision='rejected', foundation_hash='f0')
+    assert ledger.path.read_bytes() == before
+    assert len(ledger_at(tmp_path).load().rows) == 1
+    monkeypatch.setattr(evidence.os, 'replace', original)
+    ledger.add(category='next', features={}, score=.6, decision='rejected', foundation_hash='f0')
+    assert len(ledger_at(tmp_path).load().rows) == 2

@@ -42,7 +42,7 @@ import sys,json
 from pathlib import Path
 root=Path(sys.argv[sys.argv.index('--cd')+1])
 request=json.loads((root/'request.json').read_text())
-assert request['strategy']['mode']=='deep'
+assert request['strategy']['mode'] in ('deep','global-redesign')
 assert '--ephemeral' not in sys.argv
 if 'resume' in sys.argv: assert sys.argv[sys.argv.index('resume')+1]=='12345678-1234-4234-8234-123456789abc'
 schema=json.loads(Path(sys.argv[sys.argv.index('--output-schema')+1]).read_text())
@@ -50,6 +50,8 @@ fields=schema['properties']['proposals']['items']['properties']
 code='patch' in fields or 'edits' in fields
 assert sys.argv[sys.argv.index('--model')+1]==('gpt-6.1-sol' if code else 'gpt-6-astra')
 p={{'hypothesis':'synthetic fixture faster','category':'latency','priority':3,'evidence':['baseline']}}
+if 'experiment' in fields: p['experiment']={{key:'fixture '+key for key in fields['experiment']['required']}}
+if 'direction' in fields: p['direction']={{'id':'tiling','mechanism':'fixture latency','step':2,'refs':['skills/ascendc-perf-optimize/SKILL.md'],'use':'apply: CPU fixture only','next':''}}
 if code: p['patch']={(ROOT/'examples/faster.patch').read_text()!r}
 if 'files' in fields: p['files']=['s0']
 result={{'stop':False,'reason':'fixture only','proposals':[p],'needs_context':[]}}
@@ -65,10 +67,11 @@ print(json.dumps({{'type':'turn.completed','usage':{{'input_tokens':1,'output_to
     monkeypatch.setenv('PATH', str(script.parent) + os.pathsep + os.environ['PATH'])
 
 
-def test_detached_local_round_confirms_and_downloads(tmp_path, monkeypatch):
+@pytest.mark.parametrize('recipe_name', ['cpu_search', 'cpu_adaptive_search'])
+def test_detached_local_round_confirms_and_downloads(tmp_path, monkeypatch, recipe_name):
     fake_codex(tmp_path, monkeypatch)
     recipe = tmp_path / 'recipe.toml'
-    recipe.write_text((ROOT/'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT/'examples/source'))
+    recipe.write_text((ROOT/f'recipes/{recipe_name}.toml').read_text().replace('../examples/source', str(ROOT/'examples/source'))
         .replace('max_rounds = 9','max_rounds = 1').replace('max_calls = 9','max_calls = 1'))
     job = tmp_path/'job'
     assert optimize.main([str(recipe),'--output',str(job),'--poll-seconds','0.1'], ROOT)==0
@@ -85,6 +88,7 @@ def test_detached_local_round_confirms_and_downloads(tmp_path, monkeypatch):
         assert best['screen']['attempt'] != best['confirmation']['attempt']
         assert read_json(job/'proposals/1/agent/process.json')['status']=='completed'
         assert read_json(job/'results/campaign/search/state.json')['calls']==1
+        assert read_json(job/'results/campaign/search/rounds/0001/usage.json')['model_calls'] == 2
         # An unchanged, already consumed launch is idempotent.
         config=read_json(job/'job.json'); ex=optimize.Executor(config,job)
         old=ex.invoke('status',str(state['phase']))

@@ -30,7 +30,8 @@ class ModelContext:
             ('s', request.get('source_files', {})),
             ('d', {name: item['content'] for name, item in
                    request.get('dependency_context', {}).get('files', {}).items()}),
-            ('k', {'knowledge': request['knowledge']} if request.get('knowledge') else {}),
+            ('k', {**({'knowledge': request['knowledge']} if request.get('knowledge') else {}),
+                   **request.get('knowledge_files', {})}),
             ('e', {str(i): json.dumps(item.get('facts', {}), indent=2, ensure_ascii=False)
                    for i, item in enumerate(request.get('evidence', []))}),
         ):
@@ -77,7 +78,8 @@ class ModelContext:
     def initial(self, *, inline=True):
         request = self.request
         view = {key: request[key] for key in ('round', 'objective', 'execution', 'strategy', 'instructions',
-            'allowed_files', 'proposal_requirements', 'routing', 'missing_context') if key in request}
+            'allowed_files', 'proposal_requirements', 'routing', 'missing_context', 'direction_catalog',
+            'candidate_pool', 'search_feedback', 'exploration_parent') if key in request}
         if 'instructions' in view:
             view['instructions'] = view['instructions'].replace('Return complete unified diffs.', 'Return exact edits during coding.')
         view.update(base=self.base, catalog_columns=['id', 'path', 'lines', 'access', 'symbols'],
@@ -98,7 +100,8 @@ class ModelContext:
     def paths(self):
         prefixes = dict(s='source/', d='dependencies/', k='', e='evidence/')
         return {key: (f"evidence/{self.request['evidence'][int(item['name'])]['id']}.json" if key.startswith('e')
-                      else 'knowledge.md' if key.startswith('k') else prefixes[key[0]] + item['name'])
+                      else ('knowledge.md' if item['name'] == 'knowledge' else 'knowledge-files/' + item['name'])
+                      if key.startswith('k') else prefixes[key[0]] + item['name'])
                 for key, item in self.files.items()}
 
     def debug_analysis(self):
@@ -125,6 +128,11 @@ class ModelContext:
         keys = ['hypothesis', 'category', 'evidence', 'priority', 'files']
         if self.request.get('proposal_requirements'):
             keys.append('experiment')
+        if 'knowledge_refs' in self.request.get('proposal_requirements', {}):
+            from .search_policy import validate_direction
+            keys.append('direction')
+            for proposal in value['proposals']:
+                validate_direction(proposal.get('direction'), self.request['proposal_requirements'])
         if not value['reason'].strip():
             raise ValueError('analysis needs a nonempty reason')
         return dict(stop=value['stop'], reason=value['reason'], needs_context=value.get('needs_context', []),
@@ -274,6 +282,8 @@ class ModelContext:
             keys = ['hypothesis', 'category', 'evidence', 'priority']
             if self.request.get('proposal_requirements'):
                 keys.append('experiment')
+            if 'knowledge_refs' in self.request.get('proposal_requirements', {}):
+                keys.append('direction')
             proposal = {key: original[key] for key in keys}
             proposals.append({**proposal, 'patch': patch})
         return dict(stop=False, reason=value['reason'], proposals=proposals, needs_context=value['needs_context'])

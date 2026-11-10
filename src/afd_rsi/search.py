@@ -12,7 +12,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import campaign, skills
+from . import campaign, skills, search_policy as adaptive
 from .contracts import agent_driver
 from .evidence import digest, read_json, write_json
 from .router import Ledger, Router, normalized_score
@@ -38,7 +38,7 @@ def fingerprint(plan):
     # before routing existed keep their original fingerprint byte for byte, so
     # their recorded experience stays readable.
     routing = {key: plan['search'][key]
-               for key in ('router', 'features', 'info_floor', 'margin', 'explore_max_fraction')
+               for key in ('router', 'features', 'info_floor', 'margin', 'explore_max_fraction', 'policy', 'max_model_calls')
                if key in plan['search']}
     if routing:
         payload['routing'] = routing
@@ -139,8 +139,9 @@ def profile_context(profiling):
     return view
 
 
-def request_context(run, plan, best, records, number, router=None):
-    source = run / best['source']
+def request_context(run, plan, best, records, number, router=None, *, strategy=None, parent=None):
+    source_parent = parent or best
+    source = run / source_parent['source']
     evidence = [{'id': 'baseline', 'facts': {'source_hash': best['source_hash'],
                   'qualification': best['confirmation'] or best['baseline'], 'backend': plan['backend']}}]
     if best['confirmation'] is None:
@@ -154,20 +155,23 @@ def request_context(run, plan, best, records, number, router=None):
             if key in ('side', 'phase', 'status', 'checks_passed', 'value', 'reason', 'service_metrics')}
             for item in evidence[0]['facts']['observations']]
     incumbent = run / 'attempts' / (best['baseline'] if best['confirmation'] is None else best['confirmation']['attempt'])
+    build_attempt = run / 'attempts' / parent['attempt'] if parent else incumbent
     dependencies = None
-    for step in read_json(incumbent / 'progress.json')['steps']:
+    for step in read_json(build_attempt / 'progress.json')['steps']:
         item = step.get('result', {})
-        if item.get('dependency_context_hash') and item.get('side') == ('baseline' if best['confirmation'] is None else 'candidate'):
+        if item.get('dependency_context_hash') and item.get('side') == ('candidate' if parent or best['confirmation'] else 'baseline'):
             path = run / item['trial'] / 'dependencies.json'
             if digest(path) != item['dependency_context_hash']:
                 raise ValueError('compiled dependency context changed')
             dependencies = read_json(path)
             from .build_context import verify_context
-            verify_context(dependencies, best['source_hash'], dependencies['artifacts'])
+            verify_context(dependencies, source_parent['source_hash'], dependencies['artifacts'])
             manifest_hash = hashlib.sha256((json.dumps(dependencies['artifacts'], indent=2,
                 ensure_ascii=False, allow_nan=False) + '\n').encode()).hexdigest()
             if manifest_hash != item['artifacts'].get('native/artifacts.json'):
                 raise ValueError('dependency context artifact identity differs from the completed build')
+    for step in read_json(incumbent / 'progress.json')['steps']:
+        item = step.get('result', {})
         if item.get('profiling'):
             profile = profile_context(item['profiling'])
             profile['pipeline_trace_files'] = [
@@ -178,7 +182,7 @@ def request_context(run, plan, best, records, number, router=None):
                 'source_hash': best['source_hash'], **profile}})
     for index, record in enumerate(records):
         evidence.append({'id': f'history-{index}', 'facts': {
-            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment', 'debug')
+            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment', 'debug', 'direction', 'comparison_hash')
             if key in record}})
     for index, record in enumerate(records[-2:]):
         for name in record['evidence']:
@@ -202,7 +206,7 @@ def request_context(run, plan, best, records, number, router=None):
     total = plan['search']['max_rounds']
     deep_rounds = 1 if total == 1 else min(total - 1, (2 * total + 2) // 3)
     global_redesign = number == plan['search'].get('global_redesign_round')
-    strategy = {
+    strategy = strategy or {
         'mode': 'global-redesign' if global_redesign else 'deep' if number <= deep_rounds else 'incremental',
         'round': number, 'max_rounds': total, 'deep_rounds': deep_rounds,
         'guidance': ('Analyze FFN execution after Attention source readiness: RX/pull, packing and '
@@ -238,7 +242,7 @@ def request_context(run, plan, best, records, number, router=None):
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],
                'max_context_bytes': plan['search']['max_context_bytes'],
                'max_response_bytes': plan['search']['max_context_bytes'] * 2,
-               'source_hash': best['source_hash'], 'allowed_files': plan['allowed_files'],
+               'source_hash': source_parent['source_hash'], 'allowed_files': plan['allowed_files'],
                'execution': {key: plan.get(key) for key in ('ranks', 'primary_rank', 'repetitions', 'native', 'service')},
                'objective': objective,
                'evidence': evidence, 'logs': [], 'source_files': {}, 'knowledge': '',
@@ -258,6 +262,17 @@ def request_context(run, plan, best, records, number, router=None):
                    'Follow the supplied strategy without changing allowed_files or acceptance gates.'}
     if dependencies:
         context['dependency_context'] = dependencies
+    if adaptive.enabled(plan):
+        context['direction_catalog'] = read_json(run / 'foundation/knowledge/performance/search-directions.json')
+        context['instructions'] += (' Use local skills and the direction catalog; these are starting points, not a whitelist. '
+            'Each proposal.direction names id, mechanism, step (1 local/2 coordinated/3 architectural), refs '
+            '(exact supplied knowledge paths), use (applicability, extension or a new mechanism), and next '
+            '(a concrete continuation after a valid slower intermediate, otherwise empty). '
+            'Use distinct mechanisms. Existing pool candidates are reusable; explain any superseded assumptions. '
+            'Global review compares alternatives and failed predictions; it need not produce a large rewrite.')
+        if parent:
+            context['exploration_parent'] = {'source_hash': parent['source_hash'], 'baseline_hash': best['source_hash'],
+                'seed': parent['seed'], 'instruction': 'Code against source_files; all gains are measured against the qualified best, not this slower parent.'}
     from .build_context import PULL_KERNEL
     if (source / PULL_KERNEL).is_dir() and dependencies is None:
         context['missing_context'] = ['exact compiled MC2/Catlass headers and generated activation; run a new baseline with dependency capture']
@@ -280,7 +295,7 @@ def request_context(run, plan, best, records, number, router=None):
             context['instructions'] += (f" routing.preferred_category = {directive['preferred_category']!r} has no "
                 'evidence under this foundation; weigh it against your default, and do not follow it if the '
                 'evidence points elsewhere. Name the change family in each proposal category.')
-    if plan.get('validation') == 'operator-first':
+    if plan.get('validation') == 'operator-first' or adaptive.enabled(plan):
         context['proposal_requirements'] = {
             'experiment_fields': ['bottleneck', 'mechanism', 'prediction', 'falsification', 'risk'],
             'required_evidence_ids': ['baseline'] + (['profile-incumbent'] if any(
@@ -291,6 +306,11 @@ def request_context(run, plan, best, records, number, router=None):
             'Cite baseline and the incumbent profile when supplied. Reject speculative parameter guessing. '
             'The controller screens native numerics and paired timing first; only independently repeated winners '
             'reach expensive E2E accuracy/performance and candidate profiling. Stop if evidence is insufficient.')
+    if adaptive.enabled(plan):
+        context['proposal_requirements']['knowledge_refs'] = sorted(set(context['direction_catalog']['skills'] + [
+            ref for direction in context['direction_catalog']['directions'] for ref in direction['refs']]))
+        context['knowledge_files'] = {ref: (run / 'foundation' / ref).read_text()
+                                      for ref in context['proposal_requirements']['knowledge_refs']}
     context['protected_evidence_ids'] = list(dict.fromkeys(
         ['baseline'] + [item['id'] for item in evidence if item['id'] == 'profile-incumbent']
         + [item['id'] for item in evidence if item['id'].startswith('history-')][-2:]))
@@ -338,6 +358,8 @@ def request_context(run, plan, best, records, number, router=None):
                 seen.add(matches[0])
                 queue.append(matches[0])
     knowledge = skills.context(run / 'foundation', 'ascendc-perf-optimize') + '\n\n' + skills.context(run / 'foundation', 'afd-megamoe')
+    if adaptive.enabled(plan):
+        knowledge += '\n\n' + skills.context(run / 'foundation', 'ascendc-performance-best-practices')
     # Context is a bounded view; the complete frozen foundation remains in the campaign.
     while knowledge:
         context['knowledge'] = knowledge
@@ -421,6 +443,8 @@ def validate_proposal(value, evidence_ids, requirements=None):
         raise ValueError('provide one to three proposals, or stop with no proposals')
     for proposal in proposals:
         keys = {'hypothesis', 'category', 'evidence', 'priority', 'patch'} | ({'experiment'} if requirements else set())
+        if requirements and 'knowledge_refs' in requirements:
+            keys.add('direction')
         if not isinstance(proposal, dict) or set(proposal) != keys:
             raise ValueError('invalid proposal keys')
         if not all(isinstance(proposal[key], str) and proposal[key].strip() for key in ('hypothesis', 'category', 'patch')):
@@ -431,6 +455,8 @@ def validate_proposal(value, evidence_ids, requirements=None):
                 or not all(isinstance(item, str) and item in evidence_ids for item in proposal['evidence'])):
             raise ValueError('proposal must cite existing evidence IDs')
         if requirements:
+            if 'knowledge_refs' in requirements:
+                adaptive.validate_direction(proposal['direction'], requirements)
             experiment = proposal['experiment']
             if (not isinstance(experiment, dict) or set(experiment) != set(requirements['experiment_fields'])
                     or not all(isinstance(v, str) and v.strip() for v in experiment.values())):
@@ -490,7 +516,7 @@ def _start_attempt(run, root, state, record, stage, round_dir=None):
         campaign._new_attempt(run, root, 'baseline' if stage == 'baseline' else 'comparison',
                               name=record[stage], candidate_source=None if round_dir is None else run / record.get(
                                   'source', str((round_dir / 'source').relative_to(run))),
-                              baseline_source=None if round_dir is None else run / record['parent']['source'], level=level)
+                              baseline_source=None if round_dir is None else run / record.get('comparison', record['parent'])['source'], level=level)
     if read_json(attempt / 'progress.json')['status'] != 'completed':
         campaign._continue(run, attempt, root)
     return attempt
@@ -565,6 +591,9 @@ def _prepare_debug(run, plan, round_dir, record, failure):
     record.clear()
     record.update(phase='request', parent=original['parent'], selected=original['selected'], debug=original,
                   request_hash=digest(debug_dir / 'request.json'))
+    for key in ('comparison', 'reuse', 'branch_depth', 'branch_seed', 'routing'):
+        if key in original:
+            record[key] = original[key]
     write_json(round_dir / 'state.json', record)
     return True
 
@@ -586,8 +615,8 @@ def _lesson(run, plan, round_dir, record):
                 for path in trial.rglob('*'):
                     if path.is_file():
                         evidence[str(path.relative_to(run))] = digest(path)
-    for name in ('request.json', 'proposal.json', 'change.patch',
-                 'debug/request.json', 'debug/proposal.json', 'debug/change.patch'):
+    for name in ('request.json', 'proposal.json', 'change.patch', 'usage.json',
+                 'debug/request.json', 'debug/proposal.json', 'debug/change.patch', 'debug/usage.json'):
         path = round_dir / name
         if path.is_file():
             evidence[str(path.relative_to(run))] = digest(path)
@@ -598,6 +627,9 @@ def _lesson(run, plan, round_dir, record):
               'reason': record['reason'], 'evidence': evidence}
     if 'experiment' in proposal:
         lesson['experiment'] = proposal['experiment']
+    if 'direction' in proposal:
+        lesson['direction'] = proposal['direction']
+        lesson['comparison_hash'] = record.get('comparison', record['parent'])['source_hash']
     if record.get('debug'):
         for item in read_json(round_dir / 'debug/request.json')['logs']:
             if digest(run / item['file']) != item['sha256']:
@@ -647,6 +679,72 @@ def _record_ledger(run, plan, round_dir, record, ledger, router):
                stage=stage_used)
 
 
+def _prepare_adaptive_round(run, plan, state, best, records, router, directory):
+    items = adaptive.rounds(run, state)
+    rows = [row for item in items if (row := adaptive.measured(run, item)) is not None]
+    strategy = adaptive.strategy(plan, items, rows, best)
+    exploration_used = sum(bool(item['record'].get('branch_seed') or
+        item['record'].get('routing', {}).get('explored')) for item in items)
+    seen = {identity(item['selected']['patch'].strip())
+            for entry in items for item in (entry['record'], entry['record'].get('debug', {}))
+            if item.get('parent', {}).get('source_hash') == best['source_hash'] and item.get('selected')}
+    candidates = adaptive.pending(run, items, best['source_hash'], seen)
+    if not candidates and exploration_used < int(plan['search']['max_rounds'] * plan['search']['explore_max_fraction']):
+        for item in items:
+            original = item['original']
+            if original.get('branch_seed') and original['comparison']['source_hash'] == best['source_hash']:
+                parent_hash = original['parent']['source_hash']
+                tried = {identity(entry['record']['selected']['patch'].strip()) for entry in items
+                         if entry['record'].get('selected') and entry['record']['parent']['source_hash'] == parent_hash}
+                candidates.extend(adaptive.pending(run, [item], parent_hash, tried))
+    slots = adaptive.completion_slots(plan)
+    can_call = (state['calls'] < plan['search']['max_calls'] and
+                state.get('model_calls_reserved', 0) + slots <= plan['search']['max_model_calls'])
+    can_call = can_call and time.time() + 2 * adaptive.confirmation_reserve(plan) + plan['search']['agent_timeout_seconds'] < plan['expires_at']
+    if time.time() + 2 * adaptive.confirmation_reserve(plan) >= plan['expires_at']:
+        state['reason'] = 'Remaining time cannot reserve independent full confirmation.'
+        return None
+    if candidates and (not strategy['review_due'] or not can_call):
+        decision = adaptive.rank(candidates, rows, best['source_hash'], plan, exploration_used)
+        chosen = candidates[decision['index']]
+        origin = run / 'search/rounds' / chosen['batch']
+        write_json(directory / 'request.json', read_json(origin / 'request.json'))
+        write_json(directory / 'proposal.json', read_json(origin / 'proposal.json'))
+        write_json(directory / 'routing.json', decision)
+        result = dict(phase='proposed', parent=chosen['parent'], comparison=best,
+                    request_hash=digest(directory / 'request.json'), response_hash=digest(directory / 'proposal.json'),
+                    selected=chosen['proposal'], routing=decision,
+                    reuse={'batch': chosen['batch'], 'index': chosen['index'],
+                           'request_hash': digest(origin / 'request.json'), 'response_hash': digest(origin / 'proposal.json')})
+        for key in ('branch_depth', 'branch_seed'):
+            if key in chosen['record']:
+                result[key] = chosen['record'][key]
+        return result
+    if not can_call:
+        state['reason'] = 'Proposal pool exhausted for this parent and model budget or analysis/confirmation time exhausted.'
+        return None
+    parent = None if strategy['review_due'] else adaptive.continuation(run, items, rows, best, plan, exploration_used)
+    if parent:
+        strategy.update(reason='bounded continuation of a valid slower intermediate', step=2, mode='deep')
+    context = request_context(run, plan, best, records, len(state['rounds']), router, strategy=strategy, parent=parent)
+    context['candidate_pool'] = [dict(id=f"{c['batch']}:{c['index']}", direction=c['proposal']['direction'],
+        hypothesis=c['proposal']['hypothesis'], parent_hash=c['parent']['source_hash'])
+        for item in items for c in adaptive.pending(run, [item], item['original']['parent']['source_hash'], seen)][:12]
+    context['search_feedback'] = rows[-12:]
+    def context_size():
+        return len((json.dumps(context, indent=2, ensure_ascii=False) + '\n').encode())
+    while context['knowledge'] and context_size() > plan['search']['max_context_bytes']:
+        context['knowledge'] = context['knowledge'][:-2000]
+    if context_size() > plan['search']['max_context_bytes']:
+        raise ValueError('adaptive feedback exceeds frozen context budget')
+    write_json(directory / 'request.json', context)
+    record = dict(phase='request', parent=parent or best, comparison=best,
+                  request_hash=digest(directory / 'request.json'))
+    if parent:
+        record.update(branch_depth=2, branch_seed=parent['seed'])
+    return record
+
+
 def search(run: Path, root: Path, *, external=False):
     run = run.resolve()
     with campaign.exclusive(run, recovery=True):
@@ -687,7 +785,8 @@ def search(run: Path, root: Path, *, external=False):
                 (run / 'search/pending.json').unlink(missing_ok=True)
                 break
             if state['active'] is None:
-                if time.time() >= plan['expires_at'] or len(state['rounds']) >= settings['max_rounds'] or state['calls'] >= settings['max_calls']:
+                if (time.time() >= plan['expires_at'] or len(state['rounds']) >= settings['max_rounds']
+                        or (not adaptive.enabled(plan) and state['calls'] >= settings['max_calls'])):
                     state.update(status='budget_exhausted', reason='Frozen wall time, round or Agent-dispatch budget exhausted.')
                     _save_state(run, state)
                     break
@@ -699,9 +798,17 @@ def search(run: Path, root: Path, *, external=False):
             round_dir.mkdir(parents=True, exist_ok=True)
             path = round_dir / 'state.json'
             if not path.exists():
-                context = request_context(run, plan, best, records, len(state['rounds']), router)
-                write_json(round_dir / 'request.json', context)
-                record = {'phase': 'request', 'parent': best, 'request_hash': digest(round_dir / 'request.json')}
+                if adaptive.enabled(plan):
+                    record = _prepare_adaptive_round(run, plan, state, best, records, router, round_dir)
+                    if record is None:
+                        state.update(status='budget_exhausted', active=None)
+                        state['rounds'].pop()
+                        _save_state(run, state)
+                        break
+                else:
+                    context = request_context(run, plan, best, records, len(state['rounds']), router)
+                    write_json(round_dir / 'request.json', context)
+                    record = {'phase': 'request', 'parent': best, 'request_hash': digest(round_dir / 'request.json')}
                 write_json(path, record)
             record = read_json(path)
             if record.get('debug'):
@@ -713,6 +820,30 @@ def search(run: Path, root: Path, *, external=False):
                 raise ValueError('agent request changed')
             context = read_json(work_dir / 'request.json')
             response = work_dir / 'proposal.json'
+            if adaptive.enabled(plan):
+                original_context = read_json(round_dir / 'request.json')
+                if (record['parent']['source_hash'] != original_context['source_hash']
+                        or record['comparison']['source_hash'] != original_context['strategy']['anchor']):
+                    raise ValueError('candidate parent or comparison identity changed')
+                accepted = (record['phase'] in ('proposed', 'screening', 'confirming') or
+                            record.get('decision') in ('promoted', 'rejected', 'invalid_patch'))
+                if record.get('selected') and accepted:
+                    if record['selected'] not in read_json(response)['proposals']:
+                        raise ValueError('selected candidate differs from the sealed response')
+                comparison = (run / record['comparison']['source']).resolve()
+                if not comparison.is_relative_to(run) or inventory(comparison)['hash'] != record['comparison']['source_hash']:
+                    raise ValueError('comparison baseline source changed')
+            if record.get('reuse'):
+                origin = run / 'search/rounds' / record['reuse']['batch']
+                if any(digest(origin / file) != record['reuse'][key] for file, key in
+                       (('request.json', 'request_hash'), ('proposal.json', 'response_hash'))):
+                    raise ValueError('reused proposal origin changed')
+                selected = record.get('debug', record)['selected']
+                if selected != read_json(origin / 'proposal.json')['proposals'][record['reuse']['index']]:
+                    raise ValueError('reused proposal index changed')
+            parent_source = (run / record['parent']['source']).resolve()
+            if not parent_source.is_relative_to(run) or inventory(parent_source)['hash'] != record['parent']['source_hash']:
+                raise ValueError('patch parent source changed')
             if context.get('missing_context'):
                 state.update(status='context_required', reason='; '.join(context['missing_context']))
                 _save_state(run, state)
@@ -730,6 +861,13 @@ def search(run: Path, root: Path, *, external=False):
                         state.update(status='budget_exhausted', reason='Agent-dispatch budget exhausted.')
                         _save_state(run, state)
                         break
+                    if adaptive.enabled(plan):
+                        slots = adaptive.completion_slots(plan, kind == 'debug')
+                        if state.get('model_calls_reserved', 0) + slots > settings['max_model_calls']:
+                            state.update(status='budget_exhausted', reason='Frozen model-completion reservation budget exhausted.')
+                            _save_state(run, state)
+                            break
+                        state['model_calls_reserved'] = state.get('model_calls_reserved', 0) + slots
                     state['calls'] += 1
                     state['dispatch'] = {'round': state['active'], 'call': state['calls'], 'kind': kind}
                     _save_state(run, state)
@@ -774,11 +912,25 @@ def search(run: Path, root: Path, *, external=False):
                             selected, decision = value['proposals'][0], None
                             original = record['debug']['selected']
                             if any(selected.get(key) != original.get(key)
-                                   for key in ('hypothesis', 'category', 'experiment')):
+                                   for key in ('hypothesis', 'category', 'experiment', 'direction')):
                                 raise ValueError('debug changed the original hypothesis, category or experiment')
                         else:
-                            selected, decision = route_proposals(
-                                value['proposals'], records, record['parent']['source_hash'], router)
+                            if adaptive.enabled(plan):
+                                items = adaptive.rounds(run, state)
+                                rows = [row for item in items if (row := adaptive.measured(run, item)) is not None]
+                                tried = {r['patch_hash'] for r in records if r['parent_hash'] == record['parent']['source_hash']}
+                                fresh = [p for p in value['proposals'] if identity(p['patch'].strip()) not in tried]
+                                if fresh:
+                                    used = sum(bool(i['record'].get('branch_seed') or i['record'].get('routing', {}).get('explored')) for i in items)
+                                    decision = adaptive.rank([{'proposal': p} for p in fresh], rows,
+                                        record['comparison']['source_hash'], plan, used)
+                                    selected = fresh[decision['index']]
+                                    record['routing'] = decision
+                                else:
+                                    selected, decision = None, None
+                            else:
+                                selected, decision = route_proposals(
+                                    value['proposals'], records, record['parent']['source_hash'], router)
                         if decision is not None:
                             write_json(round_dir / 'routing.json', decision)
                         if selected is None:
@@ -827,7 +979,7 @@ def search(run: Path, root: Path, *, external=False):
                     verdict = verified_verdict(run, attempt.name, root)
                     if verdict['verdict'] == 'PASS':
                         promoted = {'source': record.get('source', str((work_dir / 'source').relative_to(run))),
-                                    'source_hash': record['candidate_hash'], 'parent_hash': record['parent']['source_hash'],
+                                    'source_hash': record['candidate_hash'], 'parent_hash': record.get('comparison', record['parent'])['source_hash'],
                                     'screen': {'attempt': record['screen'], 'hash': digest(run / 'attempts' / record['screen'] / 'verdict.json')},
                                     'confirmation': {'attempt': record['confirmation'], 'hash': digest(attempt / 'verdict.json')}}
                         write_json(run / 'search/best.json', promoted)
@@ -838,7 +990,11 @@ def search(run: Path, root: Path, *, external=False):
             if record['phase'] == 'decided':
                 failure = _debug_failure(run, record) if record['decision'] == 'rejected' and not record.get('debug') else None
                 if failure:
-                    if state['calls'] < settings['max_calls'] and time.time() < plan['expires_at']:
+                    can_debug = state['calls'] < settings['max_calls'] and time.time() < plan['expires_at']
+                    if adaptive.enabled(plan):
+                        can_debug = can_debug and state.get('model_calls_reserved', 0) < settings['max_model_calls']
+                        can_debug = can_debug and time.time() + 2 * adaptive.confirmation_reserve(plan) < plan['expires_at']
+                    if can_debug:
                         if _prepare_debug(run, plan, round_dir, record, failure):
                             if ((run / 'recovery.json').is_file()
                                     and read_json(run / 'recovery.json').get('health') in ('required', 'failed')):
@@ -865,6 +1021,10 @@ def search(run: Path, root: Path, *, external=False):
 
 def _routing_summary(run, plan):
     """One honest line about the direction router; no estimate is called a result."""
+    if adaptive.enabled(plan):
+        return ('Direction routing: adaptive-v1, recent measured-gain momentum; information exploration '
+                'requires >6 valid evaluations, empirical score uncertainty and shared exploration budget. '
+                'Scores guide experiments and cannot qualify a candidate.')
     ledger = Ledger(run / 'search/ledger.jsonl').load()
     router = Router(plan['search'], ledger, foundation_hash=plan['foundation_hash'])
     if not router.enabled:
@@ -894,6 +1054,20 @@ def search_report(run, root):
              'A candidate compile/runtime/numerical failure gets at most one code-only repair within the dispatch budget. '
              'A repaired candidate restarts screening and independent confirmation; slow valid results do not trigger debug.', '',
              '| Round | Decision | Debug | Evidence |', '| --- | --- | --- | --- |']
+    if adaptive.enabled(plan):
+        items = adaptive.rounds(run, state)
+        valid = sum(adaptive.measured(run, item) is not None for item in items)
+        reused = sum(bool(item['record'].get('reuse')) for item in items)
+        branches = sum(bool(item['record'].get('branch_seed')) for item in items)
+        reviews = sum(item['request']['strategy']['mode'] == 'global-redesign' and not item['record'].get('reuse') for item in items)
+        usage = [read_json(path) for item in items for path in (
+            run / 'search/rounds' / item['name'] / 'usage.json',
+            run / 'search/rounds' / item['name'] / 'debug/usage.json') if path.is_file()]
+        lines[12:12] = [f'Adaptive policy: reused candidates={reused}; valid evaluations={valid}; '
+            f'global reviews={reviews}; exploration continuations={branches}.', '',
+            f'Model completion slots reserved: {state.get("model_calls_reserved", 0)} / {plan["search"]["max_model_calls"]}; '
+            f'reported completions={sum(u.get("model_calls", 0) for u in usage)}; '
+            f'dispatches without usage={state["calls"] - len(usage)}. Reservations are conservative and never refunded.', '']
     for name in state['rounds']:
         path = run / 'search/rounds' / name / 'state.json'
         record = read_json(path) if path.is_file() else {}

@@ -235,7 +235,7 @@ def load_recipe(path: Path) -> dict:
         search = config["search"]
         required = {"max_rounds", "max_calls", "agent_timeout_seconds", "max_context_bytes", "experience_dirs"}
         optional = {'goal', 'router', 'explore_max_fraction', 'info_floor', 'margin', 'features',
-                    'provider', 'agent_command', 'models', 'global_redesign_round'}
+                    'provider', 'agent_command', 'models', 'global_redesign_round', 'policy', 'max_model_calls'}
         if not required <= set(search) or set(search) - required - optional:
             raise ValueError("invalid search settings")
         if 'goal' in search and (not isinstance(search['goal'], str) or not search['goal'].strip()):
@@ -244,6 +244,16 @@ def load_recipe(path: Path) -> dict:
         argv_list(search["agent_command"], "agent command")
         for key in ("max_rounds", "max_calls", "max_context_bytes"):
             positive(search[key], key, integer=True)
+        if 'policy' in search:
+            if search['policy'] != 'adaptive-v1':
+                raise ValueError('unknown search policy')
+            if 'global_redesign_round' in search:
+                raise ValueError('adaptive search determines global review from evidence')
+            search.setdefault('max_model_calls', search['max_calls'] * 4)
+        if 'max_model_calls' in search:
+            positive(search['max_model_calls'], 'max_model_calls', integer=True)
+            if 'policy' not in search:
+                raise ValueError('max_model_calls requires adaptive search')
         if 'global_redesign_round' in search:
             positive(search['global_redesign_round'], 'global_redesign_round', integer=True)
             if search['global_redesign_round'] > search['max_rounds']:
@@ -259,6 +269,8 @@ def load_recipe(path: Path) -> dict:
         if config["backend"] == "ascend" and "health" not in config:
             raise ValueError("Ascend search requires a device health command")
         routing(search)
+        if search.get('policy') and search['info_floor'] > .25:
+            raise ValueError('adaptive info_floor must not exceed 0.25')
     if "health" in config:
         if set(config["health"]) != {"command", "timeout_seconds"}:
             raise ValueError("invalid health settings")

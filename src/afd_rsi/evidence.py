@@ -27,8 +27,12 @@ def read_json(path: Path):
 
 
 def write_json(path: Path, value) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+    write_text(path, data)
+
+
+def write_text(path: Path, data: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".write-")
     try:
         with os.fdopen(fd, "w") as file:

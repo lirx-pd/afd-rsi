@@ -92,8 +92,16 @@ def test_http_compact_edit_failure_has_only_one_code_repair(tmp_path, monkeypatc
 
 @pytest.mark.parametrize('provider', ['deepseek', 'codex'])
 @pytest.mark.parametrize('debug', [False, True])
-def test_compact_adapters_restore_controller_contract_and_keep_debug_code_only(tmp_path, monkeypatch, provider, debug):
+@pytest.mark.parametrize('adaptive', [False, True])
+def test_compact_adapters_restore_controller_contract_and_keep_debug_code_only(tmp_path, monkeypatch, provider, debug, adaptive):
     module, args, request, analysis = setup(tmp_path, provider)
+    if adaptive:
+        ref = 'skills/ascendc-perf-optimize/SKILL.md'
+        request['proposal_requirements']['knowledge_refs'] = [ref]
+        request['knowledge_files'] = {ref: '# Procedure\nApply tiling, inter-device, inter-core, intra-core analysis.'}
+        analysis['proposals'][0]['direction'] = dict(id='novel-method', mechanism='source-backed alternative',
+            step=3, refs=[ref], use='extend: new mechanism using the same evidence discipline', next='')
+        write_json(args.request, request)
     if debug:
         original = ModelContext(request).decode(coding(request), analysis)['proposals'][0]
         request['debug'] = dict(original_proposal=original, failure=dict(phase='build', reason='compiler error'))
@@ -108,6 +116,9 @@ def test_compact_adapters_restore_controller_contract_and_keep_debug_code_only(t
             manifest = read_json(workspace / 'request.json')
             assert manifest['file_paths']['s0'] == 'source/kernel.cpp'
             assert 'unused_large_body' not in json.dumps(manifest)
+            if adaptive:
+                path = next(path for key, path in manifest['file_paths'].items() if key.startswith('k'))
+                assert (workspace / path).read_text().startswith('# Procedure')
             if model == 'gpt-6-astra':
                 value = analysis
             else:
@@ -123,3 +134,11 @@ def test_compact_adapters_restore_controller_contract_and_keep_debug_code_only(t
     validate_patches(value, request)
     assert 'files' not in value['proposals'][0]
     assert value['proposals'][0]['hypothesis'] == analysis['proposals'][0]['hypothesis']
+
+
+def test_unknown_knowledge_reference_is_rejected_before_coding(tmp_path):
+    _, _, request, analysis = setup(tmp_path, 'codex')
+    request['proposal_requirements']['knowledge_refs'] = ['known']
+    analysis['proposals'][0]['direction'] = dict(id='new', mechanism='test', step=1, refs=['unfrozen'], use='new', next='')
+    with pytest.raises(ValueError, match='knowledge'):
+        ModelContext(request).normalize_analysis(analysis)

@@ -184,8 +184,12 @@ class Ledger:
                "foundation_hash": foundation_hash}
         row["record_hash"] = digest(row)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+        from .evidence import write_text
+        # Atomic replacement keeps a killed append from leaving half a JSON record.
+        previous = self.path.read_text() if self.path.exists() else ''
+        if previous and not previous.endswith('\n'):
+            previous += '\n'
+        write_text(self.path, previous + json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
         self.rows.append(row)
         return row
 

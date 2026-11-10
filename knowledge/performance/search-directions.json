@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "guidance": "Starting points, not a whitelist. New direction IDs are allowed with source evidence, frozen knowledge references and falsifiable experiments. Historical native results are not current model-service gains.",
+  "skills": [
+    "skills/ascendc-perf-optimize/SKILL.md",
+    "skills/ascendc-performance-best-practices/SKILL.md"
+  ],
+  "directions": [
+    {
+      "id": "tiling",
+      "level": "tiling",
+      "features": [
+        "T",
+        "B",
+        "C",
+        "M"
+      ],
+      "mechanisms": "Tile shape, tails, expert packing",
+      "preconditions": "Actual M/N/K, route distribution, scratch and core capacity",
+      "refs": [
+        "knowledge/performance/tiling-pipeline.md",
+        "knowledge/performance/megamoe-expert-packing-20261025.md"
+      ]
+    },
+    {
+      "id": "communication",
+      "level": "inter-device",
+      "features": [
+        "S",
+        "M",
+        "F"
+      ],
+      "mechanisms": "Pull/RX granularity and output/TX scheduling",
+      "preconditions": "Valid isolated controls, actual AFD roles and transport completion",
+      "refs": [
+        "knowledge/performance/tiling-pipeline.md"
+      ]
+    },
+    {
+      "id": "core-balance",
+      "level": "inter-core",
+      "features": [
+        "T",
+        "B",
+        "R",
+        "C"
+      ],
+      "mechanisms": "M/N task assignment, grouped rotation, conditional Split-K",
+      "preconditions": "Longest core, legal parallelism and reduction cost",
+      "refs": [
+        "knowledge/performance/arch22-reuse-split.md"
+      ]
+    },
+    {
+      "id": "pipeline",
+      "level": "inter-core",
+      "features": [
+        "S",
+        "M",
+        "F"
+      ],
+      "mechanisms": "Lookahead, early refill and stage/buffer scheduling",
+      "preconditions": "Last readers, G2 input release, independent SENT output lifetime",
+      "refs": [
+        "knowledge/performance/tiling-pipeline.md",
+        "knowledge/performance/megamoe-a3-experiments.md"
+      ]
+    },
+    {
+      "id": "memory",
+      "level": "intra-core",
+      "features": [
+        "M",
+        "B",
+        "C"
+      ],
+      "mechanisms": "DMA packages, preload and L0/L1/L2 reuse",
+      "preconditions": "Actual bytes, reuse counts, capacity and paired events",
+      "refs": [
+        "knowledge/performance/arch22-pipeline.md",
+        "knowledge/performance/arch22-reuse-split.md"
+      ]
+    },
+    {
+      "id": "compute",
+      "level": "intra-core",
+      "features": [
+        "C",
+        "D",
+        "F"
+      ],
+      "mechanisms": "GMM, activation, quantization movement and epilogue fusion",
+      "preconditions": "Numerical/rounding semantics, actual SDK and compute dispatch",
+      "refs": [
+        "knowledge/performance/tiling-pipeline.md"
+      ]
+    },
+    {
+      "id": "synchronization",
+      "level": "inter-core",
+      "features": [
+        "S",
+        "R",
+        "M"
+      ],
+      "mechanisms": "Publication, metadata and barrier control overhead",
+      "preconditions": "Visibility, participant counts, terminal guards and completion contracts",
+      "refs": [
+        "knowledge/performance/tiling-pipeline.md",
+        "knowledge/performance/megamoe-a3-experiments.md"
+      ]
+    }
+  ]
+}

@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 from afd_rsi.model_protocol import ModelContext, MODEL_RULES, DEBUG_EDIT_TASK, code_schema, compact
+from afd_rsi.search_policy import direction_schema
 
 
 def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
@@ -67,7 +68,7 @@ def write_workspace(workspace, request):
     """Keep the transport self-contained, but let Codex read individual contracts."""
     view = json.loads(json.dumps(request))
     (workspace / 'knowledge.md').unlink(missing_ok=True)
-    for directory in ('source', 'dependencies', 'evidence'):
+    for directory in ('source', 'dependencies', 'evidence', 'knowledge-files'):
         target = workspace / directory
         if target.exists():
             shutil.rmtree(target)
@@ -88,6 +89,8 @@ def write_workspace(workspace, request):
         item['facts_file'] = save('evidence/' + item['id'] + '.json', json.dumps(item.pop('facts', {}), indent=2) + '\n')
     if view.get('knowledge'):
         view['knowledge'] = save('knowledge.md', view['knowledge'])
+    for name, content in request.get('knowledge_files', {}).items():
+        view['knowledge_files'][name] = save('knowledge-files/' + name, content)
     (workspace / 'request.json').write_text(json.dumps(view, ensure_ascii=False, indent=2) + '\n')
 
 
@@ -132,11 +135,13 @@ def propose(args):
         'Avoid dumping the entire workspace; inspect relevant functions and the supplied overlap/wait summaries.\n'
         'Before choosing a design, verify its completion/Finalize, idle-core drain and activation slicing contracts.\n'
         'If those contracts are missing, return stop=true, proposals=[], needs_context=[exact missing contracts].\n'
-        'Follow request.strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
+        'Follow request.strategy and its evidence-driven scope; use local skills as references and allow justified new mechanisms.\n'
         'Choose up to three distinct proposals; stop when there is no justified change.\n'
-        + ('For this global-redesign round, analyze the whole FFN pipeline after input readiness and choose one coherent architecture, '
-           'not a local parameter tweak. Large source changes are allowed when the evidence supports them.\n'
-           if global_redesign else ''))
+        + ('For global review, reassess the whole FFN pipeline after input readiness and earlier failed predictions. '
+           'Compare architectures and choose the justified scope; a rewrite is permitted when supported.\n'
+           if global_redesign else '')
+        + ('The legacy explicit redesign requests a coherent architecture, not a local parameter tweak.\n'
+           if global_redesign and 'anchor' not in request.get('strategy', {}) else ''))
     schema = args.output.parent / 'proposal.schema.json'
     contract = json.loads(Path(__file__).with_name('proposal.schema.json').read_text())
     if request.get('proposal_requirements'):
@@ -147,6 +152,9 @@ def propose(args):
             'type': 'object', 'additionalProperties': False, 'required': fields,
             'properties': {name: {'type': 'string', 'minLength': 1} for name in fields},
         }
+        if 'knowledge_refs' in request['proposal_requirements']:
+            proposal['required'].append('direction')
+            proposal['properties']['direction'] = direction_schema()
     contract['properties']['proposals']['items']['properties']['evidence']['items']['enum'] = [
         item['id'] for item in request['evidence']]
     schema.write_text(json.dumps(contract) + '\n')
@@ -188,7 +196,7 @@ def propose(args):
         'do not add concurrent stage durations. Stop rather than guess. Do not write patches.')
     if global_redesign:
         analysis_prompt += (' Compare at least two FFN architectures across RX/pull, packing, GMM1, '
-            'activation, GMM2 and output/TX. Choose one cohesive redesign using FFN work after source readiness; '
+            'activation, GMM2 and output/TX. Review failed predictions and choose justified changes after source readiness; '
             'exclude Attention submission waits and do not stop merely because earlier local tweaks failed.')
     analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
         analysis_prompt,
@@ -217,9 +225,9 @@ def propose(args):
         write_json(schema, code_schema(wire.base, len(analysis['proposals'])))
         code_prompt = 'Read code.json and AGENTS.md. Implement the analyzed hypotheses. Return id/edits; metadata is inherited.'
     if global_redesign:
-        code_prompt += (' Implement the selected coherent redesign, including all affected allowed files and '
+        code_prompt += (' Implement the selected mechanisms, including all affected allowed files and '
             'synchronization contracts. Rewriting a kernel or adding a new implementation is permitted; '
-            'do not shrink the architecture to a local tweak merely to minimize the diff.')
+            'choose scope from evidence and request.strategy, rather than round number.')
     value, code_usages = invoke(executable, workspace, schema, args.output,
         code_prompt,
         'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)

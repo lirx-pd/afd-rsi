@@ -50,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 from afd_rsi.model_protocol import ModelContext, MODEL_RULES, READ_RULES, EDIT_TASK, DEBUG_EDIT_TASK, code_schema, compact
+from afd_rsi.search_policy import direction_schema, validate_direction
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
 DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
@@ -91,7 +92,7 @@ SYSTEM_RULES = (
     'The evidence array must contain only exact IDs from the request, such as baseline, never explanations.\n'
     'The current request is authoritative; older history and profiling may be stale.\n'
     'Label a hypothesis as a hypothesis.\n'
-    'Follow strategy: a global redesign may replace or add allowed files; late changes should be localized.\n'
+    'Follow evidence-driven strategy; use supplied skills and allow justified new mechanisms.\n'
     'Choose up to three distinct proposals; stop when there is no justified change.'
 )
 
@@ -382,6 +383,8 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> list[str]:
         expected |= set() if analysis else {'patch'}
         if requirements:
             expected |= {'experiment'}
+            if 'knowledge_refs' in requirements:
+                expected.add('direction')
         if analysis and request.get('model_protocol') == 2:
             expected |= {'files'}
         missing = expected - set(proposal)
@@ -403,6 +406,8 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> list[str]:
         if not isinstance(cited, list) or not cited or not set(cited) <= allowed:
             raise ValueError('evidence must cite exact IDs from the request')
         if requirements:
+            if 'knowledge_refs' in requirements:
+                validate_direction(proposal.get('direction'), requirements)
             experiment = proposal['experiment']
             fields = set(requirements['experiment_fields'])
             if (not isinstance(experiment, dict) or set(experiment) != fields
@@ -625,6 +630,9 @@ def propose(args):
         proposal['properties']['experiment'] = {
             'type': 'object', 'additionalProperties': False, 'required': fields,
             'properties': {name: {'type': 'string', 'minLength': 1} for name in fields}}
+        if 'knowledge_refs' in request['proposal_requirements']:
+            proposal['required'].append('direction')
+            proposal['properties']['direction'] = direction_schema()
     proposal['properties']['evidence']['items']['enum'] = [item['id'] for item in request['evidence']]
     analysis_contract = json.loads(json.dumps(contract))
     analysis_item = analysis_contract['properties']['proposals']['items']

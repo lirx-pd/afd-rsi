@@ -14,12 +14,15 @@ thread ID for the next proposal; CLI processes exit between turns. Report phase 
 preserve detailed events, command receipts, request hashes and model usage.
 Starting a job returns immediately after the controller snapshot is ready.
 
-Early rounds (approximately the first two thirds) use deep optimization: coherent
+For legacy recipes without adaptive-v1, early rounds (approximately the first two thirds) use deep optimization: coherent
 changes to tile scheduling, buffer lifetimes or coordinated tiling may span
 allowed files. Later rounds use incremental optimization of the current best.
 For one round, use deep mode. Strategy changes only proposal guidance: allowed
 paths, published interfaces, numerical/service gates, gain threshold and fresh
 confirmation requirements remain unchanged. Depth is not a line-count target.
+
+Adaptive recipes instead reuse their candidate pool and select scope from measured trends;
+see [search and recovery](search.md).
 
 A native-primary timing pass judges its own sampling first: the worst per-case relative
 spread across repetitions is compared with `AFD_RSI_SPREAD_LIMIT` (default 5%). A

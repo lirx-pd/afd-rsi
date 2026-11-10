@@ -50,6 +50,8 @@ require_clean_shutdown = false
 max_regression_pct = 5.0
 
 [search]
+policy = "adaptive-v1"
+max_model_calls = 36
 # Proposer model: codex (default) or deepseek. Switching this one line selects the
 # frozen adapter; the controller still validates every proposal the same way.
 provider = "codex"
@@ -60,11 +62,10 @@ agent_timeout_seconds = 1200
 max_context_bytes = 524288
 experience_dirs = []
 
-# Direction routing: category abilities are estimated from measured gain, not raw
-# trial counts. Exploration stays off (info_floor = 0) until a campaign has
-# enough rounds for the estimate to mean anything.
+# Adaptive routing uses direction momentum and a persistent candidate pool.
+# Information exploration also requires >6 valid evaluations and empirical variance.
 router = "auto"
-info_floor = 0.0
+info_floor = 0.1
 margin = 0.02
 explore_max_fraction = 0.25
 
