@@ -1,10 +1,33 @@
 import copy
+import ast
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from afd_rsi.native import fixture_result, profile_evidence, timing_summary, write_report
+
+
+@pytest.mark.parametrize('fields,error', [
+    ({'has_pending_attention': False, '_pending_attention_payloads': {'stale': True}}, None),
+    ({'has_pending_attention': True, '_pending_attention_payloads': {}}, AssertionError),
+    ({'_pending_attention_payloads': {}}, None),
+    ({'_pending_attention_payloads': {'stage': ['payload']}}, AssertionError),
+    ({}, AttributeError),
+])
+def test_fixture_checks_public_attention_state_with_legacy_fallback(fields, error):
+    # Execute the actual assertion without importing the fixture's NPU dependencies.
+    path = Path(__file__).resolve().parents[1] / 'benchmarks/native/eager_fixture.py'
+    function = next(node for node in ast.parse(path.read_text()).body
+                    if isinstance(node, ast.FunctionDef) and node.name == 'assert_attention_idle')
+    namespace = {}
+    exec(compile(ast.Module(body=[function], type_ignores=[]), str(path), 'exec'), namespace)
+    if error:
+        with pytest.raises(error):
+            namespace['assert_attention_idle'](SimpleNamespace(**fields))
+    else:
+        namespace['assert_attention_idle'](SimpleNamespace(**fields))
 
 
 IDENTITY = {"files": {"binding.so": "fixed"}, "kernel_artifacts": {"kernel.o": "fixed"}}

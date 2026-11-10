@@ -67,7 +67,8 @@ def parser() -> argparse.ArgumentParser:
         sub.add_argument(
             "--dbo", choices=("on", "off"), default="off", help="Native vLLM DBO"
         )
-        sub.add_argument("--layered-gmm", choices=("on", "off"), default="off")
+        sub.add_argument("--layered-gmm", choices=("on", "off"), default="off",
+                         help="Compatibility option; current Async CAM always uses the Layered executor")
         sub.add_argument(
             "--ffn-mega-moe",
             choices=("on", "off"),

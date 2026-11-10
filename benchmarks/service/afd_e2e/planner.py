@@ -76,7 +76,6 @@ def environment(
         "ASCEND_RT_VISIBLE_DEVICES": ",".join(devices),
         "AFD_E2E_RUN_ID": run_id,
         "AFD_E2E_PROCESS_ROLE": role,
-        "AFD_ASYNC_CAM_LAYERED_GMM": str(int(case.layered_gmm and role == "ffn")),
         "PYTHONPATH": os.pathsep.join(
             filter(None, (
                 str(case.repo) if not case.baseline else None,

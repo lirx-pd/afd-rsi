@@ -38,7 +38,7 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     assert services["ffn"]["devices"] == list(map(str, range(8, 16)))
     assert services["ffn"]["environment"]["VLLM_PLUGINS"] == "ascend,afd"
     assert services["ffn"]["environment"]["VLLM_USE_V2_MODEL_RUNNER"] == "1"
-    assert services["ffn"]["environment"]["AFD_ASYNC_CAM_LAYERED_GMM"] == "1"
+    assert plan["configuration"]["layered_gmm"] is True
     assert services["ffn"]["environment"]["BATCH_SIZE_FACTOR"] == "0.125"
     for service in services.values():
         command = service["command"]
@@ -60,8 +60,29 @@ def test_v4_megamoe_plan_uses_actual_afd_serve_templates(tmp_path, execution):
     assert "serve" in text
     assert "ascend,afd" in text
     assert "ffn_mega_moe" in text
-    assert "AFD_ASYNC_CAM_LAYERED_GMM" in text
+    assert "AFD_ASYNC_CAM_LAYERED_GMM" not in text
     assert "v4-flash" in text
+
+
+@pytest.mark.parametrize('option', [[], ['--layered-gmm', 'on'], ['--layered-gmm', 'off']])
+def test_async_plan_reports_mandatory_layered_execution(tmp_path, monkeypatch, option):
+    monkeypatch.syspath_prepend(str(ROOT / 'benchmarks/service'))
+    from afd_e2e.cli import parser
+    from afd_e2e.config import from_args
+    from afd_e2e.planner import describe
+    args = ['plan', '--repo', str(tmp_path), '--model', 'v4-flash', '--model-path', '/prepared/model',
+            '--comm', 'async', '--test', 'smoke', '--nic', 'lo', '--afd-host', '127.0.0.1']
+    plan = describe(from_args(parser().parse_args(args + option)))
+    assert plan['configuration']['layered_gmm'] is True
+    assert all('AFD_ASYNC_CAM_LAYERED_GMM' not in item['environment'] for item in plan['services'])
+
+
+@pytest.mark.parametrize('mega', ['on', 'off'])
+def test_async_plan_rejects_unquantized_execution_before_startup(tmp_path, mega):
+    result = invoke('plan', '--repo', str(tmp_path), '--model', 'v4-flash',
+                    '--model-path', '/prepared/model', '--comm', 'async',
+                    '--ffn-mega-moe', mega, '--dynamic-quant', '0', '--test', 'smoke')
+    assert result.returncode == 2 and 'dynamicQuant=1' in result.stderr
 
 
 def test_service_requires_explicit_target_repo():

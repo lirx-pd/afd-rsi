@@ -20,13 +20,18 @@ MRV2、Async CAM、Layered、eager/graph 的参数从实际命令和环境传入
 配置替代当前 W4A8 MegaMoe 的 V4 异步 MRV2 场景。
 
 当前目标的 AFDAsyncExtraInfo 接受 dynamicQuant、attn_ranks_per_dp、
-hccl_buffer_size、ffn_mega_moe、ffn_two_stream、ffn_compute_aic_num、ffn_compute_aiv_num、
-ffn_combine_aiv_num。历史 async_moe_ubatching 已删除；即使值为 false 也会
+hccl_buffer_size、ffn_mega_moe。FFN two-stream 及对应核数配置、历史 async_moe_ubatching
+已删除；即使值为 false 也会
 导致 worker 初始化失败。本地工具不再传该字段，默认关闭 splitting，对显式 on
 在 plan 阶段报错。不要通过修改目标配置校验器绕过接口不匹配。
 
-Pull native 由 `ffn_mega_moe=true` 选择，并要求 dynamicQuant=1、关闭 FFN
-two-stream。服务计划按 max-batched-tokens 设置 BATCH_SIZE_FACTOR，避免默认
+Async CAM 的 FFN 固定使用 Layered W4A8/W8A8 executor；服务计划不再注入
+AFD_ASYNC_CAM_LAYERED_GMM。旧 --layered-gmm 参数作为命令兼容入口保留，
+Async CAM 的实际计划始终记录 layered_gmm=true，不能通过该参数关闭 Layered。
+Async CAM 的 Layered 与 Mega 路径均要求 dynamicQuant=1；plan 阶段提前拒绝 0，
+权重是否符合 Layered W4A8/W8A8 契约仍须由真实加载与算子测试验证。
+Pull native 由 `ffn_mega_moe=true` 选择，并要求 dynamicQuant=1。
+服务计划按 max-batched-tokens 设置 BATCH_SIZE_FACTOR，避免默认
 262144 行接收缓冲放大工作区。若模型目录提供 config.json，计划会核验
 `max_num_batched_tokens / Attention TP <= 65535 / top-k`。配方的 32764
 批量上限适用于 TP4、top-k8；换模型或拓扑时必须重新核对实际 top-k。

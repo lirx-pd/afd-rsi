@@ -42,6 +42,14 @@ LAYERS = (2, 5)
 LIMIT = 10.0
 
 
+def assert_attention_idle(connector):
+    # Prefer the public predicate, which covers both Push queues and Pull windows.
+    pending = getattr(connector, "has_pending_attention", None)
+    if pending is None:
+        pending = connector._pending_attention_payloads
+    assert not pending, "Attention still has an in-flight dispatch"
+
+
 class SyntheticModel(torch.nn.Module):
     """Synthetic experts for eager validation; no checkpoint is loaded."""
 
@@ -172,7 +180,6 @@ def main():
     # The pull-native Mega path is selected only through the connector extra
     # config below; the current AFD build reads no Mega environment variable.
     faulthandler.dump_traceback_later(60)
-    os.environ["AFD_ASYNC_CAM_LAYERED_GMM"] = "1"
     # Rows are the pull source capacity: the layout bounds it by 65535/topk, and the
     # connector requires rows >= max_num_batched_tokens. A dispatch carries
     # max_num_batched_tokens // tp tokens. Custom cases reserve the hot rank's
@@ -675,7 +682,7 @@ def main():
             report[
                 "layered_reference_close" if args.mega_moe else "eager_exact_match"
             ] = True
-        assert not connector._pending_attention_payloads
+        assert_attention_idle(connector)
     else:
         assert thread is not None
         thread.join(timeout=30)

@@ -79,9 +79,12 @@ status、inference_status、shutdown_status、cleanup_status 和 test_results；
 执行多个工作负载；它不把质量不达标当成服务崩溃，结果须逐项审核。
 
 与 layered 基线比较时用 `--ffn-mega-moe off`（默认），其他参数和负载相同。这个开关进入
-connector_extra_config 的 `ffn_mega_moe`，要求 `dynamicQuant=1` 且 `ffn_two_stream=false`；
+connector_extra_config 的 `ffn_mega_moe`，要求 `dynamicQuant=1`；
 旧版 AFD 用的是 `AFD_ASYNC_CAM_MEGA_MOE` 环境变量和融合的 `afd_mega_moe_ffn` 内核，
 当前版本改为 `afd_mega_moe_pull_native` 搭配 `afd_mega_moe_comm`。
+当前 Async CAM 固定使用 Layered W4A8/W8A8，已删除 FFN two-stream 和
+`AFD_ASYNC_CAM_LAYERED_GMM` 开关。旧 `--layered-gmm` 参数兼容保留，Async
+计划始终记录有效值 `layered_gmm=true`，不再向 worker 注入失效环境变量。
 每一侧均实际构建并配置自己的包/算子，使用全新服务进程和结果目录。当前没有
 自动 A/B 集成，不允许省略身份核验后直接宣称候选加速。
 

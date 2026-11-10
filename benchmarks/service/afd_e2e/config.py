@@ -331,7 +331,7 @@ def from_args(args) -> Case:
         ffn_mrv=args.ffn_mrv or args.mrv,
         execution=args.execution,
         dbo=args.dbo == "on",
-        layered_gmm=args.layered_gmm == "on",
+        layered_gmm=async_mode or args.layered_gmm == "on",
         moe_ubatching=args.moe_ubatching == "on",
         ffn_mega_moe=args.ffn_mega_moe == "on",
         devices=devices,
@@ -383,6 +383,8 @@ def from_args(args) -> Case:
 def validate(case: Case) -> None:
     if case.comm == "async" and case.moe_ubatching:
         raise ValueError("current AFD async connector has no async_moe_ubatching field; use --moe-ubatching off")
+    if not case.baseline and case.comm == "async" and case.dynamic_quant != 1:
+        raise ValueError("current Async CAM requires Layered W4A8/W8A8 weights and dynamicQuant=1; use --dynamic-quant 1")
     if case.ffn_mega_moe and case.comm != "async":
         raise ValueError("--ffn-mega-moe is the async pull protocol; it needs --comm async")
     if case.ffn_mega_moe and case.baseline:
