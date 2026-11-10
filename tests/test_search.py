@@ -13,10 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture
-def run(tmp_path):
+def run(tmp_path, request):
     recipe = tmp_path / 'search.toml'
     text = (ROOT / 'recipes/cpu_search.toml').read_text().replace('../examples/source', str(ROOT / 'examples/source'))
-    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 2').replace('max_calls = 9', 'max_calls = 2')
+    calls = getattr(request, 'param', 2)
+    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_rounds = 9', 'max_rounds = 2').replace('max_calls = 9', f'max_calls = {calls}')
     recipe.write_text(text)
     return campaign.prepare(recipe, tmp_path / 'run', ROOT)
 
@@ -45,6 +46,153 @@ def respond(run, value):
     pending = read_json(run / 'search/pending.json')
     write_json(run / pending['response'], value)
     return run / pending['response']
+
+
+@pytest.mark.parametrize('failed_phase', ['build', 'correctness'])
+@pytest.mark.parametrize('repair_succeeds', [True, False])
+def test_one_debug_retests_fresh_and_preserves_failed_attempt(run, monkeypatch, failed_phase, repair_succeeds):
+    search.search(run, ROOT, external=True)
+    respond(run, proposal())
+    original = campaign.execute
+    def execute(argv, cwd, output, timeout, env):
+        if (env.get('AFD_RSI_SIDE') == 'candidate' and argv[-1] == failed_phase
+                and (not repair_succeeds or 'debug' not in Path(cwd).parts)):
+            if failed_phase == 'build':
+                compiler_log = Path(env['AFD_RSI_BUILD_DIR']) / 'native/build/stderr.log'
+                compiler_log.parent.mkdir(parents=True, exist_ok=True)
+                compiler_log.write_text('kernel.cpp:123: error: invalid device implementation\n')
+            argv = [sys.executable, '-c', 'import sys; print("candidate implementation error", file=sys.stderr); sys.exit(2)']
+        return original(argv, cwd, output, timeout, env)
+    monkeypatch.setattr(campaign, 'execute', execute)
+    search.search(run, ROOT)
+    pending = read_json(run / 'search/pending.json')
+    assert pending['call'] == 2 and '/0001/debug/' in pending['request']
+    request = read_json(run / pending['request'])
+    assert request['debug']['failure']['phase'] == failed_phase
+    assert any('candidate implementation error' in log['tail'] for log in request['logs'])
+    if failed_phase == 'build':
+        assert any('kernel.cpp:123: error' in log['tail'] for log in request['logs'])
+    assert request['knowledge'] == ''
+    before = read_json(run / 'search/rounds/0001/state.json')
+    failed_attempt = before['debug']['screen']
+    failed_source = run / 'search/rounds/0001/source/kernel.json'
+    failed_hash = digest(failed_source)
+    search.search(run, ROOT)
+    assert read_json(run / 'search/pending.json') == pending
+    assert read_json(run / 'search/state.json')['calls'] == 2
+    respond(run, proposal())
+    search.search(run, ROOT)
+    state = read_json(run / 'search/state.json')
+    record = read_json(run / 'search/rounds/0001/state.json')
+    assert state['calls'] == 2 and state['rounds'] == ['0001']
+    assert state['status'] == 'budget_exhausted'
+    assert record['screen'] != failed_attempt
+    assert digest(failed_source) == failed_hash
+    assert record['decision'] == ('promoted' if repair_succeeds else 'rejected')
+    best = search.best_candidate(run, ROOT)
+    if repair_succeeds:
+        assert best['source'].endswith('/debug/source')
+        assert len({failed_attempt, best['screen']['attempt'], best['confirmation']['attempt']}) == 3
+    else:
+        assert best['confirmation'] is None and 'confirmation' not in record
+    lesson = read_json(run / 'search/experience/0001.json')
+    assert lesson['debug']['screen'] == failed_attempt
+    assert lesson['debug']['patch_hash'] == search.identity(proposal()['proposals'][0]['patch'].strip())
+    assert any(failed_attempt in name for name in lesson['evidence'])
+    search.search(run, ROOT)
+    assert read_json(run / 'search/state.json')['calls'] == 2
+
+
+def test_debug_call_reservation_survives_crash(run, monkeypatch):
+    search.search(run, ROOT, external=True)
+    wrong = proposal()
+    wrong['proposals'][0]['patch'] = wrong['proposals'][0]['patch'].replace(
+        '+{"synthetic_us": 8.0, "multiplier": 2, "bias": 1}',
+        '+{"synthetic_us": 8.0, "multiplier": 2, "bias": 2}')
+    respond(run, wrong)
+    original = search.write_json
+    def crash(path, value):
+        if path == run / 'search/rounds/0001/state.json' and value.get('phase') == 'awaiting_agent' and value.get('debug'):
+            raise KeyboardInterrupt()
+        original(path, value)
+    monkeypatch.setattr(search, 'write_json', crash)
+    with pytest.raises(KeyboardInterrupt):
+        search.search(run, ROOT)
+    assert read_json(run / 'search/state.json')['calls'] == 2
+    monkeypatch.setattr(search, 'write_json', original)
+    search.search(run, ROOT)
+    assert read_json(run / 'search/pending.json')['call'] == 2
+    assert read_json(run / 'search/state.json')['calls'] == 2
+
+
+@pytest.mark.parametrize('run', [1], indirect=True)
+def test_debug_does_not_exceed_frozen_dispatch_budget(run, monkeypatch):
+    search.search(run, ROOT, external=True)
+    respond(run, proposal())
+    original = campaign.execute
+    def failed_build(argv, cwd, output, timeout, env):
+        if env.get('AFD_RSI_SIDE') == 'candidate' and argv[-1] == 'build':
+            argv = [sys.executable, '-c', 'raise RuntimeError("compile failure")']
+        return original(argv, cwd, output, timeout, env)
+    monkeypatch.setattr(campaign, 'execute', failed_build)
+    search.search(run, ROOT)
+    record = read_json(run / 'search/rounds/0001/state.json')
+    assert record['decision'] == 'rejected' and 'budget exhausted' in record['debug_skipped']
+    assert not record.get('debug')
+    assert read_json(run / 'search/state.json')['calls'] == 1
+    assert not (run / 'search/pending.json').exists()
+
+
+def test_failed_health_barrier_blocks_debug_dispatch_and_retest(run, monkeypatch):
+    search.search(run, ROOT, external=True)
+    respond(run, proposal())
+    original_execute, original_recover = campaign.execute, campaign.recover
+    def failed_build(argv, cwd, output, timeout, env):
+        if env.get('AFD_RSI_SIDE') == 'candidate' and argv[-1] == 'build':
+            argv = [sys.executable, '-c', 'raise RuntimeError("compile failure")']
+            write_json(run / 'recovery.json', {'health': 'required'})
+        return original_execute(argv, cwd, output, timeout, env)
+    def recover(run, root):
+        if (run / 'recovery.json').exists() and read_json(run / 'recovery.json').get('health') == 'required':
+            raise ValueError('device health failed')
+        return original_recover(run, root)
+    monkeypatch.setattr(campaign, 'execute', failed_build)
+    monkeypatch.setattr(campaign, 'recover', recover)
+    for _ in range(2):
+        with pytest.raises(ValueError, match='device health failed'):
+            search.search(run, ROOT)
+        assert read_json(run / 'search/state.json')['calls'] == 1
+        record = read_json(run / 'search/rounds/0001/state.json')
+        assert record['phase'] == 'request' and record['debug']['decision'] == 'rejected'
+        assert 'screen' not in record
+
+
+@pytest.mark.parametrize('side,phase,status,process,checks,summary,eligible', [
+    ('candidate', 'build', 'invalid', 'failed', None, {}, True),
+    ('candidate', 'benchmark', 'invalid', 'timeout', None, {}, True),
+    ('candidate', 'build', 'invalid', 'launch_error', None, {}, False),
+    ('candidate', 'build', 'invalid', 'completed', None, {}, False),
+    ('baseline', 'correctness', 'invalid', 'failed', None, {}, False),
+    ('candidate', 'benchmark', 'valid', 'completed', True, {}, False),
+    ('candidate', 'correctness', 'valid', 'completed', False, {}, True),
+    ('candidate', 'service', 'valid', 'failed', False, {'inference_status': 'passed'}, False),
+    ('candidate', 'service', 'valid', 'failed', False, {'inference_status': 'failed'}, True),
+])
+def test_only_implementation_failures_trigger_debug(tmp_path, side, phase, status, process, checks, summary, eligible):
+    result = dict(trial='trial', phase=phase, status=status, checks_passed=checks, summary=summary,
+                  process=dict(status=process, cleanup_complete=True))
+    write_json(tmp_path / 'attempts/failed/progress.json',
+               dict(steps=[dict(side=side, phase=phase, result=result)]))
+    assert bool(search._debug_failure(tmp_path, dict(screen='failed'))) == eligible
+
+
+def test_completed_native_kernels_do_not_trigger_debug_for_timing_noise(tmp_path):
+    result = dict(trial='trial', phase='benchmark', status='invalid', reason='native timing spread',
+                  process=dict(status='failed', cleanup_complete=True))
+    write_json(tmp_path / 'attempts/failed/progress.json',
+               dict(steps=[dict(side='candidate', phase='benchmark', result=result)]))
+    write_json(tmp_path / 'trial/transaction/process.json', dict(status='completed', cleanup_complete=True))
+    assert search._debug_failure(tmp_path, dict(screen='failed')) is None
 
 
 def test_search_confirms_best_and_exports_it_after_later_rejection(run, tmp_path):
@@ -85,10 +233,11 @@ def test_history_changes_selection_and_deduplicates(run):
     seen = [{'parent_hash': 'same', 'patch_hash': search.identity(first['patch'].strip()), 'category': 'latency', 'decision': 'rejected'}]
     assert search.select_proposal([first], seen, 'same') is None
     assert search.select_proposal([first], seen, 'different') == first
+    repaired = [{**seen[0], 'patch_hash': 'repaired-patch', 'debug': {'patch_hash': seen[0]['patch_hash']}}]
+    assert search.select_proposal([first], repaired, 'same') is None
     search.search(run, ROOT, external=True)
     wrong = proposal()
-    wrong['proposals'][0]['patch'] = wrong['proposals'][0]['patch'].replace(
-        '"synthetic_us": 8.0, "multiplier": 2, "bias": 1', '"synthetic_us": 8.0, "multiplier": 2, "bias": 2')
+    wrong['proposals'][0]['patch'] = wrong['proposals'][0]['patch'].replace('"synthetic_us": 8.0', '"synthetic_us": 12.0')
     respond(run, wrong)
     search.search(run, ROOT)
     context = read_json(run / read_json(run / 'search/pending.json')['request'])

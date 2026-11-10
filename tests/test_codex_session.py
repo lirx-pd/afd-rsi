@@ -123,3 +123,22 @@ def test_global_redesign_uses_architecture_prompts(tmp_path, monkeypatch):
     assert 'exclude Attention submission waits' in prompts[0]
     assert 'Rewriting a kernel or adding a new implementation' in prompts[1]
     assert 'not a local parameter tweak' in (tmp_path / 'workspace/AGENTS.md').read_text()
+
+
+def test_debug_uses_only_one_sol_call(tmp_path, monkeypatch):
+    module = adapter()
+    monkeypatch.setattr(module.shutil, 'which', lambda _: 'codex')
+    calls = []
+    def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
+        calls.append((model, effort, prompt))
+        value = dict(stop=True, reason='cannot safely repair', proposals=[])
+        write_json(output, value)
+        return value, [{'model': model}]
+    monkeypatch.setattr(module, 'invoke', invoke)
+    request = tmp_path / 'request.json'
+    write_json(request, {'debug': {'failure': 'compiler error'}, 'evidence': [{'id': 'baseline'}]})
+    args = type('Args', (), dict(request=request, output=tmp_path / 'response.json', session_dir=tmp_path))()
+    module.propose(args)
+    assert len(calls) == 1 and calls[0][:2] == ('gpt-6.1-sol', 'xhigh')
+    assert 'complete replacement patch' in calls[0][2]
+    assert read_json(tmp_path / 'usage.json')['model_calls'] == 1

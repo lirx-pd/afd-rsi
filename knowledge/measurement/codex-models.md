@@ -25,8 +25,11 @@ When Codex is separately used to operate an experiment, invoke it with
 `--model gpt-6.1-sol -c 'model_reasoning_effort="medium"'`.
 
 `search.max_calls` bounds Agent command dispatches, including external requests,
-not individual internal CLI stages. Each built-in dispatch makes at most two
-model calls (one when analysis stops), within the same frozen timeout/deadline.
+not individual internal CLI stages. An ordinary Codex dispatch makes two model
+calls (one when analysis stops), plus at most one code-only repair if local patch
+preflight fails, within the same frozen timeout/deadline. Candidate compile/runtime
+or native numerical failure may reserve one additional debug dispatch: one Sol
+coding call without Astra analysis, followed by fresh controller validation.
 Reserve no extra dispatch on resume. Preserve interrupted evidence and use a
 new campaign for this changed adapter; never edit an existing frozen provider.
 

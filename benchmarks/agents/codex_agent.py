@@ -12,6 +12,7 @@ from uuid import UUID
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
+from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 
 
 def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
@@ -91,6 +92,7 @@ def write_workspace(workspace, request):
 
 def propose(args):
     request = json.loads(args.request.read_text())
+    require_patch_tools(request)
     global_redesign = request.get('strategy', {}).get('mode') == 'global-redesign'
     executable = shutil.which('codex')
     if not executable:
@@ -137,6 +139,13 @@ def propose(args):
     contract['properties']['proposals']['items']['properties']['evidence']['items']['enum'] = [
         item['id'] for item in request['evidence']]
     schema.write_text(json.dumps(contract) + '\n')
+    if request.get('debug'):
+        value, usages = invoke(executable, workspace, schema, args.output,
+            'Read request.json and AGENTS.md. ' + DEBUG_TASK,
+            'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
+        write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+        validate_patches(value, request)
+        return
     analysis_contract = json.loads(json.dumps(contract))
     proposal = analysis_contract['properties']['proposals']['items']
     proposal['required'].remove('patch')
@@ -161,7 +170,7 @@ def propose(args):
         analysis_prompt,
         'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events', session)
     (workspace / 'analysis.json').write_text(json.dumps(analysis) + '\n')
-    (args.output.parent / 'usage.json').write_text(json.dumps({'turns': usages}) + '\n')
+    write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
     if analysis['stop']:
         args.output.write_text(json.dumps(analysis) + '\n')
         return
@@ -180,10 +189,23 @@ def propose(args):
         code_prompt += (' Implement the selected coherent redesign, including all affected allowed files and '
             'synchronization contracts. Rewriting a kernel or adding a new implementation is permitted; '
             'do not shrink the architecture to a local tweak merely to minimize the diff.')
-    _, code_usages = invoke(executable, workspace, schema, args.output,
+    value, code_usages = invoke(executable, workspace, schema, args.output,
         code_prompt,
         'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
-    (args.output.parent / 'usage.json').write_text(json.dumps({'turns': usages + code_usages}) + '\n')
+    usages += code_usages
+    write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+    try:
+        validate_patches(value, request)
+    except ValueError as error:
+        write_json(args.output.parent / 'proposal-before-repair.json', value)
+        value, repaired_usage = invoke(executable, workspace, schema, args.output,
+            'The coding response failed local patch preflight: ' + str(error)
+            + '. Read request.json and return corrected complete patches against its parent source. '
+              'Keep the hypotheses and validation gates; this is the only patch repair call.',
+            'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-repair-events', session)
+        usages += repaired_usage
+        write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+        validate_patches(value, request)
 
 
 if __name__ == '__main__':

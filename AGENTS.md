@@ -24,5 +24,7 @@ Codex model policy: experiment operation uses `gpt-6.1-sol` with `medium`;
 code/patch generation uses `gpt-6.1-sol` with `xhigh`; evidence analysis,
 profiling interpretation and optimization planning use `gpt-6-astra` with
 `xhigh`. Here the requested "ultra high" means `xhigh`, not `ultra`.
-The frozen controller runs experiments directly; do not add a model between its
-validation stages. The proposal adapter analyzes first, then generates patches.
+The frozen controller runs experiments directly. The proposal adapter analyzes
+first, then generates patches. A candidate compile/runtime/numerical failure may
+receive one code-only debug dispatch within the frozen budget, followed by fresh
+screening and confirmation. Do not call a model for clean performance rejections.

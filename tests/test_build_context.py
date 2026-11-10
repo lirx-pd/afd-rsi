@@ -105,7 +105,7 @@ def test_request_seals_build_contracts_and_preserves_allowed_protocol(tmp_path):
     trial = run / 'context-trial'
     artifacts = {'kernel': 'compiled-object'}
     write_json(trial / 'artifacts.json', artifacts)
-    content = '// SDK completion contract\n'
+    content = '// SDK completion contract\n' * 2800
     bundle = dict(source_hash=best['source_hash'], artifacts=artifacts,
                   files={'mc2/mm.hpp': dict(content=content, sha256=hashlib.sha256(content.encode()).hexdigest())})
     write_json(trial / 'dependencies.json', bundle)
@@ -119,13 +119,17 @@ def test_request_seals_build_contracts_and_preserves_allowed_protocol(tmp_path):
     (source / 'kernel.cpp').write_text('#include "protocol.h"\n')
     (source / 'protocol.h').write_text('// protocol\n' * 2000)
     plan['allowed_files'] = ['kernel.cpp', 'protocol.h']
-    context = search.request_context(run, plan, best, [], 1)
+    records = [dict(category='fusion', decision='invalid_patch', reason='hunk does not apply',
+                    candidate_hash=None, evidence={})]
+    context = search.request_context(run, plan, best, records, 1)
+    assert 'history-0' in context['protected_evidence_ids']
+    assert next(item for item in context['evidence'] if item['id'] == 'history-0')['facts']['reason'] == 'hunk does not apply'
     assert context['dependency_context'] == bundle
     assert set(context['source_files']) == {'kernel.cpp', 'protocol.h'}
     import json
     required = {**context, 'knowledge': '', 'logs': []}
     plan['search']['max_context_bytes'] = len((json.dumps(required, indent=2, ensure_ascii=False) + '\n').encode()) + 1000
-    bounded = search.request_context(run, plan, best, [], 1)
+    bounded = search.request_context(run, plan, best, records, 1)
     assert set(bounded['source_files']) == {'kernel.cpp', 'protocol.h'}
     write_json(tmp_path / 'bounded.json', bounded)
     assert (tmp_path / 'bounded.json').stat().st_size <= plan['search']['max_context_bytes']

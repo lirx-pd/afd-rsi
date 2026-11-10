@@ -32,8 +32,29 @@ exchange may separate the proposer from the executor, but it cannot change the
 frozen workload, timeout or acceptance rules. Preserve raw model events and the
 submitted proposal alongside experiment evidence. Token usage is an observation,
 not an enforced token budget; Agent dispatches and wall time are bounded.
-The built-in adapter uses at most two model calls per dispatch; follow the
+Ordinary dispatches analyze once and then code. Codex allows one extra coding
+call if local patch application fails; DeepSeek allows one recovery per stage,
+shared by output truncation, schema and patch failures (at most four completions
+per ordinary dispatch). Retry prompts name response properties, not schema keys.
+The proposer host needs Git for disposable-copy patch preflight. No preflight
+modifies the original checkout or replaces the controller's allowed-file checks.
+Follow the
 [Codex model policy](codex-models.md) for role assignment and audit records.
+
+Candidate compile/runtime or native numerical failures receive at most one
+code-only debug dispatch in the same round, charged before dispatch against
+max_calls and the original deadline. Baseline/environment validation failures,
+valid slow results and final accuracy rejections do not trigger debug. Preserve
+the failed patch, logs and attempts under the round; the debug request includes
+the original hypothesis and failure receipts, not a new architecture analysis.
+Return a complete replacement patch against the original parent; keep the
+hypothesis, category and experiment unchanged. A second implementation failure
+ends the round. A repair must start fresh screening and independent confirmation,
+including all final service gates; previous partial passes cannot qualify it.
+Device health recovery still precedes any new device trial. Resume never grants
+another debug or refunds a reserved call. If budget is exhausted, record why the
+debug was skipped. Preserve the latest two history summaries ahead of optional
+knowledge and older profiles, so the next direction can learn from failure.
 
 Native builds capture the CMake-resolved MC2/Catlass include closure and generated
 activation into a read-only dependency bundle bound to source and artifact hashes.

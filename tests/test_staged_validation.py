@@ -81,6 +81,37 @@ def test_screen_then_fresh_confirmation_then_service(staged):
     assert read_json(run / 'search/experience/0001.json')['experiment'] == EXPERIMENT
 
 
+def test_service_runtime_debug_repeats_screen_and_full_confirmation(staged, monkeypatch):
+    run, calls = staged
+    search.search(run, ROOT, external=True)
+    respond(run)
+    original = service_phase.run_service
+    failed = False
+    def service(plan, run, trial, build, identity, timeout):
+        nonlocal failed
+        result = original(plan, run, trial, build, identity, timeout)
+        if not failed and identity['hash'] != plan['source_snapshot']['hash']:
+            failed = True
+            summary = read_json(trial / 'service/summary.json') | {'inference_status': 'failed'}
+            write_json(trial / 'service/summary.json', summary)
+            result.update(process=dict(status='failed', cleanup_complete=True), checks_passed=False,
+                          summary=summary, summary_hash=digest(trial / 'service/summary.json'),
+                          evidence=service_phase.evidence_files(trial / 'service'))
+        return result
+    monkeypatch.setattr(service_phase, 'run_service', service)
+    search.search(run, ROOT)
+    record = read_json(run / 'search/rounds/0001/state.json')
+    assert record['phase'] == 'awaiting_agent' and 'confirmation' in record['debug']
+    original_attempts = {record['debug']['screen'], record['debug']['confirmation']}
+    assert len(calls) == 2 and search.best_candidate(run, ROOT)['confirmation'] is None
+    respond(run)
+    search.search(run, ROOT)
+    best = search.best_candidate(run, ROOT)
+    assert best['confirmation'] is not None and len(calls) == 4
+    assert not original_attempts & {best['screen']['attempt'], best['confirmation']['attempt']}
+    assert read_json(run / 'search/state.json')['calls'] == 2
+
+
 @pytest.mark.parametrize('staged,native_us,expected', [(80, 12, 'promoted'), (110, 8, 'rejected')], indirect=['staged'])
 def test_search_uses_model_service_gain_over_synthetic_gain(staged, native_us, expected):
     run, calls = staged
@@ -152,6 +183,10 @@ def test_rejected_screen_never_starts_service(staged, numeric_failure):
     search.search(run, ROOT)
     assert not calls and search.best_candidate(run, ROOT)['confirmation'] is None
     record = read_json(run / 'search/rounds/0001/state.json')
+    if numeric_failure:
+        assert record['phase'] == 'awaiting_agent' and record['debug']['decision'] == 'rejected'
+        assert read_json(run / 'search/state.json')['calls'] == 2
+        record = record['debug']
     assert record['decision'] == 'rejected'
     assert 'confirmation' not in record
 

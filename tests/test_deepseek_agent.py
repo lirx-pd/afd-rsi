@@ -403,6 +403,8 @@ def test_one_repair_attempt_then_success(tmp_path, monkeypatch):
     assert len(transport.payloads) == 3
     repair = transport.payloads[1]['messages']
     assert repair[-1]['role'] == 'user' and 'rejected' in repair[-1]['content']
+    assert "'stop'" in repair[-1]['content'] and "'proposals'" in repair[-1]['content']
+    assert "['additionalProperties', 'properties', 'required', 'type']" not in repair[-1]['content']
     turns = json.loads((output.parent / 'usage.json').read_text())['turns']
     # Every call is recorded, including the rejected one, so a failed round still
     # shows what it spent.
@@ -410,6 +412,41 @@ def test_one_repair_attempt_then_success(tmp_path, monkeypatch):
     assert turns[0]['stage'] == 'analysis' and turns[0]['ignored_keys'] == []
     assert (output.parent / 'analysis-events.response.json').exists()
     assert not (output.parent / 'analysis-events.response-repair.json').exists()
+
+
+def test_unapplicable_patch_uses_one_code_repair_without_new_analysis(tmp_path, monkeypatch):
+    patch = '--- a/kernel.cpp\n+++ b/kernel.cpp\n@@ -1 +1 @@\n-old\n+new\n'
+    module, transport, args, output = prepare(tmp_path, monkeypatch,
+        analysis_json(), code_json(patch.replace('-old', '-absent')), code_json(patch))
+    args.request = request_document(tmp_path, source_hash='parent', source_files={'kernel.cpp': 'old\n'})
+    module.propose(args)
+    assert len(transport.payloads) == 3
+    assert 'does not apply to supplied parent' in transport.payloads[-1]['messages'][-1]['content']
+    usage = json.loads((output.parent / 'usage.json').read_text())
+    assert usage['model_calls'] == 3
+    assert [turn['stage'] for turn in usage['turns']] == ['analysis', 'code', 'code']
+
+
+@pytest.mark.parametrize('reply,success', [(code_json(), True), ('not json', False)])
+def test_debug_has_one_code_call_and_no_analysis_or_repair(tmp_path, monkeypatch, reply, success):
+    module, transport, args, output = prepare(tmp_path, monkeypatch, reply)
+    args.request = request_document(tmp_path, debug={'failure': 'compiler error'})
+    if success:
+        module.propose(args)
+    else:
+        with pytest.raises(ValueError, match='code response rejected'):
+            module.propose(args)
+        assert not output.exists()
+    assert len(transport.payloads) == 1
+    assert 'Repair only the failed implementation' in transport.payloads[0]['messages'][-1]['content']
+    assert json.loads((output.parent / 'usage.json').read_text())['turns'][0]['stage'] == 'code'
+
+
+def test_debug_error_logs_are_required_context(tmp_path):
+    module = adapter()
+    request = json.loads(request_document(tmp_path, debug={'failure': 'compile'}).read_text())
+    view, _ = module.truncate(request, 100)
+    assert view['logs'] == request['logs'] and view['missing_context']
 
 def test_extra_envelope_keys_are_ignored_but_recorded(tmp_path, monkeypatch):
     """A model that echoes `type: json_object` must not lose the whole round."""

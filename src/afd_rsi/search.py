@@ -178,7 +178,7 @@ def request_context(run, plan, best, records, number, router=None):
                 'source_hash': best['source_hash'], **profile}})
     for index, record in enumerate(records):
         evidence.append({'id': f'history-{index}', 'facts': {
-            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment')
+            key: record[key] for key in ('category', 'decision', 'reason', 'parent_hash', 'candidate_hash', 'hypothesis', 'experiment', 'debug')
             if key in record}})
     for index, record in enumerate(records[-2:]):
         for name in record['evidence']:
@@ -291,6 +291,9 @@ def request_context(run, plan, best, records, number, router=None):
             'Cite baseline and the incumbent profile when supplied. Reject speculative parameter guessing. '
             'The controller screens native numerics and paired timing first; only independently repeated winners '
             'reach expensive E2E accuracy/performance and candidate profiling. Stop if evidence is insufficient.')
+    context['protected_evidence_ids'] = list(dict.fromkeys(
+        ['baseline'] + [item['id'] for item in evidence if item['id'] == 'profile-incumbent']
+        + [item['id'] for item in evidence if item['id'].startswith('history-')][-2:]))
     limit = plan['search']['max_context_bytes']
     # Match write_json's actual artifact size, including indentation and the newline.
     def size():
@@ -298,8 +301,9 @@ def request_context(run, plan, best, records, number, router=None):
 
     while size() > limit // 2 and len(context['evidence']) > 1:
         # Keep the incumbent profile ahead of older history when even facts exceed the budget.
-        required = context.get('proposal_requirements', {}).get('required_evidence_ids', ['baseline'])
-        index = next((i for i, item in enumerate(context['evidence']) if item['id'].startswith('history-')), None)
+        required = context['protected_evidence_ids']
+        index = next((i for i, item in enumerate(context['evidence'])
+                      if item['id'].startswith('history-') and item['id'] not in required), None)
         if index is None:
             index = next((i for i in reversed(range(len(context['evidence'])))
                           if context['evidence'][i]['id'] not in required), None)
@@ -447,6 +451,8 @@ def route_proposals(proposals, records, parent, router=None):
     difficulty or rewarded for being tried first.
     """
     seen = {record['patch_hash'] for record in records if record['parent_hash'] == parent}
+    seen.update(record['debug']['patch_hash'] for record in records if record['parent_hash'] == parent
+                and record.get('debug', {}).get('patch_hash'))
     fresh = {index: proposal for index, proposal in enumerate(proposals)
              if identity(proposal['patch'].strip()) not in seen}
     if not fresh:
@@ -482,20 +488,94 @@ def _start_attempt(run, root, state, record, stage, round_dir=None):
     if not attempt.exists():
         level = ('operator' if stage == 'screen' and campaign.load(run, root).get('validation') == 'operator-first' else 'full')
         campaign._new_attempt(run, root, 'baseline' if stage == 'baseline' else 'comparison',
-                              name=record[stage], candidate_source=None if round_dir is None else round_dir / 'source',
+                              name=record[stage], candidate_source=None if round_dir is None else run / record.get(
+                                  'source', str((round_dir / 'source').relative_to(run))),
                               baseline_source=None if round_dir is None else run / record['parent']['source'], level=level)
     if read_json(attempt / 'progress.json')['status'] != 'completed':
         campaign._continue(run, attempt, root)
     return attempt
 
 
-def _lesson(run, plan, round_dir, record):
-    proposal = record.get('selected', {})
-    evidence = {}
-    for stage in ('screen', 'confirmation'):
+def _debug_failure(run, record):
+    """Only candidate execution/numerical failures earn a repair, never a slow result."""
+    for stage in ('confirmation', 'screen'):
         if stage not in record:
             continue
         attempt = run / 'attempts' / record[stage]
+        for step in read_json(attempt / 'progress.json')['steps']:
+            result = step.get('result', {})
+            failed = result.get('status') == 'invalid' or result.get('checks_passed') is False
+            if not failed:
+                continue
+            process = result.get('process', {})
+            # Service execution can fail before run_service returns its observation.
+            receipt = run / result.get('trial', '') / 'execution/process.json'
+            if not process and receipt.is_file():
+                process = read_json(receipt)
+            if step['side'] != 'candidate' or not process.get('cleanup_complete'):
+                return None
+            crashed = result.get('status') == 'invalid' and process.get('status') in ('failed', 'timeout')
+            trial = run / result.get('trial', '')
+            native = [read_json(trial / name / 'process.json') for name in ('transaction', 'transaction-dense')
+                      if (trial / name / 'process.json').is_file()]
+            if native:
+                # Completed kernels followed by noise/identity validation errors need no code repair.
+                crashed = crashed and any(item['status'] in ('failed', 'timeout') for item in native)
+            service_crash = (step['phase'] == 'service' and process.get('status') in ('failed', 'timeout')
+                             and result.get('summary', {}).get('inference_status') == 'failed')
+            numerical = step['phase'] in ('correctness', 'benchmark') and result.get('checks_passed') is False
+            return result if crashed or service_crash or numerical else None
+    return None
+
+
+def _prepare_debug(run, plan, round_dir, record, failure):
+    """Persist the failed attempt and a code-only request before reserving its call."""
+    from .proposal import DEBUG_TASK
+    context = read_json(round_dir / 'request.json')
+    original = copy.deepcopy(record)
+    context['debug'] = {'original_proposal': record['selected'], 'failure': failure,
+                        'patch_base': 'original parent source_files; return a complete replacement patch'}
+    context['instructions'] = DEBUG_TASK
+    context['strategy'] = {'mode': 'debug', 'guidance': 'One repair of this implementation, not a new optimization.'}
+    context['knowledge'] = ''
+    context['logs'] = []
+    required = context.get('proposal_requirements', {}).get('required_evidence_ids', ['baseline'])
+    context['evidence'] = [{'id': item['id'], 'facts': {'reference': str((round_dir / 'request.json').relative_to(run)),
+        'request_hash': original['request_hash'], 'source_hash': context['source_hash']}}
+        for item in context['evidence'] if item['id'] in required]
+    context['evidence'].append({'id': 'debug-failure', 'facts': failure})
+    context['protected_evidence_ids'] = [item['id'] for item in context['evidence']]
+    trial = run / failure['trial']
+    paths = [trial / name for name in ('stderr.log', 'stdout.log', 'summary.json', 'execution/stderr.log',
+        'execution/stdout.log', 'service/summary.json', 'transaction/stderr.log', 'transaction/stdout.log',
+        'transaction-dense/stderr.log', 'transaction-dense/stdout.log')]
+    attempt = next(run / 'attempts' / record[stage] for stage in ('confirmation', 'screen')
+                   if stage in record and trial.is_relative_to(run / 'attempts' / record[stage]))
+    paths += [attempt / 'build/candidate/native/build' / name for name in ('stderr.log', 'stdout.log')]
+    for path in paths:
+        if path.is_file():
+            context['logs'].append({'file': str(path.relative_to(run)), 'sha256': digest(path),
+                                    'tail': path.read_text(errors='replace')[-12000:]})
+    if len((json.dumps(context, indent=2, ensure_ascii=False) + '\n').encode()) > plan['search']['max_context_bytes']:
+        record['debug_skipped'] = 'Repair evidence exceeds the frozen context budget.'
+        return False
+    debug_dir = round_dir / 'debug'
+    debug_dir.mkdir(exist_ok=True)
+    write_json(debug_dir / 'request.json', context)
+    record.clear()
+    record.update(phase='request', parent=original['parent'], selected=original['selected'], debug=original,
+                  request_hash=digest(debug_dir / 'request.json'))
+    write_json(round_dir / 'state.json', record)
+    return True
+
+
+def _lesson(run, plan, round_dir, record):
+    proposal = record.get('selected', {})
+    evidence = {}
+    attempts = {item[stage] for item in (record, record.get('debug', {}))
+                for stage in ('screen', 'confirmation') if stage in item}
+    for name in attempts:
+        attempt = run / 'attempts' / name
         for name in ('verdict.json', 'observations.json', 'attempt.lock.json', 'attempt.sha256', 'progress.json', 'sources.json'):
             path = attempt / name
             if path.is_file():
@@ -506,7 +586,8 @@ def _lesson(run, plan, round_dir, record):
                 for path in trial.rglob('*'):
                     if path.is_file():
                         evidence[str(path.relative_to(run))] = digest(path)
-    for name in ('request.json', 'proposal.json', 'change.patch'):
+    for name in ('request.json', 'proposal.json', 'change.patch',
+                 'debug/request.json', 'debug/proposal.json', 'debug/change.patch'):
         path = round_dir / name
         if path.is_file():
             evidence[str(path.relative_to(run))] = digest(path)
@@ -517,6 +598,14 @@ def _lesson(run, plan, round_dir, record):
               'reason': record['reason'], 'evidence': evidence}
     if 'experiment' in proposal:
         lesson['experiment'] = proposal['experiment']
+    if record.get('debug'):
+        for item in read_json(round_dir / 'debug/request.json')['logs']:
+            if digest(run / item['file']) != item['sha256']:
+                raise ValueError('debug failure log changed')
+            evidence[item['file']] = item['sha256']
+        lesson['debug'] = {key: record['debug'][key] for key in
+                           ('decision', 'reason', 'candidate_hash', 'screen', 'confirmation') if key in record['debug']}
+        lesson['debug']['patch_hash'] = identity(record['debug']['selected']['patch'].strip())
     destination = run / 'search/experience' / f'{round_dir.name}.json'
     write_json(destination, {**lesson, 'record_hash': identity(lesson)})
 
@@ -615,10 +704,15 @@ def search(run: Path, root: Path, *, external=False):
                 record = {'phase': 'request', 'parent': best, 'request_hash': digest(round_dir / 'request.json')}
                 write_json(path, record)
             record = read_json(path)
-            if digest(round_dir / 'request.json') != record['request_hash']:
+            if record.get('debug'):
+                for filename, key in (('request.json', 'request_hash'), ('proposal.json', 'response_hash')):
+                    if digest(round_dir / filename) != record['debug'][key]:
+                        raise ValueError('original failed proposal evidence changed')
+            work_dir = round_dir / 'debug' if record.get('debug') else round_dir
+            if digest(work_dir / 'request.json') != record['request_hash']:
                 raise ValueError('agent request changed')
-            context = read_json(round_dir / 'request.json')
-            response = round_dir / 'proposal.json'
+            context = read_json(work_dir / 'request.json')
+            response = work_dir / 'proposal.json'
             if context.get('missing_context'):
                 state.update(status='context_required', reason='; '.join(context['missing_context']))
                 _save_state(run, state)
@@ -629,31 +723,33 @@ def search(run: Path, root: Path, *, external=False):
                     _save_state(run, state)
                     break
                 # Charge before dispatch; interrupted/failed calls are never refunded on resume.
-                if state.get('dispatch', {}).get('round') != state['active']:
+                kind = 'debug' if record.get('debug') else 'proposal'
+                if (state.get('dispatch', {}).get('round') != state['active']
+                        or state['dispatch'].get('kind', 'proposal') != kind):
                     if state['calls'] >= settings['max_calls']:
                         state.update(status='budget_exhausted', reason='Agent-dispatch budget exhausted.')
                         _save_state(run, state)
                         break
                     state['calls'] += 1
-                    state['dispatch'] = {'round': state['active'], 'call': state['calls']}
+                    state['dispatch'] = {'round': state['active'], 'call': state['calls'], 'kind': kind}
                     _save_state(run, state)
                 record.update(phase='awaiting_agent', call=state['dispatch']['call'])
                 write_json(path, record)
             if record['phase'] == 'awaiting_agent':
                 if state['external_agent'] and not response.exists():
-                    write_json(run / 'search/pending.json', {'request': str((round_dir / 'request.json').relative_to(run)),
+                    write_json(run / 'search/pending.json', {'request': str((work_dir / 'request.json').relative_to(run)),
                                'response': str(response.relative_to(run)), 'call': record['call'],
                                'request_hash': record['request_hash']})
                     return search_report(run, root)
-                if not response.exists() and not (round_dir / 'agent').exists():
+                if not response.exists() and not (work_dir / 'agent').exists():
                     replacements = {'{python}': sys.executable, '{foundation}': str(run / 'foundation'),
-                                    '{request}': str(round_dir / 'request.json'), '{response}': str(response)}
+                                    '{request}': str(work_dir / 'request.json'), '{response}': str(response)}
                     argv = settings['agent_command'][:]
                     for marker, replacement in replacements.items():
                         argv = [part.replace(marker, replacement) for part in argv]
                     remaining = plan['expires_at'] - time.time()
                     if remaining > 0:
-                        process = execute(argv, round_dir, round_dir / 'agent', min(settings['agent_timeout_seconds'], remaining),
+                        process = execute(argv, work_dir, work_dir / 'agent', min(settings['agent_timeout_seconds'], remaining),
                                           session_env(run / 'search/codex-session'))
                         record['agent_process'] = process
                         write_json(path, record)
@@ -662,7 +758,7 @@ def search(run: Path, root: Path, *, external=False):
                         raise ValueError('agent response exceeds context bound')
                     value = validate_proposal(read_json(response), {item['id'] for item in context['evidence']}, context.get('proposal_requirements'))
                     if not state['external_agent']:
-                        receipt = read_json(round_dir / 'agent/process.json')
+                        receipt = read_json(work_dir / 'agent/process.json')
                         if receipt['status'] != 'completed' or not receipt['cleanup_complete']:
                             raise ValueError('agent did not complete cleanly')
                     record['response_hash'] = digest(response)
@@ -672,8 +768,17 @@ def search(run: Path, root: Path, *, external=False):
                                       reason=value['reason'], needs_context=missing)
                         state.update(status='context_required' if missing else 'agent_stopped', reason=value['reason'])
                     else:
-                        selected, decision = route_proposals(
-                            value['proposals'], records, record['parent']['source_hash'], router)
+                        if record.get('debug'):
+                            if len(value['proposals']) != 1:
+                                raise ValueError('debug must return exactly one repair proposal')
+                            selected, decision = value['proposals'][0], None
+                            original = record['debug']['selected']
+                            if any(selected.get(key) != original.get(key)
+                                   for key in ('hypothesis', 'category', 'experiment')):
+                                raise ValueError('debug changed the original hypothesis, category or experiment')
+                        else:
+                            selected, decision = route_proposals(
+                                value['proposals'], records, record['parent']['source_hash'], router)
                         if decision is not None:
                             write_json(round_dir / 'routing.json', decision)
                         if selected is None:
@@ -686,9 +791,9 @@ def search(run: Path, root: Path, *, external=False):
             if 'response_hash' in record and digest(response) != record['response_hash']:
                 raise ValueError('agent response changed')
             if record['phase'] == 'proposed':
-                patch = round_dir / 'change.patch'
+                patch = work_dir / 'change.patch'
                 patch.write_text(record['selected']['patch'])
-                source, staging = round_dir / 'source', round_dir / 'staging'
+                source, staging = work_dir / 'source', work_dir / 'staging'
                 if staging.exists():
                     shutil.rmtree(staging)
                 parent_source = run / record['parent']['source']
@@ -701,12 +806,13 @@ def search(run: Path, root: Path, *, external=False):
                         shutil.rmtree(staging)
                     else:
                         staging.rename(source)
-                    record.update(phase='screening', candidate_hash=inventory(source)['hash'])
+                    record.update(phase='screening', candidate_hash=inventory(source)['hash'],
+                                  source=str(source.relative_to(run)))
                 except (OSError, ValueError, subprocess.SubprocessError) as error:
                     record.update(phase='decided', decision='invalid_patch', reason=str(error))
                 write_json(path, record)
             if record['phase'] in ('screening', 'confirming'):
-                if inventory(round_dir / 'source')['hash'] != record['candidate_hash']:
+                if inventory(run / record.get('source', str((work_dir / 'source').relative_to(run))))['hash'] != record['candidate_hash']:
                     raise ValueError('search candidate changed after applying proposal')
                 if record['phase'] == 'screening':
                     attempt = _start_attempt(run, root, state, record, 'screen', round_dir)
@@ -720,7 +826,7 @@ def search(run: Path, root: Path, *, external=False):
                     attempt = _start_attempt(run, root, state, record, 'confirmation', round_dir)
                     verdict = verified_verdict(run, attempt.name, root)
                     if verdict['verdict'] == 'PASS':
-                        promoted = {'source': str((round_dir / 'source').relative_to(run)),
+                        promoted = {'source': record.get('source', str((work_dir / 'source').relative_to(run))),
                                     'source_hash': record['candidate_hash'], 'parent_hash': record['parent']['source_hash'],
                                     'screen': {'attempt': record['screen'], 'hash': digest(run / 'attempts' / record['screen'] / 'verdict.json')},
                                     'confirmation': {'attempt': record['confirmation'], 'hash': digest(attempt / 'verdict.json')}}
@@ -730,6 +836,17 @@ def search(run: Path, root: Path, *, external=False):
                         record.update(phase='decided', decision='rejected', reason={'confirmation': verdict})
                     write_json(path, record)
             if record['phase'] == 'decided':
+                failure = _debug_failure(run, record) if record['decision'] == 'rejected' and not record.get('debug') else None
+                if failure:
+                    if state['calls'] < settings['max_calls'] and time.time() < plan['expires_at']:
+                        if _prepare_debug(run, plan, round_dir, record, failure):
+                            if ((run / 'recovery.json').is_file()
+                                    and read_json(run / 'recovery.json').get('health') in ('required', 'failed')):
+                                campaign.recover(run, root)
+                            continue
+                    else:
+                        record['debug_skipped'] = 'Frozen dispatch or wall-time budget exhausted.'
+                    write_json(path, record)
                 _lesson(run, plan, round_dir, record)
                 _record_ledger(run, plan, round_dir, record, ledger, router)
                 if record['decision'] == 'stopped':
@@ -774,11 +891,14 @@ def search_report(run, root):
               if primary else 'Promotion requires a native screen and a fresh confirmation with every configured final service gate. ')
              + 'Operator-only PASS is not final qualification.', '',
              _routing_summary(run, plan), '',
-             '| Round | Decision | Evidence |', '| --- | --- | --- |']
+             'A candidate compile/runtime/numerical failure gets at most one code-only repair within the dispatch budget. '
+             'A repaired candidate restarts screening and independent confirmation; slow valid results do not trigger debug.', '',
+             '| Round | Decision | Debug | Evidence |', '| --- | --- | --- | --- |']
     for name in state['rounds']:
         path = run / 'search/rounds' / name / 'state.json'
         record = read_json(path) if path.is_file() else {}
-        lines.append(f'| {name} | {record.get("decision", record.get("phase", "preparing"))} | search/rounds/{name}/ |')
+        debug = 'used once' if record.get('debug') else record.get('debug_skipped', '')
+        lines.append(f'| {name} | {record.get("decision", record.get("phase", "preparing"))} | {debug} | search/rounds/{name}/ |')
     lines.extend(['', 'Synthetic results qualify controller contracts only.' if plan['backend'] == 'cpu-synthetic'
                   else 'NPU claims are limited to the frozen workload and configured native/service gates.', ''])
     destination = run / 'search-report.md'

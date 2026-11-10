@@ -76,8 +76,11 @@ python benchmarks/agents/deepseek_agent.py --check   # 提案机（可为 Window
 
 这里将 ultra high 对应为 CLI 的 `xhigh`。提案先分析再写补丁；分析决定停止时不调用
 编码模型。两步共享原有超时和 deadline，不静默降级；归档各自命令、输出、JSONL、
-stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数，每次内含至多
-两次模型调用。外部文件交换采用相同流程。模型规则固化在仓库
+stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数。普通派发先分析再编码，
+Codex 补丁预检查失败时最多额外修补一次；DeepSeek 每阶段最多一次恢复，截断、格式与
+补丁错误共用额度，单次普通派发最多四次模型完成调用。`usage.json` 保留每次调用和
+token 明细。提案机需要 Git，补丁在临时副本先检查可应用性，再交控制器验证。
+外部文件交换采用相同流程。模型规则固化在仓库
 `knowledge/measurement/codex-models.md`。修改后的提案器用于新 campaign。
 pipeline 场景配方给每次提案 3600 秒，两步模型调用共享超时。
 请求传输上限为 2 MiB，包含实际构建收集并校验哈希的只读 MC2/Catlass 和生成的
@@ -89,6 +92,15 @@ priority。
 
 使用仓库固定的 JSON
 schema 和只读模式；补丁由控制器进行 git-apply 和允许文件检查。
+
+候选编译、运行或原生数值失败后，同一轮最多获得一次编码模型 debug，计入剩余
+`max_calls` 和原 deadline，不重新调用分析模型。debug 携带原假设、失败日志及回执，
+返回针对原始 parent 的完整替换补丁，不能改变假设、实验或验收门槛。
+修复后从新 attempt 重新筛选、独立确认及完整最终 E2E；第二次失败结束该轮。
+有效但性能不达标、最终精度门槛失败、基线或环境校验失败不触发 debug。
+失败证据保留在该轮目录，修复材料位于 `debug/`；续跑不会重复收费或再给一次修复。
+预算不足时记录跳过原因；Ascend 错误后的设备健康检查仍是重新测试的前提。
+最近两条历史摘要优先保留，避免 SDK 和 profile 较大时丢失上一轮失败信息。
 
 ```bash
 export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"

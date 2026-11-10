@@ -48,6 +48,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
+from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
 DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
@@ -55,8 +56,8 @@ DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
 # analysis stage needs headroom well beyond the JSON it returns.
 DEFAULT_MAX_TOKENS = {'analysis': 32768, 'code': 16384}
 DEFAULT_TOKEN_CAP = 65536
-# Truncation retries are cheap compared with the device round they unblock.
-MAX_ATTEMPTS = 4
+# One recovery per stage, shared by truncation, schema and patch failures.
+MAX_ATTEMPTS = 2
 
 
 class Truncated(ValueError):
@@ -73,7 +74,7 @@ class UsageLog:
     def add(self, turn):
         self.turns.append(turn)
         if self.path:
-            write_json(self.path, {'turns': self.turns})
+            write_json(self.path, {'turns': self.turns, 'model_calls': len(self.turns)})
 
     def record(self, turn, path=None):
         if path and not self.path:
@@ -189,7 +190,7 @@ def truncate(request: dict, budget: int) -> tuple[dict, list]:
     def size() -> int:
         return len(json.dumps(view, ensure_ascii=False))
 
-    if size() > budget and view.get('logs'):
+    if size() > budget and view.get('logs') and not view.get('debug'):
         view['logs'] = []
         dropped.append('logs')
 
@@ -209,7 +210,8 @@ def truncate(request: dict, budget: int) -> tuple[dict, list]:
             dropped.append('source_files')
 
     while size() > budget and len(view.get('evidence', [])) > 1:
-        required = set((view.get('proposal_requirements') or {}).get('required_evidence_ids', ['baseline']))
+        required = set(view.get('protected_evidence_ids', [])) | set(
+            (view.get('proposal_requirements') or {}).get('required_evidence_ids', ['baseline']))
         index = next((i for i, item in enumerate(view['evidence'])
                       if item['id'] not in required), None)
         if index is None:
@@ -456,16 +458,7 @@ def token_cap() -> int:
 
 
 def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None):
-    """Call until one accepted answer, escalating on truncation.
-
-    Two failure kinds are handled differently, because they need different fixes:
-
-    * truncation — the reasoning model spent the whole output budget thinking, so
-      `finish_reason=length` with empty content. The budget is doubled and the same
-      question is asked again; this does not consume the one shape repair.
-    * shape — the answer arrived but is missing required fields. One explicit
-      repair is allowed, quoting the accepted keys.
-    """
+    """One recovery per ordinary stage; a candidate debug gets one coding call."""
     usage = usage or UsageLog()
     model = model_for(stage, request)
     effort = effort_for(stage)
@@ -475,8 +468,8 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
     (prefix.parent / f'{prefix.name}.request.json').write_text(
         json.dumps({key: value for key, value in payload.items() if key != 'messages'}) + '\n')
     errors = []
-    repairs = 0
-    for attempt in range(MAX_ATTEMPTS):
+    keys = sorted(schema['properties'])
+    for attempt in range(1 if request.get('debug') else MAX_ATTEMPTS):
         response = send(payload, timeout, prefix)
         suffix = '' if attempt == 0 else f'-retry{attempt}'
         (prefix.parent / f'{prefix.name}.response{suffix}.json').write_text(
@@ -491,6 +484,9 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                 'max_tokens': payload['max_tokens'], 'finish_reason': finish,
                 'prompt_tokens': reported.get('prompt_tokens'),
                 'completion_tokens': reported.get('completion_tokens'),
+                'cached_tokens': (reported.get('prompt_tokens_details') or {}).get('cached_tokens',
+                                    reported.get('prompt_cache_hit_tokens')),
+                'reasoning_tokens': (reported.get('completion_tokens_details') or {}).get('reasoning_tokens'),
                 'ignored_keys': []}
         try:
             if not choices:
@@ -501,6 +497,8 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                     f'(finish_reason=length)')
             value = extract_json(text)
             turn['ignored_keys'] = check_shape(value, request, analysis=analysis)
+            if not analysis:
+                validate_patches(value, request)
             usage.add(turn)
             return value, turn
         except Truncated as error:
@@ -512,24 +510,22 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
             payload = {**payload, 'max_tokens': escalated, 'messages': messages + [
                 {'role': 'user', 'content':
                  'Answer within a tighter budget: stop reasoning and reply with one JSON object '
-                 f'only, holding exactly the keys {sorted(schema)}.'}]}
+                 f'only, holding exactly the keys {keys}.'}]}
         except (KeyError, IndexError, TypeError, ValueError) as error:
             errors.append(str(error))
             usage.add(turn)
-            if repairs:
-                break
-            repairs += 1
             payload = {**payload, 'messages': messages + [
                 {'role': 'assistant', 'content': text},
                 {'role': 'user', 'content':
                  f'That response was rejected: {error}. Reply with one JSON object and nothing else. '
-                 f'It must contain exactly these keys: {sorted(schema)}. '
+                 f'It must contain exactly these keys: {keys}. '
                  f'The schema is: {json.dumps(schema)}'}]}
     raise ValueError(f'DeepSeek {stage} response rejected: {errors[-1]}')
 
 
 def propose(args):
     request = json.loads(args.request.read_text())
+    require_patch_tools(request)
     # Fail before any other work, naming the variable this host actually exports.
     api_key()
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -562,7 +558,7 @@ def propose(args):
     if view.get('missing_context'):
         write_json(args.output, dict(stop=True, reason='; '.join(view['missing_context']),
                                     proposals=[], needs_context=view['missing_context']))
-        write_json(args.output.parent / 'usage.json', {'turns': []})
+        write_json(args.output.parent / 'usage.json', {'turns': [], 'model_calls': 0})
         return
     document = json.dumps(view, ensure_ascii=False)
     deadline = float(request.get('deadline') or 0)
@@ -570,6 +566,14 @@ def propose(args):
     limit = min(float(request.get('agent_timeout_seconds') or 600), max(1.0, remaining))
 
     usage = UsageLog(args.output.parent / 'usage.json')
+    if request.get('debug'):
+        code, _ = ask('code',
+            [{'role': 'system', 'content': SYSTEM_RULES},
+             {'role': 'user', 'content': f'{DEBUG_TASK}\n\nSchema:\n{json.dumps(contract)}\n\nRequest:\n{document}'}],
+            contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events',
+            analysis=False, usage=usage)
+        write_json(args.output, code)
+        return
     analysis, first = ask('analysis',
         [{'role': 'system', 'content': SYSTEM_RULES},
          {'role': 'user', 'content': f'{ANALYSIS_TASK}\n\nSchema:\n{json.dumps(analysis_contract)}\n\nRequest:\n{document}'}],
