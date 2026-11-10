@@ -46,11 +46,18 @@ assert request['strategy']['mode']=='deep'
 assert '--ephemeral' not in sys.argv
 if 'resume' in sys.argv: assert sys.argv[sys.argv.index('resume')+1]=='12345678-1234-4234-8234-123456789abc'
 schema=json.loads(Path(sys.argv[sys.argv.index('--output-schema')+1]).read_text())
-code='patch' in schema['properties']['proposals']['items']['properties']
+fields=schema['properties']['proposals']['items']['properties']
+code='patch' in fields or 'edits' in fields
 assert sys.argv[sys.argv.index('--model')+1]==('gpt-6.1-sol' if code else 'gpt-6-astra')
 p={{'hypothesis':'synthetic fixture faster','category':'latency','priority':3,'evidence':['baseline']}}
 if code: p['patch']={(ROOT/'examples/faster.patch').read_text()!r}
-Path(sys.argv[sys.argv.index('--output-last-message')+1]).write_text(json.dumps({{'stop':False,'reason':'fixture only','proposals':[p]}}))
+if 'files' in fields: p['files']=['s0']
+result={{'stop':False,'reason':'fixture only','proposals':[p],'needs_context':[]}}
+if 'edits' in fields:
+    view=json.loads((root/'code.json').read_text())
+    old=(root/view['file_paths']['s0']).read_text()
+    result.update(base=view['base'],proposals=[{{'id':0,'edits':[{{'file':'s0','old':old,'new':old.replace('10.0','8.0')}}]}}])
+Path(sys.argv[sys.argv.index('--output-last-message')+1]).write_text(json.dumps(result))
 print(json.dumps({{'type':'thread.started','thread_id':'12345678-1234-4234-8234-123456789abc'}}))
 print(json.dumps({{'type':'turn.completed','usage':{{'input_tokens':1,'output_tokens':1}}}}))
 ''')

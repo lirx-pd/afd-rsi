@@ -232,7 +232,7 @@ def request_context(run, plan, best, records, number, router=None):
                          if len(components) == 1 else 'percent gain')
         if len(components) > 1:
             objective['components'] = components
-    context = {'schema_version': 1, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
+    context = {'schema_version': 1, 'model_protocol': 2, 'round': number, 'strategy': strategy, 'fingerprint': fingerprint(plan),
                'provider': provider,
                'provider_hash': digest(run / 'foundation' / provider),
                'deadline': plan['expires_at'], 'agent_timeout_seconds': plan['search']['agent_timeout_seconds'],

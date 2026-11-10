@@ -13,6 +13,7 @@ from uuid import UUID
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
+from afd_rsi.model_protocol import ModelContext, MODEL_RULES, DEBUG_EDIT_TASK, code_schema, compact
 
 
 def invoke(executable, workspace, schema, output, prompt, model, effort, prefix, session):
@@ -110,11 +111,21 @@ def propose(args):
     workspace.mkdir(exist_ok=True)
     (workspace / 'analysis.json').unlink(missing_ok=True)
     write_workspace(workspace, request)
+    wire = ModelContext(request) if request.get('model_protocol') == 2 else None
+    if wire is not None:
+        view = json.loads(wire.initial(inline=False))
+        view['file_paths'] = wire.paths()
+        for item in wire.evidence():
+            (workspace / 'evidence' / (item['id'] + '.summary.json')).write_text(compact(item['facts']))
+        if request.get('debug'):
+            view.update(failure=request['debug']['failure'], logs=request.get('logs', []))
+        (workspace / 'request.json').write_text(compact(view))
     (workspace / 'AGENTS.md').write_text(
         'Propose a complete candidate patch using only request.json evidence and repository-local knowledge.\n'
         'Do not change files, gates, validators, budgets, or knowledge. Do not read credentials or external repositories.\n'
-        'Return JSON matching the supplied schema. Analysis omits patches; coding supplies complete git-apply unified diffs.\n'
-        'The evidence array must contain only exact IDs from request.json, such as baseline, never explanations.\n'
+        + ('Return JSON matching the supplied schema. Analysis omits patches; coding supplies complete git-apply unified diffs.\n'
+         if wire is None else MODEL_RULES + '\nRead source/SDK via request.json file_paths; never dump the whole SDK.\n')
+        + 'The evidence array must contain only exact IDs from request.json, such as baseline, never explanations.\n'
         'This conversation persists across rounds. The current request.json is authoritative; old source and evidence may be stale.\n'
         'Label a hypothesis as a hypothesis.\n'
         'request.json is a manifest: read the named source/dependency files and evidence facts_file as needed.\n'
@@ -140,16 +151,29 @@ def propose(args):
         item['id'] for item in request['evidence']]
     schema.write_text(json.dumps(contract) + '\n')
     if request.get('debug'):
+        analysis = wire.debug_analysis() if wire is not None else None
+        if wire is not None:
+            view = json.loads(wire.coding(analysis, inline=False))
+            view.update(failure=request['debug']['failure'], logs=request.get('logs', []))
+            (workspace / 'code.json').write_text(compact(view))
+            write_json(schema, code_schema(wire.base, 1))
         value, usages = invoke(executable, workspace, schema, args.output,
-            'Read request.json and AGENTS.md. ' + DEBUG_TASK,
+            ('Read request.json and AGENTS.md. ' + DEBUG_TASK if wire is None
+             else 'Read code.json and AGENTS.md. Return id/edits. ' + DEBUG_EDIT_TASK),
             'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-events', session)
         write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+        if wire is not None:
+            value = wire.decode(value, analysis)
+            write_json(args.output, value)
         validate_patches(value, request)
         return
     analysis_contract = json.loads(json.dumps(contract))
     proposal = analysis_contract['properties']['proposals']['items']
     proposal['required'].remove('patch')
     del proposal['properties']['patch']
+    if wire is not None:
+        proposal['required'].append('files')
+        proposal['properties']['files'] = dict(type='array', minItems=1, items=dict(type='string'))
     analysis_schema = args.output.parent / 'analysis.schema.json'
     analysis_schema.write_text(json.dumps(analysis_contract) + '\n')
     analysis_path = args.output.parent / 'analysis.json'
@@ -169,8 +193,10 @@ def propose(args):
     analysis, usages = invoke(executable, workspace, analysis_schema, analysis_path,
         analysis_prompt,
         'gpt-6-astra', 'xhigh', args.output.parent / 'analysis-events', session)
-    (workspace / 'analysis.json').write_text(json.dumps(analysis) + '\n')
     write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+    if wire is not None:
+        analysis = wire.normalize_analysis(analysis)
+    (workspace / 'analysis.json').write_text(json.dumps(analysis) + '\n')
     if analysis['stop']:
         args.output.write_text(json.dumps(analysis) + '\n')
         return
@@ -185,6 +211,11 @@ def propose(args):
     code_prompt = ('Read request.json, AGENTS.md and analysis.json. Implement only the justified hypotheses '
         'as complete patches. Preserve their evidence IDs and explain any implementation limits. '
         'Return stop=true if no safe complete patch can be produced.')
+    if wire is not None:
+        view = json.loads(wire.coding(analysis, inline=False))
+        (workspace / 'code.json').write_text(compact(view))
+        write_json(schema, code_schema(wire.base, len(analysis['proposals'])))
+        code_prompt = 'Read code.json and AGENTS.md. Implement the analyzed hypotheses. Return id/edits; metadata is inherited.'
     if global_redesign:
         code_prompt += (' Implement the selected coherent redesign, including all affected allowed files and '
             'synchronization contracts. Rewriting a kernel or adding a new implementation is permitted; '
@@ -195,16 +226,25 @@ def propose(args):
     usages += code_usages
     write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
     try:
+        if wire is not None:
+            write_json(args.output.parent / 'model-response.json', value)
+            value = wire.decode(value, analysis)
+            write_json(args.output, value)
         validate_patches(value, request)
     except ValueError as error:
         write_json(args.output.parent / 'proposal-before-repair.json', value)
         value, repaired_usage = invoke(executable, workspace, schema, args.output,
             'The coding response failed local patch preflight: ' + str(error)
-            + '. Read request.json and return corrected complete patches against its parent source. '
-              'Keep the hypotheses and validation gates; this is the only patch repair call.',
+            + ('. Read request.json and return corrected complete patches against its parent source. ' if wire is None
+               else '. Read code.json and return corrected id/edits against the original parent. ')
+            + 'Keep the hypotheses and validation gates; this is the only patch repair call.',
             'gpt-6.1-sol', 'xhigh', args.output.parent / 'codex-repair-events', session)
         usages += repaired_usage
         write_json(args.output.parent / 'usage.json', {'turns': usages, 'model_calls': len(usages)})
+        if wire is not None:
+            write_json(args.output.parent / 'model-response-repair.json', value)
+            value = wire.decode(value, analysis)
+            write_json(args.output, value)
         validate_patches(value, request)
 
 

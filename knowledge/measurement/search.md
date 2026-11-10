@@ -34,7 +34,7 @@ submitted proposal alongside experiment evidence. Token usage is an observation,
 not an enforced token budget; Agent dispatches and wall time are bounded.
 Ordinary dispatches analyze once and then code. Codex allows one extra coding
 call if local patch application fails; DeepSeek allows one recovery per stage,
-shared by output truncation, schema and patch failures (at most four completions
+shared by context reads, output truncation, schema and patch failures (at most four completions
 per ordinary dispatch). Retry prompts name response properties, not schema keys.
 The proposer host needs Git for disposable-copy patch preflight. No preflight
 modifies the original checkout or replaces the controller's allowed-file checks.
@@ -68,9 +68,13 @@ slicing required by the chosen design. Return stop=true, proposals=[] and
 needs_context naming missing contracts. The controller reports context_required,
 not exhausted optimization directions, and spends no further dispatch. Repair the
 evidence in a new campaign; frozen historical requests are never rewritten.
-DeepSeek's HTTP adapter cannot read files selectively: its prompt budget must fit
-the required SDK/source/evidence. It preserves allowed sources and SDK contracts
-and returns context_required before any model call when they exceed that budget.
+Protocol v2 gives HTTP models a bounded read from the frozen context catalog;
+only the selected source/contracts are repeated for coding. Critical MC2/generated
+contracts and the complete request source closure remain inline during analysis.
+Original request facts (including sampled events) and SDK bodies remain retrievable,
+with unchanged stage/wait/overlap summaries; full device traces remain in the archive.
+If the required seed or selected coding context exceeds the budget, return
+context_required before that model stage. See [agent providers](agent-providers.md).
 
 Recover only processes with the trial's ownership tag, matching host and boot.
 Use pidfds rather than signalling a reused numeric PID. Preserve the original

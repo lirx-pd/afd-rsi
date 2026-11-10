@@ -77,7 +77,7 @@ python benchmarks/agents/deepseek_agent.py --check   # 提案机（可为 Window
 这里将 ultra high 对应为 CLI 的 `xhigh`。提案先分析再写补丁；分析决定停止时不调用
 编码模型。两步共享原有超时和 deadline，不静默降级；归档各自命令、输出、JSONL、
 stderr 和带模型标签的 usage。`max_calls` 限制 Agent 命令派发次数。普通派发先分析再编码，
-Codex 补丁预检查失败时最多额外修补一次；DeepSeek 每阶段最多一次恢复，截断、格式与
+Codex 补丁预检查失败时最多额外修补一次；DeepSeek 每阶段最多一次恢复，按需补读、截断、格式与
 补丁错误共用额度，单次普通派发最多四次模型完成调用。`usage.json` 保留每次调用和
 token 明细。提案机需要 Git，补丁在临时副本先检查可应用性，再交控制器验证。
 外部文件交换采用相同流程。模型规则固化在仓库
@@ -92,6 +92,13 @@ priority。
 
 使用仓库固定的 JSON
 schema 和只读模式；补丁由控制器进行 git-apply 和允许文件检查。
+
+新 campaign 使用紧凑模型协议 v2：分析先读文件 ID 目录、请求内完整源码闭包、必要 MC2/activation
+契约和 profiling 汇总；其他 SDK、知识及原有采样事件按需读取。HTTP 最多一次补读，共享原有
+阶段恢复额度；编码只重发选中的材料。模型用提案编号和精确文本替换返回修改，适配器恢复
+分析元数据并生成标准 diff。只读权限、唯一旧文本匹配、修改重叠和 base 绑定都在本地检查。
+完整原始请求和响应保留，控制器的数值、性能及 E2E 门槛保持同一合同。
+详见[提供方协议](../knowledge/measurement/agent-providers.md)。
 
 候选编译、运行或原生数值失败后，同一轮最多获得一次编码模型 debug，计入剩余
 `max_calls` 和原 deadline，不重新调用分析模型。debug 携带原假设、失败日志及回执，

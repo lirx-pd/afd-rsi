@@ -70,11 +70,41 @@ provider = "codex"     # 默认；也可写 "deepseek"
   重试一次并记录 `unsupported-parameters.json`，校验仍在本地进行。
   `AFD_RSI_DEEPSEEK_JSON_MODE=0` 可完全关闭。
 - 网关的报错正文可能回显提交的凭据，适配器在写入任何报告前先脱敏。
-- 无服务端会话：每轮把请求内联进提示，按 `AFD_RSI_DEEPSEEK_MAX_CHARS`
+- 旧协议无服务端会话：每轮把请求内联进提示，按 `AFD_RSI_DEEPSEEK_MAX_CHARS`
   裁剪；默认沿用请求冻结的 `max_context_bytes` 数值作为字符上限，旧请求缺少该字段
   时回退到 200000 字符。显式环境变量优先。裁剪顺序是日志、知识正文、可省略的源码、较旧证据，
   被删内容写进请求的 `context_truncation`，模型知道缺了什么。
 - JSON 由提示约束并本地校验；首次不合规会重试一次，仍不合规即失败并保留原始响应。
+
+## 紧凑模型协议 v2
+
+新 campaign 的 request.model_protocol=2。原始请求仍包含完整源码、SDK、证据和哈希，
+验收方仍接收标准 proposal 与 git diff；只有模型可见的视图和模型响应变小。
+
+- 文件用 s/d/e/k ID 表示源码、SDK、完整证据和知识。目录包含路径、权限、行数和符号位置。
+  源码原文用 FILE/END 块传输，不进行二进制压缩或删除代码/注释。SDK、知识及请求内完整证据
+  均保留可寻址原文，不让模型根据残缺契约猜测实现。
+- HTTP 分析输入包含请求中的完整源码闭包、MC2/生成的 activation、阶段/等待/重叠汇总。
+  请求内原有采样 event 数组留在 e 文件，必要时补读；汇总数值不变。完整设备 trace 仍在原有
+  归档路径，不通过文件 ID 接口读取。通用 Catlass 与知识先发目录。
+  稳定源码/契约位于提示前部，变化的历史、指标和 schema 位于后部，便于网关复用前缀缓存。
+  可返回 {"read":[["d0",1,100]]} 补读一次：最多八段、每段 400 行、合计 64 KiB。
+  补读与格式/截断恢复共用分析阶段的两次调用上限，补读后必须给最终分析或 needs_context。
+  不增加派发预算，也不增加阶段调用上限。
+- 分析仍输出可证伪实验，并用 files 指定编码所需文件 ID。编码仅收到所选文件、补读的 SDK
+  片段和分析结果，不重复整份 SDK、profiling 与知识。Codex 原生只读工具按同一 ID 清单
+  读取工作区文件；证据先读 summary 文件，再按需读取完整事实。
+- 编码响应只含当前 base、提案 id 和 edits(file,old,new)。元数据从该编号的分析恢复，
+  不让编码模型重复 hypothesis/category/evidence/experiment。old 必须在原 parent 中唯一匹配，
+  修改不能重叠。new:路径表示新文件，new=null 且 old 为完整原文表示删除。
+  适配器生成 diff 并预检查；旧文本歧义、越权、未知 ID 或旧 base 均拒绝。
+- debug 继续只有一次编码调用。提供原失败补丁、日志、源码与之前按源/SDK 哈希绑定的补读；
+  不启动额外分析或补读。修复仍返回针对原 parent 的完整修改。
+
+保存原始模型响应、派生输入和标准 proposal。HTTP usage 逐次记录实际 prompt/completion
+tokens，以及输入/输出 UTF-8 字节数；字节数不是 tokenizer 估计。离线比较使用
+tools/measure_model_protocol.py，真实成本与提案质量仍以网关 usage 和实际搜索为准。
+旧冻结请求未声明 v2 时沿用旧协议。
 
 ## 共同约束
 

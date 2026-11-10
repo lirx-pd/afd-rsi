@@ -49,6 +49,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'src'))
 from afd_rsi.evidence import read_json, write_json
 from afd_rsi.proposal import DEBUG_TASK, require_patch_tools, validate_patches
+from afd_rsi.model_protocol import ModelContext, MODEL_RULES, READ_RULES, EDIT_TASK, DEBUG_EDIT_TASK, code_schema, compact
 
 DEFAULT_MODEL = 'DeepSeek-V4.1-Flash-1017'
 DEFAULT_EFFORT = {'analysis': 'max', 'code': 'high'}
@@ -381,6 +382,8 @@ def check_shape(value: dict, request: dict, *, analysis: bool) -> list[str]:
         expected |= set() if analysis else {'patch'}
         if requirements:
             expected |= {'experiment'}
+        if analysis and request.get('model_protocol') == 2:
+            expected |= {'files'}
         missing = expected - set(proposal)
         if missing:
             raise ValueError(f'proposal is missing {sorted(missing)}')
@@ -457,7 +460,7 @@ def token_cap() -> int:
     return int(os.environ.get('AFD_RSI_DEEPSEEK_TOKEN_CAP') or DEFAULT_TOKEN_CAP)
 
 
-def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None):
+def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=None, wire=None, parent_analysis=None):
     """One recovery per ordinary stage; a candidate debug gets one coding call."""
     usage = usage or UsageLog()
     model = model_for(stage, request)
@@ -487,6 +490,8 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                 'cached_tokens': (reported.get('prompt_tokens_details') or {}).get('cached_tokens',
                                     reported.get('prompt_cache_hit_tokens')),
                 'reasoning_tokens': (reported.get('completion_tokens_details') or {}).get('reasoning_tokens'),
+                'input_utf8_bytes': sum(len(item['content'].encode()) for item in payload['messages']),
+                'output_utf8_bytes': len(text.encode()),
                 'ignored_keys': []}
         try:
             if not choices:
@@ -496,7 +501,30 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                     f'output budget {payload["max_tokens"]} was spent before any answer '
                     f'(finish_reason=length)')
             value = extract_json(text)
+            if wire is not None and analysis and 'read' in value:
+                if set(value) != {'read'}:
+                    raise ValueError('read must be the only response field')
+                if attempt + 1 >= MAX_ATTEMPTS:
+                    usage.add(turn)
+                    return dict(stop=True, reason='Context-read allowance exhausted', proposals=[],
+                                needs_context=['additional SDK/source reads require a new context']), turn
+                content = wire.read(value['read'])
+                if sum(len(item['content']) for item in messages) + len(content) > wire.max_chars:
+                    usage.add(turn)
+                    return dict(stop=True, reason='Requested context exceeds the prompt budget', proposals=[],
+                                needs_context=['raise the prompt budget for the requested implementation contracts']), turn
+                usage.add({**turn, 'kind': 'context_read'})
+                payload = {**payload, 'messages': messages + [
+                    {'role': 'assistant', 'content': compact(value)},
+                    {'role': 'user', 'content': content + '\nReturn the final analysis JSON now; no further reads.'}]}
+                continue
+            if wire is not None and not analysis:
+                value = wire.decode(value, parent_analysis)
             turn['ignored_keys'] = check_shape(value, request, analysis=analysis)
+            if wire is not None and analysis:
+                value = wire.normalize_analysis(value)
+                if not value['stop']:
+                    wire.coding(value, inline=False)
             if not analysis:
                 validate_patches(value, request)
             usage.add(turn)
@@ -521,6 +549,57 @@ def ask(stage, messages, schema, request, *, timeout, prefix, analysis, usage=No
                  f'It must contain exactly these keys: {keys}. '
                  f'The schema is: {json.dumps(schema)}'}]}
     raise ValueError(f'DeepSeek {stage} response rejected: {errors[-1]}')
+
+
+def propose_compact(args, request, analysis_contract):
+    wire = ModelContext(request)
+    wire.max_chars = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS')
+                         or request.get('max_context_bytes') or DEFAULT_MAX_CHARS)
+    usage = UsageLog(args.output.parent / 'usage.json')
+    remaining = float(request.get('deadline') or 0) - time.time() if request.get('deadline') else float('inf')
+    limit = min(float(request.get('agent_timeout_seconds') or 600), max(1.0, remaining))
+    item = analysis_contract['properties']['proposals']['items']
+    item['required'].append('files')
+    item['properties']['files'] = dict(type='array', minItems=1, items=dict(type='string'))
+    saved = args.session_dir / 'sdk-reads.json'
+    if request.get('debug'):
+        if saved.is_file():
+            wire.restore_reads(read_json(saved))
+        analysis = wire.debug_analysis()
+    else:
+        document = wire.initial()
+        (args.output.parent / 'model-input.txt').write_text(document)
+        if request.get('missing_context') or len(document) > wire.max_chars:
+            write_json(args.output, dict(stop=True, reason='Required model context exceeds the prompt budget', proposals=[],
+                needs_context=request.get('missing_context') or ['source/contract seed exceeds prompt budget']))
+            write_json(args.output.parent / 'usage.json', {'turns': [], 'model_calls': 0})
+            return
+        analysis, _ = ask('analysis', [dict(role='system', content=SYSTEM_RULES + MODEL_RULES + READ_RULES),
+            dict(role='user', content=ANALYSIS_TASK + '\n' + document + '\nSchema:' + compact(analysis_contract))],
+            analysis_contract, request, timeout=limit, prefix=args.output.parent / 'analysis-events',
+            analysis=True, usage=usage, wire=wire)
+        write_json(args.output.parent / 'analysis.json', analysis)
+        write_json(saved, wire.reads())
+        if analysis['stop']:
+            write_json(args.output, analysis)
+            return
+    document = wire.coding(analysis)
+    if request.get('debug'):
+        document += '\nFAILURE ' + compact(request['debug']['failure']) + '\nLOGS ' + compact(request.get('logs', []))
+    (args.output.parent / 'model-code-input.txt').write_text(document)
+    if len(document) > wire.max_chars:
+        write_json(args.output, dict(stop=True, reason='Coding context exceeds prompt budget', proposals=[],
+                                    needs_context=['selected source/SDK exceeds prompt budget']))
+        if not usage.turns:
+            write_json(args.output.parent / 'usage.json', {'turns': [], 'model_calls': 0})
+        return
+    contract = code_schema(wire.base, len(analysis['proposals']))
+    code, _ = ask('code', [dict(role='system', content=SYSTEM_RULES + MODEL_RULES),
+        dict(role='user', content=(DEBUG_EDIT_TASK if request.get('debug') else EDIT_TASK)
+             + '\nReturn id/edits, not patches.\n' + document + '\nSchema:' + compact(contract))],
+        contract, request, timeout=limit, prefix=args.output.parent / 'deepseek-events', analysis=False,
+        usage=usage, wire=wire, parent_analysis=analysis)
+    write_json(args.output, code)
 
 
 def propose(args):
@@ -551,6 +630,9 @@ def propose(args):
     analysis_item = analysis_contract['properties']['proposals']['items']
     analysis_item['required'].remove('patch')
     del analysis_item['properties']['patch']
+
+    if request.get('model_protocol') == 2:
+        return propose_compact(args, request, analysis_contract)
 
     budget = int(os.environ.get('AFD_RSI_DEEPSEEK_MAX_CHARS')
                  or request.get('max_context_bytes') or DEFAULT_MAX_CHARS)
