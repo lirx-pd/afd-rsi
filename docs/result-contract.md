@@ -22,6 +22,15 @@ build 成功后控制器独立计算 recipe 声明的 artifact 文件哈希，�
 correctness 和 benchmark 成功执行时返回 0。数值不合格通过 checks=false
 表达，依然写完整 JSON；程序故障/超时与 completed negative judgment 分开。
 
+基线 correctness 可在同一 campaign 内复用已完成 attempt 的成功检查；候选
+correctness 每次执行。复用要求源码、已构建 artifacts、冻结 plan、环境摘要、
+主机/boot 和原生工具链身份匹配。新 trial 只保存 observation，`reused_from`
+记录原始 trial 和 observation SHA256；result 和 process 收据仍从原始 trial
+校验，不伪造新执行。断点恢复、报告均复核引用及原始结果/收据。失败、未完成、
+缺少身份或证据损坏的结果不能成为有效缓存；性能采样及服务验收不复用此缓存。
+原生参考输出另以 `reference_files` 封存哈希，复用时复制到当前 attempt，并重建
+绑定当前路径的 reference 锁；后续候选验证、性能采样仍读取完整的参考输出。
+
 ```json
 {
   "backend": "cpu-synthetic",

@@ -2,6 +2,7 @@
 
 import fcntl
 import fnmatch
+import hashlib
 import json
 import os
 import platform
@@ -165,6 +166,67 @@ def artifacts(build: Path, names: list[str], *, native=False) -> dict:
     return values
 
 
+def correctness_context(run, plan):
+    # Seal environment values without recording credentials in evidence.
+    environment = {k: v for k, v in os.environ.items()
+                   if k not in ("AFD_RSI_PROCESS_TAG", "AFD_RSI_ANCESTOR_TAGS", "PWD", "OLDPWD", "SHLVL", "_")}
+    context = {"plan": digest(run / "plan.lock.json"), "host": host_identity(),
+               "environment": hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()}
+    if "native" in plan:
+        from .native import toolchain_fingerprint
+        context["toolchain"] = toolchain_fingerprint()
+    return context
+
+
+def reference_files(attempt, attn_ranks):
+    files = {str(p): digest(p) for p in attempt.glob("reference.rank*.pt")}
+    if (len(files) != attn_ranks or
+            read_json(attempt / "reference.lock.json") != files):
+        raise ValueError("native reference outputs changed")
+    return {Path(name).name: value for name, value in files.items()}
+
+
+def reuse_correctness(run, attempt, plan, identity, expected, context):
+    for previous in sorted((run / "attempts").iterdir()):
+        if previous == attempt or not (previous / "progress.json").is_file():
+            continue
+        state = read_json(previous / "progress.json")
+        if state.get("status") != "completed":
+            continue
+        metadata = read_json(previous / "attempt.lock.json")
+        for step in state["steps"]:
+            result = step.get("result", {})
+            if (step["phase"] != "correctness" or result.get("status") != "valid"
+                    or result.get("checks_passed") is not True or "reused_from" in result
+                    or result.get("correctness_context") != context
+                    or metadata["sources"][step["side"]] != identity
+                    or result.get("artifacts") != expected):
+                continue
+            if digest(previous / "attempt.lock.json") != (previous / "attempt.sha256").read_text().strip():
+                raise ValueError("cached correctness attempt changed")
+            origin = (run / result["trial"]).resolve()
+            if not origin.is_relative_to((run / "attempts").resolve()):
+                raise ValueError("cached correctness evidence outside attempts")
+            path = origin / "observation.json"
+            if read_json(path) != result:
+                raise ValueError("cached correctness observation changed")
+            verify_observation(run, result, None, identity, None, plan, check_runtime=False)
+            data = read_json(path.parent / "result.json")
+            validate_result(data, plan, identity["hash"], expected, measured=False)
+            if not all(all(rank["checks"].values()) for rank in data["ranks"]):
+                raise ValueError("cached correctness checks failed")
+            if "native" in plan:
+                # The native driver consumes these tensors in every later phase.
+                for name in result["reference_files"]:
+                    shutil.copyfile(origin.parents[2] / name, attempt / name)
+                write_json(attempt / "reference.lock.json",
+                           {str(attempt / name): value for name, value in result["reference_files"].items()})
+                if reference_files(attempt, plan["native"]["attn_ranks"]) != result["reference_files"]:
+                    raise ValueError("copied native reference outputs changed")
+            return {**result, "reused_from": {"trial": result["trial"], "observation_hash": digest(path)}}
+    return None
+
+
 def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
             identity: dict, build: Path, root: Path, *, source=None, output=None) -> dict:
     source = source or run / "workspaces" / side
@@ -190,6 +252,14 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
         remaining = plan["expires_at"] - time.time()
         if remaining <= 0:
             raise ValueError("campaign budget exhausted")
+        if phase == "correctness":
+            context = correctness_context(run, plan)
+            observation["correctness_context"] = context
+            cached = reuse_correctness(run, attempt, plan, identity, expected, context) if side == "baseline" else None
+            if cached is not None:
+                cached.update(side=side, trial=observation["trial"])
+                write_json(output / "observation.json", cached)
+                return cached
         timeout = min(plan["timeout_seconds"], remaining)
         if phase == "service":
             from .service_phase import run_service
@@ -244,6 +314,8 @@ def command(plan: dict, run: Path, attempt: Path, side: str, phase: str,
             checks = all(all(rank["checks"].values()) for rank in data["ranks"])
             observation.update(status="valid", value=value, checks_passed=checks,
                                result_hash=digest(result_path), artifacts=actual)
+            if phase == "correctness" and "native" in plan:
+                observation["reference_files"] = reference_files(attempt, plan["native"]["attn_ranks"])
             if phase == "benchmark" and "case_metrics" in data:
                 observation["case_metrics"] = data["case_metrics"]
             if phase == "profile":
@@ -272,6 +344,29 @@ def verify_observation(run, observation, source, identity, build, plan, *, check
     if check_runtime and observation["status"] == "valid" and artifacts(build, plan["artifacts"], native="native" in plan) != observation["artifacts"]:
         raise ValueError("completed phase artifacts changed")
     trial = run / observation["trial"]
+    if "reference_files" in observation:
+        if reference_files(trial.parents[2], plan["native"]["attn_ranks"]) != observation["reference_files"]:
+            raise ValueError("native reference outputs changed")
+    if "reused_from" in observation:
+        reference = observation["reused_from"]
+        origin = (run / reference["trial"]).resolve()
+        if not origin.is_relative_to((run / "attempts").resolve()):
+            raise ValueError("cached correctness evidence outside attempts")
+        path = origin / "observation.json"
+        if digest(path) != reference["observation_hash"]:
+            raise ValueError("cached correctness observation changed")
+        original = read_json(path)
+        if (observation["phase"] != "correctness" or observation["side"] != "baseline"
+                or original.get("phase") != "correctness" or original.get("status") != "valid"
+                or original.get("trial") != reference["trial"]
+                or original.get("checks_passed") is not True or "reused_from" in original
+                or {k: v for k, v in observation.items() if k not in ("side", "trial", "reused_from")}
+                != {k: v for k, v in original.items() if k not in ("side", "trial")}):
+            raise ValueError("cached correctness identity changed")
+        verify_observation(run, original, source, identity, build, plan, check_runtime=False)
+        validate_result(read_json(origin / "result.json"), plan, identity["hash"],
+                        observation["artifacts"], measured=False)
+        return
     if 'dependency_context_hash' in observation:
         if digest(trial / 'dependencies.json') != observation['dependency_context_hash']:
             raise ValueError('compiled dependency context changed')
@@ -369,6 +464,7 @@ def _continue(run, attempt, root):
         trial = run / step["trial"]
         if "result" not in step and (trial / "observation.json").is_file():
             step["result"] = read_json(trial / "observation.json")
+            write_json(attempt / "progress.json", state)
         if "result" in step:
             result = step["result"]
             verify_observation(run, result, source, identity, build, plan)
