@@ -50,7 +50,7 @@ max_regression_pct = 5.0
 
 [search]
 policy = "adaptive-v1"
-max_model_calls = 36
+max_model_calls = 72
 # Proposer model: codex (default) or deepseek. Switching this one line selects the
 # frozen adapter; the controller still validates every proposal the same way.
 provider = "codex"

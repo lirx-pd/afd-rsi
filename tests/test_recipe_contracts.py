@@ -13,6 +13,24 @@ from afd_rsi import contracts
 ROOT = Path(__file__).resolve().parents[1]
 
 
+@pytest.mark.parametrize('name', ['ascend_eager', 'ascend_graph', 'ascend_pipeline_scenarios',
+                                  'cpu_adaptive_search'])
+def test_adaptive_recipes_double_model_call_budget(name):
+    plan = contracts.load_recipe(ROOT / 'recipes' / f'{name}.toml')
+    assert plan['search']['max_model_calls'] == 72
+
+
+@pytest.mark.parametrize('limit', [None, 11])
+def test_model_call_budget_default_preserves_explicit_override(tmp_path, limit):
+    text = (ROOT / 'recipes/cpu_adaptive_search.toml').read_text()
+    text = text.replace('../examples/source', str(ROOT / 'examples/source'))
+    text = text.replace('max_model_calls = 72', '' if limit is None else f'max_model_calls = {limit}')
+    recipe = tmp_path / 'recipe.toml'
+    recipe.write_text(text)
+    plan = contracts.load_recipe(recipe)
+    assert plan['search']['max_model_calls'] == (72 if limit is None else limit)
+
+
 def test_pipeline_recipe_covers_model_shape_cohort_boundaries(tmp_path):
     recipe = tmp_path / 'pipeline.toml'
     recipe.write_text((ROOT / 'recipes/ascend_pipeline_scenarios.toml').read_text().replace('../../afd-plugin', str(tmp_path)))

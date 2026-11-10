@@ -249,7 +249,7 @@ def load_recipe(path: Path) -> dict:
                 raise ValueError('unknown search policy')
             if 'global_redesign_round' in search:
                 raise ValueError('adaptive search determines global review from evidence')
-            search.setdefault('max_model_calls', search['max_calls'] * 4)
+            search.setdefault('max_model_calls', search['max_calls'] * 8)
         if 'max_model_calls' in search:
             positive(search['max_model_calls'], 'max_model_calls', integer=True)
             if 'policy' not in search:

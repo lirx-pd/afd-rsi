@@ -17,7 +17,7 @@ def prepare(tmp_path, rounds=4, calls=1, model_calls=36):
     text = (ROOT / 'recipes/cpu_adaptive_search.toml').read_text()
     text = text.replace('../examples/source', str(ROOT / 'examples/source'))
     text = text.replace('max_rounds = 9', f'max_rounds = {rounds}').replace('max_calls = 9', f'max_calls = {calls}')
-    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_model_calls = 36', f'max_model_calls = {model_calls}')
+    text = text.replace('repetitions = 4', 'repetitions = 2').replace('max_model_calls = 72', f'max_model_calls = {model_calls}')
     recipe.write_text(text)
     return campaign.prepare(recipe, tmp_path / 'run', ROOT)
 
