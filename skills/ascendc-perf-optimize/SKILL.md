@@ -11,6 +11,7 @@ this task; no global skill or online lookup is needed.
 - [expert-packed tiles and service limits](../../knowledge/performance/megamoe-expert-packing-20261025.md)
 - [tiling-pipeline](../../knowledge/performance/tiling-pipeline.md)
 - [reviewed A3 experiments](../../knowledge/performance/megamoe-a3-experiments.md)
+- [adaptive negative results: core-balance/tiling and publication/lookahead](../../knowledge/performance/megamoe-adaptive-20261110.md)
 - [campaign profiling](../../knowledge/measurement/profiling.md)
 - [contract](../../knowledge/measurement/contract.md)
 
