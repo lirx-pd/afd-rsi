@@ -69,7 +69,7 @@ def test_proposer_reads_files_individually_and_clears_stale_sources(tmp_path):
 
 def test_model_shape_routes_cover_exact_cohort_boundaries_and_hot_rank():
     routing = load_module('workload_test', 'benchmarks/native/workload.py')
-    for tokens in (7, 128, 511, 512, 513, 1025):
+    for tokens in (7, 128, 511, 512, 513, 1025, 2050, 4100, 8125):
         dense = routing.routing_ids(tokens, 32, False, balanced=True)
         sparse = routing.routing_ids(tokens, 32, True, balanced=True)
         assert all(len(set(pair)) == 2 for pair in dense + sparse)

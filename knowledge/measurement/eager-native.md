@@ -22,7 +22,7 @@ tokens and sparse/empty expert work. Optional wide shapes retain synthetic
 weights and do not establish real model/topology correctness. Two Attention
 sources remain serialized by harness barriers, not simultaneous incoming fan-in.
 The pipeline scenario recipe uses H4096/I2048, 64 local experts and lengths
-7/128/511/512/513/1025. Custom-length dense routes send exactly one row per token
+128/513/1025/2050/4100/8125. Custom-length dense routes send exactly one row per token
 to each FFN; sparse routes send both rows to two experts on the first FFN, leaving
 the other empty. Capacity reserves the hot rank's top-k rows, so 512-row cohort
 boundaries and multiple cohorts occur inside one receive round. This is twelve

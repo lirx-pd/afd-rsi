@@ -3,7 +3,7 @@ name = "A3 MegaMoe pipeline: native 64K/mixed prefill and six-way long decode"
 backend = "ascend"
 validation = "operator-first"
 source = "../../afd-plugin"
-workload_id = "a3-w4a8-full-h4096-i2048-e64-cohort-v2"
+workload_id = "a3-w4a8-full-h4096-i2048-e64-cohort-v3"
 scope = "synthetic-weight-full-transaction-suite-mean"
 unit = "us"
 metric = "transaction_us"
@@ -31,9 +31,9 @@ intermediate = 2048
 # The checkpoint has 256 experts: EP4 serves 64 per FFN device.
 # Native top-k2 is a bounded screen; service gates retain native model top-k6.
 experts = 64
-# Twelve transactions: small decode, tile tail, 512-row cohort boundaries,
-# and three cohorts. Each length has balanced dense and hot/empty-rank routes.
-lengths = [7, 128, 511, 512, 513, 1025]
+# Twelve transactions covering short and long workloads, including cohort tails.
+# Each length has balanced dense and hot/empty-rank routes.
+lengths = [128, 513, 1025, 2050, 4100, 8125]
 attn_ranks = 1
 warmups = 1
 repeats = 2
